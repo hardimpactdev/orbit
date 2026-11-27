@@ -10,11 +10,18 @@ use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\MachineSoftware\CurrentRecipe;
-use App\Infrastructure\MachineSoftware\FolderPin;
+use App\Domain\Tools\ActiveToolPolicy;
+use App\Domain\Tools\ToolConvergeIntent;
+use App\Domain\Tools\ToolDefinitionResolver;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolPolicy;
+use App\Infrastructure\MachineSoftware\ConnServerRelease;
+use App\Infrastructure\MachineSoftware\ConnServerReleases;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\ConnServerNode;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Tool;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -26,14 +33,18 @@ final readonly class ConnServerRollout
 
     public const array Scopes = ['canary', 'fleet', 'nodes'];
 
-    private const string Lock = 'fleet:conn-server-rollout';
+    private const string Lock = self::Kind;
 
     public function __construct(
         private StartOperationAction $start,
-        private CurrentRecipe $recipes,
+        private ConnServerReleases $releases,
         private SwampSshExecutionInput $ssh,
         private OperationIdempotency $idempotency,
         private FleetServingRelease $serving,
+        private ToolConvergeIntent $tools,
+        private ToolPolicy $policy,
+        private ToolDefinitionResolver $definitions,
+        private ConnServerToolManager $manager,
     ) {}
 
     private function receipt(string $pin, string $stage): ?Operation
@@ -42,51 +53,114 @@ final readonly class ConnServerRollout
             ->where('input->release_stage', $stage)->latest('id')->first();
     }
 
-    private function pinIdentity(FolderPin $pin): string
+    private function pinIdentity(ConnServerRelease $pin): string
     {
-        return hash('sha256', json_encode([$pin->version, $pin->artifact, $pin->macApp, $pin->bin], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode([$pin->version, $pin->linux, $pin->mac], JSON_THROW_ON_ERROR));
     }
 
-    private function fingerprint(FolderPin $pin, ConnServerNode $canary): string
+    private function fingerprint(ConnServerRelease $pin, ConnServerNode $canary): string
     {
         return hash('sha256', json_encode([$this->pinIdentity($pin), $this->nodeIntent($canary)], JSON_THROW_ON_ERROR));
     }
 
-    private function passed(?Operation $receipt, FolderPin $pin, ConnServerNode $canary, bool $dryRun): bool
+    private function passed(?Operation $receipt, ConnServerRelease $pin, ConnServerNode $canary, bool $dryRun): bool
     {
         return $receipt?->status === OperationStatus::Succeeded
             && data_get($receipt->result, 'version') === $pin->version
             && data_get($receipt->result, 'dry_run') === $dryRun
             && data_get($receipt->result, 'nodes.0.node_id') === $canary->node_id
             && data_get($receipt->result, 'nodes.0.outcome') === ($dryRun ? 'checked' : 'updated')
-            && ($dryRun || data_get($receipt->result, 'nodes.0.thread_read') === true);
+            && ($dryRun || (data_get($receipt->result, 'nodes.0.thread_read') === true && $this->noObservedVersionDrift($canary, $pin->version)));
     }
 
-    public function releasePin(): ?FolderPin
+    /** A canary apply proves the release only after the latest canary check passed, with no failed canary observation since. */
+    private function proven(?Operation $probe, ?Operation $check, ConnServerRelease $pin, ConnServerNode $canary, string $key): bool
+    {
+        return $probe !== null && $check !== null && $probe->id > $check->id
+            && $this->passed($check, $pin, $canary, true) && $this->passed($probe, $pin, $canary, false)
+            && $this->failedObservation($canary, $key, $check->id) === null;
+    }
+
+    /**
+     * The canary check that decides the next stage: the keyed check, or a later finished run of any scope or stage that
+     * reached the canary's Node and did not pass there, such as a failed `nodes` or fleet dry run.
+     */
+    private function latestCheck(?Operation $check, ConnServerNode $canary, string $key): ?Operation
+    {
+        return $check === null ? null : ($this->failedObservation($canary, $key, $check->id) ?? $check);
+    }
+
+    /**
+     * The latest finished run after `$after` whose evidence about the canary is a failure: its own outcome there, not the run's status
+     * or another Node's. A run that never reached the canary (`not_reached`, or cancelled before it ran) proves nothing; an update run
+     * that may have reached it without reporting it leaves its state unknown. This pin's own canary applies retry on their own.
+     */
+    private function failedObservation(ConnServerNode $canary, string $key, int $after): ?Operation
+    {
+        $runs = Operation::query()->where('kind', self::Kind)->where('id', '>', $after)->orderByDesc('id')->get();
+        foreach ($runs as $run) {
+            $targeted = in_array($canary->node_id, array_column((array) data_get($run->input, 'intent.nodes', []), 'node_id'), true);
+            $ownApply = data_get($run->input, 'release_pin') === $key && data_get($run->input, 'release_stage') === 'canary';
+            if (! $run->status->terminal() || ! $targeted || $ownApply) {
+                continue;
+            }
+            $outcome = data_get(collect((array) ($run->result['nodes'] ?? []))->firstWhere('node_id', $canary->node_id), 'outcome');
+            $ran = isset($run->state['swamp_run_id']) || $run->attempts > 0;
+            $unknown = $outcome === null && $ran && data_get($run->input, 'intent.dry_run') === false;
+            if ($unknown || ($outcome !== null && ! in_array($outcome, ['checked', 'updated', 'not_reached'], true))) {
+                return $run;
+            }
+        }
+
+        return null;
+    }
+
+    /** A canary apply admitted before a newer check proves nothing, so the next apply is keyed after that check. */
+    private function staleProbe(?Operation $probe, ?Operation $check): bool
+    {
+        return $probe !== null && $check !== null && $probe->id < $check->id;
+    }
+
+    public function releasePin(?string $version = null): ConnServerRelease
     {
         try {
-            return $this->recipes->source()->instances?->agent['conn-server'] ?? null;
+            return $this->releases->find($version)
+                ?? throw new ResourceOperationException('conn_server.pin_unavailable', 'The requested Conn Server host release is not in the release catalog.', 409);
         } catch (InvalidArgumentException $failure) {
-            throw new ResourceOperationException('conn_server.recipe_unavailable', 'The serving Gateway recipe is missing, unreadable, or invalid.', 409, $failure);
+            throw $this->catalogUnavailable($failure);
         }
     }
 
     /** The release pass holds the release lock and database writer. It resumes from durable Operations. */
-    public function releaseGate(?FolderPin $pin): ?Operation
+    public function releaseGate(?ConnServerRelease $pin): ?Operation
     {
         if (! $pin?->releaseCanary) {
             return null;
         }
-        $servers = $this->servers();
-        $canary = $servers->firstOrFail();
+        // Without one designated, enrolled canary, the automatic pass leaves every Conn service alone and reads no Tool policy.
+        $configured = $this->servers();
+        $designated = $configured->where('canary', true);
+        $designee = $designated->first();
+        if ($designated->count() !== 1 || $designee === null || $designee->tool_withdrawn || $designee->managedTool === null) {
+            return null;
+        }
+        $servers = $this->reviewedTargets($configured, $this->policy->active(), $pin);
+        $canary = $servers->firstWhere('canary', true);
+        if ($canary === null) {
+            return null;
+        }
         $key = $this->fingerprint($pin, $canary);
         $onlyCanary = $servers->take(1);
         $check = $this->receipt($key, 'check') ?? $this->releaseOperation($pin, $key, 'check', $onlyCanary, 'gateway-release');
-        if (! $this->passed($check, $pin, $canary, true)) {
-            return $check;
+        $latest = $this->latestCheck($check, $canary, $key);
+        if (! $this->passed($latest, $pin, $canary, true)) {
+            return $latest;
         }
-        $probe = $this->receipt($key, 'canary') ?? $this->releaseOperation($pin, $key, 'canary', $onlyCanary, 'gateway-release');
-        if (! $this->passed($probe, $pin, $canary, false)) {
+        $probe = $this->receipt($key, 'canary');
+        if ($probe === null || $this->staleProbe($probe, $check)) {
+            $probe = $this->releaseOperation($pin, $key, 'canary', $onlyCanary, 'gateway-release', after: $probe === null ? null : $check->id);
+        }
+        if (! $this->proven($probe, $check, $pin, $canary, $key)) {
             return $probe;
         }
         $rest = $servers->skip(1);
@@ -98,67 +172,139 @@ final readonly class ConnServerRollout
     }
 
     /** @param list<int>|null $nodeIds the Nodes of scope `nodes`, in visiting order */
-    public function admit(bool $dryRun, string $scope, ?array $nodeIds = null, ?string $triggeredBy = null, ?string $requestId = null, ?int $canaryOperationId = null, ?int $retryOperationId = null): Operation
+    public function admit(bool $dryRun, string $scope, ?array $nodeIds = null, ?string $triggeredBy = null, ?string $requestId = null, ?string $version = null, bool $withdraw = false, ?int $canaryOperationId = null, ?int $retryOperationId = null): Operation
     {
         return DB::transaction(fn (): Operation => $this->idempotency->replay(self::Kind) ?? $this->idempotency->bind(
-            $this->admitCurrent($dryRun, $scope, $nodeIds, $triggeredBy, $requestId, $canaryOperationId, $retryOperationId),
+            $this->admitCurrent($dryRun, $scope, $nodeIds, $triggeredBy, $requestId, $version, $withdraw, $canaryOperationId, $retryOperationId),
         ));
     }
 
     /** @param list<int>|null $nodeIds */
-    private function admitCurrent(bool $dryRun, string $scope, ?array $nodeIds, ?string $triggeredBy, ?string $requestId, ?int $canaryOperationId, ?int $retryOperationId): Operation
+    private function admitCurrent(bool $dryRun, string $scope, ?array $nodeIds, ?string $triggeredBy, ?string $requestId, ?string $version, bool $withdraw, ?int $canaryOperationId, ?int $retryOperationId): Operation
     {
-        $pin = $this->pin();
         $servers = $this->servers();
-        $canary = $servers->firstOrFail();
+        if ($withdraw) {
+            if ($scope !== 'nodes' || count($nodeIds ?? []) !== 1 || $version !== null || $canaryOperationId !== null || $retryOperationId !== null) {
+                throw new ResourceOperationException('conn_server.withdraw_scope_invalid', 'Withdrawal requires one explicit Node and no release override or promotion receipt.', 422);
+            }
+            $target = $servers->firstWhere('node_id', $nodeIds[0]);
+            if ($target === null || ! $target->tool_withdrawn || $target->platform !== 'linux' || ! $this->manager->supportsNode($target->node)) {
+                throw new ResourceOperationException('conn_server.withdraw_unsupported', 'Service withdrawal requires a configured Linux x64 Node with a withdrawn Tool membership.', 409);
+            }
+
+            return $this->run(null, collect([$target]), $dryRun, false, $triggeredBy, $requestId);
+        }
+        if ($dryRun && $canaryOperationId !== null) {
+            throw new ResourceOperationException('conn_server.promotion_input_invalid', 'The canary receipt is only used to promote a release, not in a dry run.', 422);
+        }
+        $eligible = $servers->where('tool_withdrawn', false);
+        if ($scope !== 'nodes') {
+            $this->requireCanary($eligible);
+        }
         $selected = match ($scope) {
-            'canary' => $servers->take(1),
-            'nodes' => $servers->sortBy(static fn (ConnServerNode $server): int|false => array_search($server->node_id, $nodeIds ?? [], true))
-                ->whereIn('node_id', $nodeIds ?? []),
-            default => $servers,
+            'canary' => $eligible->take(1),
+            'nodes' => collect($nodeIds)->mapWithKeys(fn (int $id): array => [$id => $eligible->firstWhere('node_id', $id)
+                ?? throw new ResourceOperationException('conn_server.membership_withdrawn', 'A selected Node is not enrolled for Conn Server rollout.', 409)]),
+            default => $eligible,
         };
+        $active = $this->policy->active();
+        $anchor = $selected->firstOrFail();
+        $desired = $this->desired($active, $anchor->managedTool, $version);
+        $pin = $this->releasePin($desired);
+        if ($version !== null && $version !== $pin->version) {
+            $this->releaseConflict();
+        }
+        if ($scope !== 'fleet' || ! $pin->releaseCanary) {
+            foreach ($selected as $server) {
+                if ($this->desired($active, $server->managedTool, $version) !== $pin->version) {
+                    $this->releaseConflict();
+                }
+            }
+        }
         if (! $pin->releaseCanary && ($canaryOperationId !== null || $retryOperationId !== null)) {
             throw new ResourceOperationException('conn_server.pin_changed', 'The serving pin has no managed canary receipt.', 409);
         }
-        if (! $pin->releaseCanary || ($dryRun && $scope !== 'fleet')) {
+        if (! $pin->releaseCanary || ($dryRun && $scope === 'nodes')) {
             return $this->run($pin, $selected, $dryRun, false, $triggeredBy, $requestId);
         }
         if ($this->serving->supersedes() || $this->serving->read()['state'] === FleetServingRelease::Unreadable) {
             throw new ResourceOperationException('conn_server.pin_changed', 'The serving Gateway release changed. Read its current canary receipt.', 409);
         }
 
+        if ($scope === 'nodes') {
+            throw new ResourceOperationException('conn_server.canary_required', 'Start the reviewed release on its enrolled canary, then promote it with scope fleet.', 409);
+        }
+        $reviewed = $this->reviewedTargets($eligible, $active, $pin);
+        $canary = $reviewed->firstWhere('canary', true);
+        if ($canary === null) {
+            throw new ResourceOperationException('conn_server.canary_required', 'Enroll the designated canary at the reviewed release before running it or promoting it.', 409);
+        }
+        $rest = $reviewed->skip(1);
+
         $key = $this->fingerprint($pin, $canary);
+        // A retry ID names one finished attempt. Its retry, once created, is the answer to every repeat, whatever the followers or the
+        // canary's settings are now; otherwise the stage below retries only that stage's latest finished attempt, or refuses it as stale.
+        $stages = match (true) {
+            $scope === 'canary' => $dryRun ? ['check'] : ['check', 'canary'],
+            $dryRun => ['check', 'preflight'],
+            default => ['promotion'],
+        };
+        if ($retryOperationId !== null && ($replay = $this->retried($retryOperationId, $stages)) !== null) {
+            return $replay;
+        }
+        $check = $this->receipt($key, 'check');
+        $latest = $this->latestCheck($check, $canary, $key);
+        if ($scope === 'canary' && $dryRun) {
+            return $this->retry($pin, $key, 'check', $selected, $latest, $triggeredBy, $requestId, $retryOperationId);
+        }
         if ($dryRun) {
-            $rest = $servers->skip(1);
             if ($rest->isEmpty()) {
-                return $this->run($pin, $selected, true, false, $triggeredBy, $requestId);
+                // With no follower, the fleet dry run is the canary check, with its receipt and retry identity.
+                return $this->retry($pin, $key, 'check', $reviewed, $latest, $triggeredBy, $requestId, $retryOperationId);
             }
             $preflight = $this->receipt($key, 'preflight');
 
             return $this->retry($pin, $key, 'preflight', $rest, $preflight, $triggeredBy, $requestId, $retryOperationId);
         }
-        $check = $this->receipt($key, 'check');
         $probe = $this->receipt($key, 'canary');
         if ($scope === 'canary') {
-            if ($probe !== null && $this->passed($probe, $pin, $canary, false)) {
+            // A retry ID names one attempt: it retries the stage that attempt belongs to, or is stale. It never returns another receipt.
+            if ($retryOperationId === null && $probe !== null && $this->proven($probe, $check, $pin, $canary, $key)) {
                 return $probe;
             }
-            $dryPassed = $this->passed($check, $pin, $canary, true);
+            if (! $this->passed($latest, $pin, $canary, true)) {
+                return $this->retry($pin, $key, 'check', $selected, $latest, $triggeredBy, $requestId, $retryOperationId);
+            }
+            if ($retryOperationId === null && $this->staleProbe($probe, $check)) {
+                return $this->releaseOperation($pin, $key, 'canary', $selected, $triggeredBy, $requestId, after: $check?->id);
+            }
 
-            return $this->retry($pin, $key, $dryPassed ? 'canary' : 'check', $selected,
-                $dryPassed ? $probe : $check, $triggeredBy, $requestId, $retryOperationId);
+            return $this->retry($pin, $key, 'canary', $selected, $probe, $triggeredBy, $requestId, $retryOperationId);
         }
 
         if ($scope !== 'fleet' || $canaryOperationId === null || $probe?->id !== $canaryOperationId
-            || ! $this->passed($probe, $pin, $canary, false)) {
+            || ! $this->proven($probe, $check, $pin, $canary, $key)) {
             throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
         }
         $pinIdentity = $this->pinIdentity($pin);
         $promotion = $this->receipt($pinIdentity, 'promotion');
-        if ($promotion !== null && ($retryOperationId === null || ! $promotion->status->terminal() || $promotion->status === OperationStatus::Succeeded)) {
-            return $promotion;
+        if ($retryOperationId !== null && ($promotion?->id !== $retryOperationId || ! $promotion->status->terminal()
+            || $promotion->status === OperationStatus::Succeeded)) {
+            // A queued, running or successful promotion has nothing to retry; a new follower needs a promotion without a retry ID.
+            throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest finished, unsuccessful promotion for this pin.', 409);
         }
-        $rest = $servers->skip(1);
+        $pending = $rest;
+        if ($promotion !== null) {
+            if (! $promotion->status->terminal() || ($promotion->status !== OperationStatus::Succeeded && $retryOperationId === null)) {
+                return $promotion;
+            }
+            if ($promotion->status === OperationStatus::Succeeded) {
+                $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
+                if ($pending->isEmpty()) {
+                    return $promotion;
+                }
+            }
+        }
         if ($rest->isEmpty()) {
             throw new ResourceOperationException('conn_server.no_promotion_targets', 'There are no remaining standalone Conn Server Nodes.', 409);
         }
@@ -177,29 +323,21 @@ final readonly class ConnServerRollout
         }
 
         if ($retryOperationId !== null) {
-            $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
-                ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
-            if ($retry !== null) {
-                return $retry;
-            }
-            if ($promotion?->id !== $retryOperationId) {
-                throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
-            }
-            $rest = $this->remainingPromotionNodes($pinIdentity, $rest);
+            $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
         }
 
-        return $this->releaseOperation($pin, $pinIdentity, 'promotion', $rest, $triggeredBy, $requestId,
-            retry: $retryOperationId, proof: $probe->id);
+        return $this->releaseOperation($pin, $pinIdentity, 'promotion', $pending, $triggeredBy, $requestId,
+            retry: $retryOperationId, proof: $probe->id, after: $promotion?->status === OperationStatus::Succeeded ? $promotion->id : null);
     }
 
     /**
      * @param  Collection<int, ConnServerNode>  $servers
      * @return Collection<int, ConnServerNode>
      */
-    private function remainingPromotionNodes(string $pin, Collection $servers): Collection
+    private function remainingPromotionNodes(ConnServerRelease $pin, string $key, Collection $servers): Collection
     {
         $completed = [];
-        foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pin)
+        foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $key)
             ->where('input->release_stage', 'promotion')->get() as $attempt) {
             $results = (array) ($attempt->result['nodes'] ?? []);
             $targets = (array) data_get($attempt->input, 'intent.nodes', []);
@@ -211,7 +349,7 @@ final readonly class ConnServerRollout
                     throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
                 }
                 if (($result['outcome'] ?? null) === 'updated') {
-                    $completed[] = $this->installationIdentity($result['node_id'] ?? null, data_get($targets[$index], 'server'));
+                    $completed[] = $this->installationIdentity($targets[$index]);
                 }
                 if (($result['outcome'] ?? null) === 'failed' && ($result['rolled_back'] ?? false) === false
                     && ($result['changed'] ?? true) === true) {
@@ -220,13 +358,22 @@ final readonly class ConnServerRollout
             }
         }
 
-        return $servers->reject(fn (ConnServerNode $server): bool => in_array($this->installationIdentity($server->node_id, $server), $completed, true));
+        return $servers->reject(fn (ConnServerNode $server): bool => $this->noObservedVersionDrift($server, $pin->version)
+            && in_array($this->installationIdentity($this->nodeIntent($server)), $completed, true));
     }
 
-    /** @return array{mixed, mixed, mixed, mixed} */
-    private function installationIdentity(mixed $nodeId, mixed $server): array
+    private function noObservedVersionDrift(ConnServerNode $server, string $version): bool
     {
-        return [$nodeId, data_get($server, 'platform'), data_get($server, 'service'), data_get($server, 'path')];
+        $observed = $server->managedTool?->installed_version;
+
+        return $observed === null || $observed === $version;
+    }
+
+    /** @return array{mixed, mixed, mixed, mixed, mixed} */
+    private function installationIdentity(mixed $target): array
+    {
+        return [data_get($target, 'node_id'), data_get($target, 'tool_id'), data_get($target, 'server.platform'),
+            data_get($target, 'server.service'), data_get($target, 'server.path')];
     }
 
     /** Stage keys use a separator that the HTTP Idempotency-Key cannot contain. */
@@ -236,7 +383,7 @@ final readonly class ConnServerRollout
     }
 
     /** @param Collection<int, ConnServerNode> $servers */
-    private function preflight(FolderPin $pin, string $key, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null): Operation
+    private function preflight(ConnServerRelease $pin, string $key, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null): Operation
     {
         $blockers = [];
         foreach ($servers as $server) {
@@ -249,6 +396,7 @@ final readonly class ConnServerRollout
         if ($blockers === []) {
             return $this->releaseOperation($pin, $key, 'preflight', $servers, $by, $requestId, $retry);
         }
+        $this->assertNoActiveRollout();
         $identity = $this->stageKey($key, 'preflight', $retry);
         $nodes = $servers->map(static fn (ConnServerNode $server): array => isset($blockers[$server->node_id])
             ? ['node_id' => $server->node_id, 'outcome' => 'held', 'reason' => $blockers[$server->node_id]]
@@ -262,37 +410,79 @@ final readonly class ConnServerRollout
         ));
     }
 
-    private function pin(): FolderPin
+    private function desired(ActiveToolPolicy $active, ?Tool $member, ?string $version = null): ?string
     {
-        $pin = $this->releasePin();
-        if ($pin?->macApp === null) {
-            throw new ResourceOperationException('conn_server.pin_unavailable', 'The Conn Server pin names no macOS arm64 app.', 409);
-        }
+        $legacyOverride = $active->mode === 'database' && $member === null ? $version : null;
 
-        return $pin;
+        try {
+            return $this->definitions->resolve('update', $this->manager, ConnServerToolManager::Package, $member, $legacyOverride, null, null, $active)->version;
+        } catch (InvalidArgumentException $failure) {
+            throw $this->catalogUnavailable($failure);
+        }
+    }
+
+    private function catalogUnavailable(InvalidArgumentException $failure): ResourceOperationException
+    {
+        return new ResourceOperationException('conn_server.release_catalog_unavailable', 'The serving Conn Server host release catalog is missing, unreadable, or invalid.', 409, $failure);
+    }
+
+    private function releaseConflict(): never
+    {
+        throw new ResourceOperationException('conn_server.release_conflict', 'Selected Nodes must desire the requested release. Use an explicit Node scope, or update the Tool memberships.', 409);
+    }
+
+    /**
+     * @param  Collection<int, ConnServerNode>  $servers
+     * @return Collection<int, ConnServerNode>
+     */
+    private function reviewedTargets(Collection $servers, ActiveToolPolicy $active, ConnServerRelease $pin): Collection
+    {
+        $fileVersion = $active->mode === 'file' ? $active->definition(ToolManagerName::ConnServer->value, ConnServerToolManager::Package)?->version : null;
+
+        return $servers->filter(fn (ConnServerNode $server): bool => ! $server->tool_withdrawn && $server->managedTool !== null
+            && ($active->mode === 'file' ? $fileVersion : $server->managedTool->desired_version) === $pin->version
+            && $this->desired($active, $server->managedTool) === $pin->version);
     }
 
     /** @return Collection<int, ConnServerNode> */
     private function servers(): Collection
     {
-        $servers = ConnServerNode::query()->with('node')->orderByDesc('canary')->orderBy('node_id')->get();
+        $ids = ConnServerNode::query()->pluck('node_id');
+        Node::query()->whereIn('id', [...$ids, SwampNode::id()])->orderBy('id')->lockForUpdate()->get(['id']);
+
+        return ConnServerNode::query()->with('node', 'managedTool.aptRepository')->whereIn('node_id', $ids)->orderByDesc('canary')->orderBy('node_id')->get();
+    }
+
+    /** @param Collection<int, ConnServerNode> $servers */
+    private function requireCanary(Collection $servers): void
+    {
         if ($servers->where('canary', true)->count() !== 1) {
             throw new ResourceOperationException('conn_server.canary_unset', 'Exactly one Conn Server Node must be the canary.', 409);
         }
-
-        return $servers;
     }
 
     /** @return array<string, mixed> */
     private function nodeIntent(ConnServerNode $server): array
     {
         return ['node_id' => $server->node_id, 'ssh' => $this->ssh->forNode($server->node),
+            ...($server->managedTool === null ? [] : ['tool_id' => $server->managedTool->id]),
             'server' => ['platform' => $server->platform, 'path' => $server->path, 'service' => $server->service, 'port' => $server->port,
                 'user' => $server->user, 'canary' => $server->canary, 'notify_before_restart' => $server->notify_before_restart]];
     }
 
+    /**
+     * The retry already made for one attempt. Attempt IDs are unique, so it does not depend on the release key.
+     *
+     * @param  list<string>  $stages
+     */
+    private function retried(int $retryId, array $stages): ?Operation
+    {
+        return Operation::query()->where('kind', self::Kind)->whereIn('input->release_stage', $stages)
+            ->where('input->retry_operation_id', $retryId)->first();
+    }
+
     /** @param Collection<int, ConnServerNode> $servers */
-    private function retry(FolderPin $pin, string $key, string $stage, Collection $servers, ?Operation $previous, ?string $by, ?string $requestId, ?int $retryId): Operation
+    private function retry(ConnServerRelease $pin, string $key, string $stage, Collection $servers, ?Operation $previous, ?string $by, ?string $requestId, ?int $retryId): Operation
     {
         if ($retryId === null && $previous !== null) {
             return $previous;
@@ -313,10 +503,10 @@ final readonly class ConnServerRollout
     }
 
     /** @param Collection<int, ConnServerNode> $servers */
-    private function releaseOperation(FolderPin $pin, string $key, string $stage, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null, ?int $proof = null): Operation
+    private function releaseOperation(ConnServerRelease $pin, string $key, string $stage, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null, ?int $proof = null, ?int $after = null): Operation
     {
         // Failed attempts remain as evidence. An explicit retry is keyed by the exact failed attempt it replaces.
-        $identity = $this->stageKey($key, $stage, $retry);
+        $identity = $this->stageKey($key, $stage, $retry).($after === null ? '' : ":after-{$after}");
 
         $receipt = ['release_pin' => $key, 'release_stage' => $stage,
             ...($retry === null ? [] : ['retry_operation_id' => $retry]),
@@ -338,19 +528,32 @@ final readonly class ConnServerRollout
      * @param  Collection<int, ConnServerNode>  $servers
      * @param  array<string, int|string>  $release
      */
-    private function run(FolderPin $pin, Collection $servers, bool $dryRun, bool $probe, ?string $by, ?string $requestId, array $release = []): Operation
+    private function run(?ConnServerRelease $pin, Collection $servers, bool $dryRun, bool $probe, ?string $by, ?string $requestId, array $release = []): Operation
     {
-        $mac = $pin->macApp ?? throw new \LogicException('The validated pin has no Mac app.');
+        $this->assertNoActiveRollout();
+        foreach ($servers as $server) {
+            $this->tools->assertIdle($server->node_id, [ToolManagerName::ConnServer->value]);
+        }
+        $notice = Config::array('orbit.conn.server_rollout_notice');
 
         return $this->start->execute(self::Kind, 'fleet', SwampNode::id(), SwampNode::id(), [...$release, 'intent' => [
             'probe_thread' => $probe,
             'stop_on_hold' => ($release['release_stage'] ?? null) === 'promotion',
-            'version' => $pin->version,
             'dry_run' => $dryRun,
-            'mac' => ['url' => $mac->artifact->location, 'sha256' => $mac->artifact->digest, 'bundle_id' => $mac->bundleId, 'team_id' => $mac->teamId],
-            'linux' => ['url' => $pin->artifact->location, 'sha256' => $pin->artifact->digest],
-            'notice' => Config::array('orbit.conn.server_rollout_notice'),
+            ...($pin === null ? ['withdraw' => true] : [
+                'version' => $pin->version,
+                'mac' => ['url' => $pin->mac->artifact->location, 'sha256' => $pin->mac->artifact->digest, 'bundle_id' => $pin->mac->bundleId, 'team_id' => $pin->mac->teamId],
+                'linux' => ['url' => $pin->linux->location, 'sha256' => $pin->linux->digest],
+            ]),
+            'notice' => ['url' => $notice['url'] ?? null, 'command' => $notice['command'] ?? null],
             'nodes' => $servers->map($this->nodeIntent(...))->values()->all(),
         ]], $by, $requestId, lockKey: self::Lock);
+    }
+
+    private function assertNoActiveRollout(): void
+    {
+        if (ToolConvergeIntent::writers()->where('kind', self::Kind)->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'Another Conn Server rollout holds the rollout lock.', 409);
+        }
     }
 }

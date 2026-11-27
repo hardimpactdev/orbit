@@ -21,6 +21,10 @@ export const Result = z.object({
     phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped", "unchanged"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
     changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative(), cleanup_complete: z.boolean(),
     tools: z.array(z.object({ id: z.number().int().positive(), status: z.enum(["installed", "failed"]), installed_version: z.string().min(1).max(255).regex(/^[^\x00-\x20\x7f]+$/).nullable() }).strict().refine((tool) => tool.status === "failed" || tool.installed_version !== null)).max(10000),
+    // Each apt repository the phase published or removed, as that repository's own add or removal (docs/reference/tools.md#apt-repositories).
+    repositories: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(63), status: z.enum(["ready", "failed", "removed"]),
+        error_code: z.enum(["tool.repository_key_mismatch", "tool.repository_unavailable", "tool.repository_failed", "tool.repository_remove_failed"]).nullable() }).strict()
+        .refine((repository) => (repository.status === "failed") === (repository.error_code !== null))).max(1000),
     browser_trust: BrowserTrust,
     t3_restart_deferred: DeferredRestarts,
     failure: Failure.optional(),
@@ -35,6 +39,33 @@ export const ReportInput = z.object({ folder: z.string().regex(/^\/tmp\/orbit-an
 const Stats = z.object({ changed: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), unreachable: z.number().int().nonnegative() });
 const Report = z.object({ stats: z.record(z.string(), Stats), plays: z.array(z.unknown()).min(1) });
 const Timing = z.object({ exit_code: z.number().int(), elapsed_seconds: z.number().finite().nonnegative() }).strict();
+
+export async function toolConvergeResult(folder: string) {
+    let tools: z.infer<typeof Result.shape.tools> = [];
+    let repositories: z.infer<typeof Result.shape.repositories> = [];
+    try {
+        tools = await toolObservations(folder);
+        repositories = await repositoryObservations(folder);
+        const report = Report.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools.json`)));
+        const target = report.stats.target;
+        const succeeded = target !== undefined && Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0);
+        return { changed: target?.changed ?? 0, tools, repositories, succeeded };
+    } catch {
+        return { changed: 0, tools, repositories, succeeded: false };
+    }
+}
+
+async function repositoryObservations(folder: string) {
+    const repositories = Result.shape.repositories.parse(JSON.parse(await Deno.readTextFile(`${folder}/repositories-result.json`)));
+    if (new Set(repositories.map((repository) => repository.name)).size !== repositories.length) throw new Error("Duplicate repository outcomes");
+    return repositories;
+}
+
+async function toolObservations(folder: string) {
+    const tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
+    if (new Set(tools.map((tool) => tool.id)).size !== tools.length) throw new Error("Duplicate Tool observations");
+    return tools;
+}
 
 const Fields = z.record(z.string(), z.unknown());
 const Play = z.object({ tasks: z.array(z.unknown()) });
@@ -100,6 +131,7 @@ function fatalFailure(report: z.infer<typeof Report>): z.infer<typeof Failure> |
 export async function convergeResult(folder: string) {
     const summaries: z.infer<typeof Result>["phases"] = [];
     let tools: z.infer<typeof Result>["tools"] = [];
+    let repositories: z.infer<typeof Result>["repositories"] = [];
     let browserTrust: z.infer<typeof BrowserTrust> = [];
     let deferredRestarts: z.infer<typeof DeferredRestarts> = [];
     let failed: typeof phases[number] | undefined;
@@ -120,6 +152,10 @@ export async function convergeResult(folder: string) {
             status = "unchanged";
         } else if (!failed) {
             try {
+                if (name === "tools") {
+                    tools = await toolObservations(folder);
+                    repositories = await repositoryObservations(folder);
+                }
                 const timing = Timing.parse(JSON.parse(await Deno.readTextFile(`${folder}/${name}-meta.json`)));
                 elapsed = timing.elapsed_seconds;
                 const report = Report.parse(JSON.parse(await Deno.readTextFile(`${folder}/${name}.json`)));
@@ -135,10 +171,6 @@ export async function convergeResult(folder: string) {
                     browserTrust = receipt.browser_trust;
                     deferredRestarts = receipt.t3_restart_deferred;
                 }
-                if (name === "tools") {
-                    tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
-                    if (new Set(tools.map((tool) => tool.id)).size !== tools.length) status = "failed";
-                }
             } catch {
                 // A missing, truncated or malformed callback is a phase failure, never a claimed no-op.
                 status = "failed";
@@ -148,7 +180,7 @@ export async function convergeResult(folder: string) {
         summaries.push({ name, status, changed, elapsed_seconds: elapsed });
     }
     return Result.parse({ phases: summaries, changed: summaries.reduce((sum, phase) => sum + phase.changed, 0),
-        elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, browser_trust: browserTrust, t3_restart_deferred: deferredRestarts, cleanup_complete: false,
+        elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, repositories, browser_trust: browserTrust, t3_restart_deferred: deferredRestarts, cleanup_complete: false,
         digests: plan?.digests ?? {},
         ...(plan?.moving ? { digests_moving: plan.moving } : {}),
         ...(failure ? { failure } : {}),

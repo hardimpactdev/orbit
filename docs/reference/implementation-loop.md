@@ -80,6 +80,8 @@ Self-hosted runners live in the shared `self-hosted, hardimpact, orbit-shard` po
 
 Selected Swamp shape fixtures run in `merge_group` and task-handoff pushes on the self-hosted shard pool (two workers per shard). Budget limits in `.github/ci/checks.toml` target a 5-minute PR wall time: `shard_seconds = 150`, `shard_deadline_seconds = 210`, `shard_ceiling_seconds = 240`, `unit_ceiling_seconds = 180`, `runner_shards = 21`, `pr_shards = 20`, `self_hosted_shards = 10`, `slowest_runner_factor = 1.15`. Run `bin/ci-units cuts` to inspect shard packing; jobs track elapsed time via `ORBIT_JOB_STARTED_AT`.
 
+For a hosted fixture with a [known capacity gap](/decisions/0262-prove-changed-operations-on-the-pull-request), a resource rename can select just its `mandatory_cases`. The fixture and its shared inputs must differ only in references to the renamed path. If an independently declared `phase_inputs` path changes at the same time, its `mandatory_cases` also run. A change to test behavior, the registered case list, or any other input keeps the normal selection rule.
+
 When a task for container hosts changes persistent fixture state, regenerate saved boundaries with `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` (`--check` to verify without writing).
 
 ### The proof run job

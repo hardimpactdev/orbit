@@ -243,6 +243,37 @@ final readonly class StartSwampRun
      * submits. A proof child keeps its own serialized retry. Once the budget has passed since the first deferral, the start
      * fails as before: `swamp.start_unavailable` (connection), `swamp.vault_sync_unavailable` (copy) or `swamp.start_refused`.
      */
+    /**
+     * Whether a start of this Operation may have been sent to Swamp: it has a bound run or an attempt, or its latest begin was not one a
+     * deferral answered. A queued Operation never begun has no `started_at`. A deferral keeps `started_at` and counts itself from
+     * `start_deferred_since`, its first; every later begin sets a new `started_at`, and its job runs no sooner than the deferrals' delays
+     * allow. So when `started_at` comes sooner after the first deferral than that many delays could have passed, its latest begin was
+     * the one the last deferral answered and no start was sent. Swamp verifying that no run exists is the only other proof.
+     */
+    public static function startMayHaveBeenSent(Operation $operation): bool
+    {
+        $state = $operation->state ?? [];
+        if (isset($state['swamp_run_id']) || $operation->attempts > 0) {
+            return true;
+        }
+        if ($operation->started_at === null) {
+            return false;
+        }
+        $deferrals = $state['start_deferrals'] ?? null;
+        $since = $state['start_deferred_since'] ?? null;
+        if (! is_int($deferrals) || $deferrals < 1 || ! is_int($since)) {
+            return true;
+        }
+        // The least time from the first deferral to a begin after the last one: each deferral's job waits at least its own delay.
+        $least = 0;
+        for ($count = 0; $count < $deferrals; $count++) {
+            $least += min(self::MaxDeferralSeconds, 5 << min($count, 4));
+        }
+
+        // Both instants are whole seconds, so a margin of one keeps the comparison exact.
+        return $operation->started_at->getTimestamp() - $since >= $least - 1;
+    }
+
     private function defer(Operation $operation, int $seconds): bool
     {
         if (isset($operation->state['proof_child_start'])) {

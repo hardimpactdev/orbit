@@ -1,0 +1,54 @@
+---
+# One apt repository's own add, before any package of it (docs/reference/tools.md#apt-repositories): its preferences are held to the owned
+# Tools that reference it, its signing key is verified, its keyring and source are written, and its package index is read. A failure
+# records this repository failed with a public code and leaves the other repositories and Tools to run.
+- name: Publish one apt repository without aborting the others
+  timeout: 150
+  block:
+    - name: Compute the held preferences of the repository
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", repository]
+        stdin: "{{ {'repository': repository_plan.repository, 'repository_packages': repository_plan.repository_packages} | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: repository_pins
+    - name: Publish the repository's preferences, key and source
+      ansible.builtin.include_tasks:
+        file: node-converge-tool-repository.yml
+        apply: { become: true, timeout: 45 }
+      vars: { apt_repository: "{{ repository_plan.repository }}" }
+    - name: Read the repository's package index
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/env
+          - LC_ALL=C
+          - DEBIAN_FRONTEND=noninteractive
+          - /usr/bin/apt-get
+          - -o
+          - "Dir::Etc::sourcelist=/etc/apt/sources.list.d/orbit-{{ repository_plan.repository.name }}.sources"
+          - -o
+          - Dir::Etc::sourceparts=-
+          - -o
+          - APT::Get::List-Cleanup=false
+          - update
+          - --error-on=any
+      become: true
+      changed_when: false
+      timeout: 75
+    - name: Record the repository ready
+      ansible.builtin.set_fact:
+        repository_results: "{{ repository_results + [{'name': repository_plan.repository.name, 'status': 'ready', 'error_code': none}] }}"
+  rescue:
+    - name: Remove a signing-key candidate the failure left
+      when: repository_candidate_dir.path is defined
+      ansible.builtin.file: { path: "{{ repository_candidate_dir.path }}", state: absent }
+      become: true
+    - name: Record the repository failure and continue
+      ansible.builtin.set_fact:
+        repository_results: >-
+          {{ repository_results + [{'name': repository_plan.repository.name, 'status': 'failed',
+             'error_code': 'tool.repository_key_mismatch' if ansible_failed_task.name == 'Require exactly the recorded primary key'
+               else ('tool.repository_unavailable'
+                 if ansible_failed_task.name in ['Read the admitted signing-key candidate', "Read the repository's package index"]
+                 else 'tool.repository_failed')}] }}

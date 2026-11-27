@@ -208,8 +208,7 @@ export async function roleDigests(folder: string, operationId: number, code: str
     return phases;
 }
 
-export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: ConvergeCode) {
-    const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
+async function writeInventory(folder: string, intent: { ssh: Ssh; node_id: number; network?: { hub?: { hub_id: number; ssh: Ssh } }; roles: Array<{ runtime: { proof_seed?: { present: boolean; sender: { node_id: number; ssh: Ssh } } } }> }) {
     const hosts: Record<string, unknown> = {};
     const known = new Set<string>();
     const host = (name: string, ssh: Ssh) => {
@@ -228,6 +227,20 @@ export async function convergeInput(folder: string, operationId: number, builder
         host(`n${seed.sender.node_id}`, seed.sender.ssh);
         senders[`n${seed.sender.node_id}`] = {};
     }
+    await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
+    await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
+}
+
+export async function toolConvergeInput(folder: string, toolHelper: string) {
+    const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
+    await writeInventory(folder, { ...intent, roles: [] });
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent,
+        converge_tool_helper: toolHelper, converge_deno: toolRuntime }), { mode: 0o600 });
+}
+
+export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: ConvergeCode) {
+    const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
+    await writeInventory(folder, intent);
     const secrets: Record<string, string> = {};
     for await (const file of Deno.readDir(folder)) {
         if (!file.name.startsWith("secret-")) continue;
@@ -235,8 +248,6 @@ export async function convergeInput(folder: string, operationId: number, builder
         await Deno.remove(`${folder}/${file.name}`);
     }
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
-    await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts, children: { proof_seed_sender: { hosts: senders } } } }), { mode: 0o600 });
-    await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
     // The recorded digests are the input of the skip only; Ansible reads none of them, and a digest must not read its own record.
     const { recorded_digests: _recorded, ...playIntent } = intent;
     const vars = { converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans };

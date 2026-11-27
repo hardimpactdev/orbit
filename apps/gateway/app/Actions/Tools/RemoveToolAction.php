@@ -15,6 +15,6 @@ final readonly class RemoveToolAction
     {
         $tool->loadMissing('manager');
 
-        return $this->operations->execute('remove', $tool->node_id, $tool->manager->name, $tool->package, $tool->version_constraint, $tool);
+        return $this->operations->execute('remove', $tool->node_id, $tool->manager->name, $tool->package, null, $tool);
     }
 }

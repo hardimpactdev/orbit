@@ -23,7 +23,7 @@ import sys
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
-RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
+RECIPE = ROOT / 'apps/gateway/resources/machine-software/core.yaml'
 AGENT = ROOT / 'apps/agent/target/release/orbit-agent'
 agent_command = runpy.run_path(str(ROOT / 'tools/agent_command.py'))
 # php.install-build keeps every pinned and repacked file here; they are the rollback.

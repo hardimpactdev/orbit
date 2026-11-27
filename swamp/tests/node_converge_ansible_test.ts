@@ -16,10 +16,10 @@ const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${nam
 /** The play of the converge on the target Node. Other plays run on the hub and on the default's Node. */
 const targetPlay = async () => (parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>)
     .find((play) => play.hosts === "target") as { tasks: Array<Record<string, unknown>> } & Record<string, unknown>;
-const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
+const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/core.yaml", import.meta.url)));
 
 Deno.test("generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible", async () => {
-    const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+    const { convergeInput, toolConvergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
     const folder = await Deno.makeTempDir();
     try {
         const fixture = {
@@ -32,19 +32,22 @@ Deno.test("generated converge vars preserve shell arguments, scalar strings and 
         const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, roles: [], fixture }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, 1, "/unused", "/unused", shipped.code);
         await Deno.writeTextFile(`${folder}/roundtrip.json`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
             tasks: [{ name: "Read generated literal values", "ansible.builtin.copy": {
                 dest: `${folder}/result.json`, content: "{{ converge_intent.fixture | to_json }}", mode: "0600",
             } }],
         }]));
-        const result = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, `${folder}/roundtrip.json`],
-            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
-        }).output();
-        assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
-        assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result.json`)), fixture);
+        for (const prepare of [() => convergeInput(folder, 1, "/unused", "/unused", shipped.code), () => toolConvergeInput(folder, "/unused")]) {
+            await prepare();
+            const result = await new Deno.Command("ansible-playbook", {
+                args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, `${folder}/roundtrip.json`],
+                env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
+            }).output();
+            assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
+            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result.json`)), fixture);
+            await Deno.remove(`${folder}/result.json`);
+        }
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -204,16 +207,16 @@ fi
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys", async () => {
+Deno.test("repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys, before any write", async () => {
     const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
-    const repair = tasks.find((task) => task.name === "Repair a missing or different repository signing key")!;
+    const repair = tasks.find((task) => task.name === "Verify a missing or different repository signing key")!;
     const block = repair.block as Array<Record<string, unknown>>;
     const trust = block.find((task) => task.name === "Require exactly the recorded primary key")!;
     const condition = (trust["ansible.builtin.assert"] as { that: string }).that;
     const fingerprint = "A".repeat(40);
     const other = "B".repeat(40);
     const key = (kind: string, fpr: string) => `${kind}:-:2048:1:1234:1234::::::scESC:\nfpr:::::::::${fpr}:\nuid:-::::1234::PUBLIC::Fixture public key::::::::::0:\n`;
-    await localPlay({ ...(repair.vars as object), tool: { repository: { signing_key: { fingerprint } } } }, [
+    await localPlay({ ...(repair.vars as object), apt_repository: { signing_key: { fingerprint } } }, [
         { name: "Accept the sole admitted primary with unrelated subkey", "ansible.builtin.assert": { that: condition, quiet: true }, vars: { repository_candidate: { stdout: key("pub", fingerprint) + key("sub", other) } } },
         { name: "A matching trusted key needs no candidate download or publication", vars: { repository_key: { rc: 0, stdout: key("pub", fingerprint) } }, "ansible.builtin.assert": { that: `not (${repair.when})`, quiet: true } },
         ...[key("pub", other) + key("sub", fingerprint), key("pub", fingerprint) + key("pub", other), key("pub", fingerprint) + key("pub", fingerprint), ""].map((candidate) => ({
@@ -221,9 +224,56 @@ Deno.test("repository trust requires exactly one primary fingerprint, not a matc
             "ansible.builtin.assert": { that: `not (${condition})`, quiet: true },
         })),
     ]);
-    const trustIndex = block.indexOf(trust);
-    const publishIndex = block.findIndex((task) => task.name === "Publish only the verified repository key");
-    assertEquals(publishIndex > trustIndex, true);
+    // Verification writes nothing; the preference, then the key, follow it, so a key that fails leaves the Node's files as they were.
+    const writes = (task: Record<string, unknown>) => ["ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.command"].some((module) => module in task)
+        && !String((task["ansible.builtin.command"] as { argv?: string[] } | undefined)?.argv ?? "").includes("--show-keys");
+    assertEquals(block.filter(writes), []);
+    const at = (name: string) => tasks.findIndex((task) => task.name === name);
+    const verify = at("Verify a missing or different repository signing key");
+    assertEquals(verify >= 0 && tasks.slice(0, verify).filter((task) => writes(task)).length, 0);
+    assertEquals(verify < at("Hold the repository to its owned Tools before publishing it") && at("Hold the repository to its owned Tools before publishing it") < at("Publish only the verified repository key"), true);
+});
+
+Deno.test("a binary keyring and an armored key both verify from a private file, and a wrong key leaves nothing to publish", async () => {
+    // The documented Rex key is a binary keyring: module output carries text only, so the candidate is read into a private file.
+    const folder = await Deno.makeTempDir();
+    const gnupg = await Deno.makeTempDir();
+    const server = new Deno.Command("python3", { args: ["-u", "-m", "http.server", "0", "--bind", "127.0.0.1", "--directory", folder], stdout: "piped", stderr: "null" }).spawn();
+    try {
+        const gpg = (...args: string[]) => new Deno.Command("gpg", { args: ["--homedir", gnupg, "--batch", ...args], stdout: "piped", stderr: "piped" }).output();
+        await gpg("--pinentry-mode", "loopback", "--passphrase", "", "--quick-gen-key", "Proof Key <proof@example.test>", "ed25519", "sign", "never");
+        const colons = new TextDecoder().decode((await gpg("--with-colons", "--list-keys")).stdout);
+        const fingerprint = colons.match(/^fpr:::::::::([A-F0-9]+):/m)![1];
+        await Deno.writeFile(`${folder}/binary.gpg`, (await gpg("--export")).stdout);
+        await Deno.writeFile(`${folder}/armored.asc`, (await gpg("--armor", "--export")).stdout);
+        const line = new TextDecoder().decode((await server.stdout.getReader().read()).value);
+        const port = line.match(/port (\d+)/)![1];
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
+        const verify = tasks.find((task) => task.name === "Verify a missing or different repository signing key")!;
+        const run = (key: string, expected: string) => [
+            ...tasks.filter((task) => task.name === "Forget an earlier repository's verified key"),
+            { name: "No recorded keyring", "ansible.builtin.set_fact": { repository_key: { rc: 2, stdout: "" } } },
+            { ...verify, vars: { ...(verify.vars as object), apt_repository: { name: "proof", signing_key: { url: `http://127.0.0.1:${port}/${key}`, fingerprint: expected } } } },
+            { name: "Require the verified candidate as its file", "ansible.builtin.command": { argv: ["gpg", "--batch", "--show-keys", "--with-colons", "{{ repository_verified_key }}"] }, register: "shown", changed_when: false },
+            { name: "Require the recorded primary key in it", "ansible.builtin.assert": { that: `'${expected}' in shown.stdout`, quiet: true } },
+            ...tasks.filter((task) => task.name === "Remove the signing-key candidate"),
+        ];
+        for (const key of ["binary.gpg", "armored.asc"]) {
+            await localPlay({}, run(key, fingerprint), false);
+        }
+        // A key that does not hold the recorded primary fails before any trusted write, and keeps no key to publish.
+        await localPlay({}, [
+            { name: "Record no failure yet", "ansible.builtin.set_fact": { failed_task: "" } },
+            { name: "Verify the wrong key", block: run("binary.gpg", "B".repeat(40)).slice(0, 3),
+                rescue: [{ name: "Record the failed task", "ansible.builtin.set_fact": { failed_task: "{{ ansible_failed_task.name }}" } }] },
+            { name: "Require the fingerprint refusal and no key to publish", "ansible.builtin.assert": { that: ["failed_task == 'Require exactly the recorded primary key'", "repository_verified_key is none"], quiet: true } },
+        ], false);
+    } finally {
+        server.kill();
+        await server.status;
+        await Deno.remove(folder, { recursive: true });
+        await Deno.remove(gnupg, { recursive: true });
+    }
 });
 
 Deno.test("role phases accept generated extra vars without shadowing each role's intent", async () => {
@@ -448,17 +498,17 @@ async function compiledSwamp(folder: string) {
     await Deno.chmod(path, 0o755);
     return path;
 }
-async function toolsPhase(folder: string, runtime: string) {
+async function toolsPhase(folder: string, runtime: string, tools: unknown[] | null = null, helper = toolHelper) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
-        const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
-        if (include) include.file = taskPath("node-converge-tool");
+        const imported = task["ansible.builtin.import_tasks"];
+        if (typeof imported === "string") task["ansible.builtin.import_tasks"] = fileURLToPath(new URL(`../ansible/${imported}`, import.meta.url));
     }
     // A protected package is refused by the helper's own policy, before any machine read: one Tool failure with a working helper.
-    const tool = { id: 3, manager: "apt", package: "tree", version_constraint: "^2.2", protected: ["tree"], repository: null };
+    const tool = { id: 3, manager: "apt", package: "tree", version_constraint: null, protected: ["tree"], repository: null };
     await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false, tasks,
-        vars: { intent: { node_id: 7, user: "orbit", tools: [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
+        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: helper, orbit_run: folder },
     }]));
     const result = await new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
@@ -510,11 +560,120 @@ for (const runtime of ["the compiled Swamp binary", "a missing Deno launcher"]) 
 }
 
 Deno.test("with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds", async () => {
+    // A present package is taken over only for a Tool Orbit owns; `coreutils` stands in for one installed without Orbit.
     const folder = await Deno.makeTempDir();
     try {
-        const phase = await toolsPhase(folder, Deno.execPath());
+        const aptVersion = await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dpkg"] }).output();
+        assertEquals(aptVersion.code, 0);
+        const observed = new TextDecoder().decode(aptVersion.stdout);
+        const dashVersion = new TextDecoder().decode((await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dash"] }).output()).stdout);
+        const protectedApt = { id: 3, manager: "apt", package: "tree", protected: ["tree"], repository: null };
+        const unavailable = { id: 4, manager: "brew-cask", package: "font-orbit-test", protected: [], repository: null, manager_unavailable: true };
+        const matchingApt = { id: 5, manager: "apt", package: "dpkg", protected: [], repository: null, desired_version: observed, owned: true };
+        const matchingDash = { ...matchingApt, id: 6, package: "dash", desired_version: dashVersion };
+        const unowned = { id: 7, manager: "apt", package: "coreutils", protected: [], repository: null, owned: false, tool_status: "installing" };
+        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt, matchingDash, unowned]);
         assertEquals(phase.code, 0, phase.output);
-        assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null }]);
+        assertMatch(phase.output, /tool\.package_protected/);
+        assertMatch(phase.output, /tool\.manager_unsupported/);
+        assertMatch(phase.output, /tool\.package_already_installed/);
+        assertMatch(phase.output, /Refresh applicable apt candidate metadata[\s\S]*?skipping: \[localhost\]/);
+        assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null },
+            { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed },
+            { id: 6, status: "installed", installed_version: dashVersion }, { id: 7, status: "failed", installed_version: null }]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the Tools phase names every file of each removed repository, and only valid repository names", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tools"))) as Array<Record<string, unknown>>;
+        const removal = tasks.find((task) => task.name === "Remove each named apt repository's files")!;
+        assertEquals(removal.become, true);
+        await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{ hosts: "localhost", connection: "local", gather_facts: false,
+            vars: { intent: { removed_repositories: ["one", "../escape", "two-x"] } },
+            tasks: [{ name: "Name the files", "ansible.builtin.debug": { msg: (removal["ansible.builtin.file"] as { path: string }).path }, loop: removal.loop }] }]));
+        const result = await new Deno.Command("ansible-playbook", { args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" } }).output();
+        const output = new TextDecoder().decode(result.stdout);
+        assertEquals(result.code, 0, output);
+        assertEquals([...output.matchAll(/"msg": "([^"]+)"/g)].map((match) => match[1]), [
+            "/etc/apt/sources.list.d/orbit-one.sources", "/etc/apt/keyrings/orbit-one.gpg", "/etc/apt/preferences.d/orbit-one.pref",
+            "/etc/apt/sources.list.d/orbit-two-x.sources", "/etc/apt/keyrings/orbit-two-x.gpg", "/etc/apt/preferences.d/orbit-two-x.pref",
+        ]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the apt repair refreshes even default sources as root without elevating control helpers", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const helper = `${folder}/helper.ts`;
+        const refresh = `${folder}/refresh-euid`;
+        const installed = `${folder}/installed`;
+        await Deno.writeTextFile(installed, "1.0");
+        await Deno.writeTextFile(refresh, "");
+        await Deno.writeTextFile(helper, String.raw`
+const mode = Deno.args[0];
+const input = mode === "check" ? {} : JSON.parse(await new Response(Deno.stdin.readable).text());
+const observed = ${JSON.stringify(installed)};
+const refreshed = ${JSON.stringify(refresh)};
+switch (mode) {
+  case "check": console.log('{"ready":true}'); break;
+  case "plan": console.log(JSON.stringify({version:["/bin/true"], inventory:["cat", observed],
+    refresh:${JSON.stringify(["/bin/sh", "-c", 'id -u > "$1"', "fixture", refresh])}, candidate:["/bin/true"]})); break;
+  case "inspect": console.log(JSON.stringify({needs_write: input.query.stdout !== "2.0"})); break;
+  case "candidate":
+    if (Deno.readTextFileSync(refreshed).trim() !== "0") throw new Error("no privileged refresh before selection");
+    console.log(JSON.stringify({write:${JSON.stringify(["/bin/sh", "-c", 'printf 2.0 > "$1"', "fixture", installed])}})); break;
+  case "verify": console.log(JSON.stringify({installed_version: input.query.stdout})); break;
+}`);
+        const tool = { id: 3, manager: "apt", package: "tree", desired_version: "2.0", protected: [], repository: null };
+        const phase = await toolsPhase(folder, Deno.execPath(), [tool], helper);
+        assertEquals(phase.code, 0, phase.output);
+        assertEquals(phase.recorded, [{ id: 3, status: "installed", installed_version: "2.0" }], phase.output);
+        assertEquals((await Deno.readTextFile(refresh)).trim(), "0");
+        // The preference contract, read from what each task does rather than how it is named or how many tasks there are: a repository's
+        // add computes its held preferences on the control host and writes them before anything of the repository is published; a Tool
+        // joins its repository's preference only after the checkpoint records it installed. A failure writes no preference.
+        type Task = Record<string, unknown>;
+        // The tasks that run, in run order: a block stands for its own tasks, never for itself.
+        const leaves = (items: Task[]): Task[] => items.flatMap((item) => item.block === undefined ? [item]
+            : [...leaves(item.block as Task[]), ...leaves((item.rescue as Task[] | undefined) ?? [])]);
+        const copied = (item: Task) => (item["ansible.builtin.copy"] ?? {}) as { dest?: string; content?: string };
+        const writes = (item: Task, field: string) => new RegExp(`\\.${field}\\b`).test(String(copied(item).content ?? ""));
+        const argv = (item: Task) => ((item["ansible.builtin.command"] ?? {}) as { argv?: unknown }).argv;
+        const policy = (item: Task, mode?: string) => Array.isArray(argv(item)) && (argv(item) as string[]).includes("{{ converge_tool_helper }}")
+            && (mode === undefined || (argv(item) as string[]).at(-1) === mode);
+        const task = parse(await Deno.readTextFile(taskPath("node-converge-tool"))) as Task[];
+        const add = leaves(parse(await Deno.readTextFile(taskPath("node-converge-repository"))) as Task[]);
+        const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Task[];
+        const steps = leaves(task);
+        const pins = steps.findIndex((item) => policy(item, "pins"));
+        const computed = add.findIndex((item) => policy(item, "repository"));
+        const publish = add.findIndex((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml");
+        const checkpoint = steps.findIndex((item) => String(copied(item).dest ?? "").endsWith("/tools-result.json"));
+        const confirmed = steps.filter((item) => writes(item, "repository_preferences"));
+        assertEquals(computed >= 0 && publish > computed, true, "the held preferences are computed before the repository is published");
+        assertEquals(steps.some((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml"), false,
+            "a Tool never publishes its repository");
+        assertEquals(confirmed.length, 1, "exactly one task writes the confirmed preference");
+        assertEquals(checkpoint >= 0 && steps.indexOf(confirmed[0]) > checkpoint, true, "the confirmed preference is written only after the checkpoint");
+        assertEquals(String(confirmed[0].when).includes("'installed'"), true, "the confirmed preference waits for a verified installation");
+        const rescue = leaves(task.flatMap((item) => (item.rescue as Task[] | undefined) ?? []));
+        assertEquals(rescue.some((item) => writes(item, "repository_preferences") || writes(item, "repository_preferences_held")), false, "a failure writes no preference");
+        // Publishing holds the repository first: the held preference is written before the key or the source definition, and nothing else.
+        const published = leaves(repository);
+        const held = published.findIndex((item) => writes(item, "repository_preferences_held"));
+        const firstWrite = published.findIndex((item) => /sources\.list\.d|keyrings/.test(String(copied(item).dest ?? "")) || (argv(item) as string[] | undefined)?.includes("--dearmor") === true);
+        assertEquals(held >= 0 && firstWrite > held, true, "the held preference is written before anything of the repository is published");
+        assertEquals(published.some((item) => writes(item, "repository_preferences")), false, "publishing writes only the held preference");
+        // The privilege boundary: every policy helper step, the preferences included, runs on the control host unprivileged; the repository
+        // runs privileged on the Node.
+        const helpers = [...steps, ...add].filter((item) => policy(item));
+        assertEquals(helpers.length > 0 && helpers.includes(steps[pins]) && helpers.includes(add[computed]), true);
+        assertEquals(helpers.every((item) => item.delegate_to === "localhost" && item.become === false), true, "the policy helper runs on the control host, unprivileged");
+        assertEquals([...steps, ...add].filter((item) => item.delegate_to === "localhost").every((item) => item.become === false), true);
+        assertEquals(((add[publish]["ansible.builtin.include_tasks"] as { apply?: { become?: boolean } }).apply?.become), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

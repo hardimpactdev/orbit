@@ -92,7 +92,10 @@ additionalFiles:
   - ansible/tasks/node-converge-role.yml
   - ansible/tasks/node-converge-role-check.yml
   - ansible/tasks/node-converge-tool.yml
+  - ansible/tasks/node-converge-tools.yml
   - ansible/tasks/node-converge-tool-repository.yml
+  - ansible/tasks/node-converge-repository.yml
+  - ansible/operation-tool-converge.yml
   - ansible/tasks/node-converge-network.yml
   - ansible/tasks/node-converge-hub.yml
   - ansible/tasks/node-converge-hub-filter-absent.yml
@@ -111,6 +114,8 @@ additionalFiles:
   - extensions/behaviors/operations/tools/native.ts
   - extensions/behaviors/operations/tools/contract.ts
   - extensions/behaviors/operations/tools/constraints.ts
+  - extensions/behaviors/operations/tools/homebrew.ts
+  - extensions/behaviors/operations/tools/write_policy.ts
   - ansible/operation-instance-create.yml
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
@@ -243,6 +248,7 @@ additionalFiles:
   - ansible/tasks/conn-server-mac-health.yml
   - ansible/tasks/conn-server-linux.yml
   - ansible/tasks/conn-server-linux-start.yml
+  - ansible/tasks/conn-server-linux-withdraw.yml
   - ansible/tasks/conn-server-require-transport.yml
   - ansible/tasks/conn-server-notice.yml
   - ansible/operation-process-upgrade.yml

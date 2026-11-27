@@ -16,9 +16,9 @@
     "active/active": {
       "runtime_sha256": "fb984567bbfd9a0e3ec09a553f41bf0a4d19fe21fd9dfbb4c6b44823c6638f0f",
       "role_sha256": "a197b08ba877192e5bed840cf2d294bf0e385db7e862e415adb701be37f86b9d",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "9b25c6d1e2269bc79256f62dec4dd7116899941fd9d6e04e845affbbad3e1ed2",
-      "ansible_vars_sha256": "b79064aba3e03b867c7849b025d8cc3b3d6739c1993374a43dd9ca24f0cd6bc9",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba9dc9e7abc1153cc3e869c930bb800a798d2b05ff0b29a5fe8bb62f6d7bd71",
+      "ansible_vars_sha256": "bd5ca5036cd5298cbcd06a3387bee33087a3c1c1e5ecac77b30f86a5f46d3aa6",
       "role_ansible_vars_sha256": "be96c0a04249600b48b2cd15d426fbc54540138112efafebaf887adb1c1177d1",
       "gateway_dns": {
         "unit": "# Managed by Orbit.\n[Unit]\nDescription=Orbit Gateway DNS routing\nAfter=wg-quick@orbit.service\nConditionPathExists=/sys/class/net/orbit\nConditionPathExists=!/etc/wireguard/orbit.dns-link\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/resolvectl domain orbit ~orbit\nExecStart=/usr/bin/resolvectl default-route orbit false\nExecStart=/usr/bin/resolvectl dns orbit 10.44.0.1\n\n[Install]\nWantedBy=wg-quick@orbit.service\n"
@@ -27,54 +27,54 @@
     "failed/active": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     },
     "removing/active": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     },
     "provisioning/active": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     },
     "active/failed": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     },
     "active/removing": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     },
     "active/provisioning": {
       "runtime_sha256": "3f485a5010453d25cdb1ff853e0511d5428b5a6bc4767dd39692d416968c2593",
       "role_sha256": "5f457ac0906485d311d9af67106b7a41e013bf0ff448df24a92f4a366a046742",
-      "recipe_sha256": "588a7460d1fcef079ef765ec1c64ff565276059bbf234f916bc50dd708bd3f61",
-      "converge_sha256": "048f487e43d8d62fbcb971a43a91f524d1a5a14d50b69044bf55338a8f7db756",
-      "ansible_vars_sha256": "e54c1cc63ac21780ec501ba118fdd4cb1032c24776ad884b32313371ef48cb51",
+      "recipe_sha256": "b206fb9815756f354ebf914b443353db386c89656b9aa0e8421fa2f1668ce79a",
+      "converge_sha256": "1ba4b5cb800da8a4254934ae6fe68a93999953bb1355117c70adcc055caa66cc",
+      "ansible_vars_sha256": "370af8e09e2474434bb2bdc3b7a998b9c27eb5e0cc80c7cd62f958ee9219ea0c",
       "role_ansible_vars_sha256": "b9eff9eab262245cb730020ee793b40bb311ce4ce447f16069f7ea2720965d66",
       "gateway_dns": null
     }

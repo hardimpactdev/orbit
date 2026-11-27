@@ -42,7 +42,7 @@ final class OperationBudgetTable
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,
-        // The 13220 s rollout phase (at most four Nodes of up to 3280 s each, every one's download, checks, swap and rollback with
+        // The 13620 s rollout phase (at most four Nodes of up to 3380 s each, each download, checks, canary probe, swap and rollback with
         // their task timeouts, swamp/ansible/conn-server-rollout.yml), a 30 s queue wait, input, result and cleanup, rounded up to
         // five minutes. No live sample yet.
         'fleet.conn_server_rollout' => 14200,
@@ -100,7 +100,8 @@ final class OperationBudgetTable
         // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.verify' => 3000,
-        'node.converge' => 3900,
+        // Five 900 s phases, roles up to 1,800 s, and 400 s for setup and results, plus the captured Tools phase.
+        'node.converge' => 'run_budget_seconds',
         // The migrate path declares 4,830 s, including the 150 s pre-cutover Node preparation phase.
         // Round up to 5,100, plus 600 s for admission and settlement. This lower bound includes restore/cleanup,
         // but not undeclared work or dynamic repetitions.
@@ -137,6 +138,11 @@ final class OperationBudgetTable
         // phases plus margin. Replace with the 14-day p95 once repository installs have native history.
         'tool.install' => 1500,
         'tool.update' => 1500,
+        // 2,100 s per admitted Tool, 500 s phase overhead, then 200 s for dispatch and result.
+        'tool.converge' => 'run_budget_seconds',
+        // Provisional. One repository: the 500 s Tools phase (key fetch 30 s, index read 60 s), then 200 s for dispatch and result.
+        'tool.apt_repository_add' => 700,
+        'tool.apt_repository_remove' => 700,
     ];
 
     /**
@@ -145,7 +151,7 @@ final class OperationBudgetTable
      *
      * @var array<string,int>
      */
-    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800, 'instance.rollback' => 900];
+    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800, 'instance.rollback' => 900, 'node.converge' => 13500, 'tool.converge' => 7000];
 
     /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a fixed budget below. */
     public static function longestFixedSeconds(): int

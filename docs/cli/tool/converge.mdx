@@ -1,0 +1,17 @@
+---
+title: "orbit tool:converge"
+sidebarTitle: "tool:converge"
+description: "Apply desired coordinates for the optional Tools registered on one Node."
+---
+
+```bash
+orbit tool:converge --node=ID [--tool-id=TOOL ...] [--idempotency-key=KEY] [--json]
+```
+
+Use this command on a managed Linux or macOS Node to reconcile Tools without changing roles, core software, or networks. A catalog entry without membership on that Node does not install. The Operation reports `changed` and the observed version of each reconciled Tool.
+
+Omit `--tool-id` to reconcile all eligible Tools on the Node. Repeat it to select only specific Tool IDs. Unrelated catalog entries are not required for a selected run. The run first publishes each [apt repository](/reference/tools#apt-repositories) the selected Tools reference, as that repository's own add. The HTTP and MCP inputs use `tool_ids`.
+
+## How it works
+
+<div className="flow-at" data-chart="tool/converge"></div>

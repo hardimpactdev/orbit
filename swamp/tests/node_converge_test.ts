@@ -1,8 +1,9 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
+import { convergeResult, phases, toolConvergeResult } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
 import { codeDigest, convergeInput, phaseCode, phaseDigests, phaseInputs, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
+import { ToolRefusal } from "../extensions/behaviors/operations/tools/contract.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 import { entries, resolvePhases, shared as sharedFiles } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
@@ -22,6 +23,7 @@ async function reports(folder: string, failure?: string) {
         await Deno.writeTextFile(`${folder}/${name}-meta.json`, JSON.stringify({ exit_code: name === failure ? 2 : 0, elapsed_seconds: 1 }));
     }
     await Deno.writeTextFile(`${folder}/tools-result.json`, "[]");
+    await Deno.writeTextFile(`${folder}/repositories-result.json`, "[]");
     await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: [], t3_restart_deferred: [] }));
 }
 
@@ -56,6 +58,13 @@ Deno.test("converge reports all phases, live no-op counts and measured elapsed t
         assertEquals(result.changed, 0);
         assertEquals(result.elapsed_seconds, 7);
         assertEquals(result.failed_phase, undefined);
+        const completed = [{ id: 5, status: "installed" as const, installed_version: "1.10" }];
+        await Deno.writeTextFile(`${folder}/tools-result.json`, JSON.stringify(completed));
+        await Deno.writeTextFile(`${folder}/tools.json`, "");
+        await Deno.writeTextFile(`${folder}/tools-meta.json`, JSON.stringify({ exit_code: 124, elapsed_seconds: 8900 }));
+        const timedOut = await convergeResult(folder);
+        assertEquals([timedOut.failed_phase, timedOut.tools], ["tools", completed]);
+        assertEquals(await toolConvergeResult(folder), { changed: 0, tools: completed, repositories: [], succeeded: false });
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -97,12 +106,30 @@ Deno.test("an isolated Tool failure retains both receipts without failing the ph
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("each apt repository the phase published or removed reaches both results, a failed one with its public code only", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await reports(folder);
+        const repositories = [{ name: "vendor", status: "ready" as const, error_code: null }, { name: "other", status: "failed" as const, error_code: "tool.repository_key_mismatch" as const },
+            { name: "gone", status: "removed" as const, error_code: null }];
+        await Deno.writeTextFile(`${folder}/repositories-result.json`, JSON.stringify(repositories));
+        assertEquals((await convergeResult(folder)).repositories, repositories);
+        await Deno.writeTextFile(`${folder}/tools.json`, JSON.stringify({ stats: { target: { changed: 1, failures: 0, unreachable: 0 } }, plays: [{}] }));
+        assertEquals(await toolConvergeResult(folder), { changed: 1, tools: [], repositories, succeeded: true });
+        // A failure without its code, or any other text, is no result: the phase fails instead.
+        await Deno.writeTextFile(`${folder}/repositories-result.json`, JSON.stringify([{ name: "other", status: "failed", error_code: null }]));
+        const refused = await convergeResult(folder);
+        assertEquals([refused.failed_phase, refused.repositories], ["tools", []]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("a tools phase that stops before it judges a Tool fails the converge with no Tool receipt", async () => {
     const folder = await Deno.makeTempDir();
     try {
         // The phase failed at its helper check: Ansible reports the failure and the playbook never wrote tools-result.json.
         await reports(folder, "tools");
         await Deno.remove(`${folder}/tools-result.json`);
+        await Deno.remove(`${folder}/repositories-result.json`);
         const result = await convergeResult(folder);
         assertEquals(result.tools, []);
         assertEquals([result.failed_phase, result.error_code], ["tools", "operation.native_failed"]);
@@ -250,7 +277,7 @@ Deno.test("failure before input preparation still publishes a failed terminal an
     assertEquals(result.phases.map((phase: { status: string }) => phase.status), ["failed", ...Array(6).fill("skipped")]);
 });
 
-const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [] } };
+const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [], owned: true } };
 const aptFacts = { version: { rc: 0, stdout: "apt 3.1.16 (amd64)" }, query: { rc: 0, stdout: "tree\tinstall ok installed\t2.2.1-1\n" } };
 Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retries and exact pins without removals", () => {
     // Retain the live package policy formerly covered beside the retired VM role.
@@ -289,6 +316,29 @@ Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retrie
 
 Deno.test("matching Tool inventory is a read-only no-op", () => {
     assertEquals(toolState("inspect", { ...apt, ...aptFacts }), { installed_version: "2.2.1-1", needs_write: false });
+});
+Deno.test("a present package is never taken over for a Tool Orbit does not own, whatever its last status", () => {
+    for (const tool_status of ["installing", "failed", null]) {
+        const unowned = { ...apt, tool: { ...apt.tool, owned: false, tool_status, installed_version: tool_status === "failed" ? "2.2.1-1" : null } };
+        assertThrows(() => toolState("inspect", { ...unowned, ...aptFacts }), ToolRefusal, "tool.package_already_installed");
+        const absent = { ...aptFacts, query: { rc: 1, stdout: "", stderr: "dpkg-query: no packages found matching tree" } };
+        assertEquals(toolState("inspect", { ...unowned, ...absent }), { installed_version: null, needs_write: true });
+    }
+});
+Deno.test("a repository is published held to its owned Tools, and a Tool joins its preferences only once verified", () => {
+    const repository = { name: "proof", uris: ["https://packages.example.test/apt"], suites: ["stable"], components: ["main"],
+        signing_key: { url: "https://packages.example.test/key.asc", fingerprint: "A".repeat(40) } };
+    const pins = (packages: string) => (packages === "" ? "" : `Package: ${packages}\nPin: origin "packages.example.test"\nPin-Priority: 990\n\n`) +
+        'Package: *\nPin: origin "packages.example.test"\nPin-Priority: 1\n';
+    // Before the source: only the owned Tools that reference it, in a stable order.
+    assertEquals(toolState("repository", { repository, repository_packages: ["tree", "nano", "tree"] }), { repository_preferences_held: pins("nano tree") });
+    assertEquals(toolState("repository", { repository, repository_packages: [] }), { repository_preferences_held: pins("") });
+    assertThrows(() => toolState("repository", { repository: { ...repository, uris: ["http://packages.example.test/apt"] }, repository_packages: [] }));
+    // Once the Tool is verified installed: its plan's owned members, the Tools of the repository this run installed, and itself.
+    const unowned = toolState("pins", { ...apt, tool: { ...apt.tool, owned: false, repository, repository_packages: ["nano", "tree"] }, installed: ["ed"] });
+    assertEquals(unowned, { repository_preferences: pins("ed nano tree") });
+    const owned = toolState("pins", { ...apt, tool: { ...apt.tool, repository, repository_packages: ["tree"] }, installed: [] });
+    assertEquals(owned, { repository_preferences: pins("tree") });
 });
 Deno.test("an out-of-constraint candidate is rejected before returning write argv", () => {
     assertThrows(() => toolState("candidate", { ...apt, ...aptFacts, candidate: { rc: 0, stdout: "tree:\n  Candidate: 3.0.0-1\n" } }));
@@ -625,6 +675,15 @@ Deno.test("a repeat with another Operation ID and freshly written secrets skips 
 function intentFields(text: string): string[] {
     return [...text.matchAll(/(?<![.\w])(?:converge_)?intent\b(?:\.([a-z_]+)|\[['"]([a-z_]+)['"]\]|(?=\s*(?:\||\}\}|\)|,)))/g)].map((match) => match[1] ?? match[2] ?? "*");
 }
+
+Deno.test("a referenced apt repository that is not ready moves the tools digest, so a skipped phase never hides its add", async () => {
+    const intent = (ready: boolean) => ({ tools: [{ id: 3, manager: "apt", package: "tree", repository: { name: "proof" } }],
+        repositories: [{ id: 1, repository: { name: "proof" }, repository_packages: ["tree"], ready }], recipe: "{}" });
+    const published = await prepared({}, { intent: intent(true) });
+    assertEquals((await prepared(published.phases.digests, { intent: intent(true), operationId: 42 })).phases.unchanged, [...skippable]);
+    const failed = await prepared(published.phases.digests, { intent: intent(false), operationId: 42 });
+    assertEquals(failed.phases.unchanged.includes("tools"), false);
+});
 
 Deno.test("a phase's own intent fields and run folder entries are read by no other skippable phase", async () => {
     const root = new URL("../ansible", import.meta.url).pathname;

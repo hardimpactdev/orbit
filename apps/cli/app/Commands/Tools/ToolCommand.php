@@ -11,12 +11,13 @@ use Orbit\Sdk\Responses\Tools\ToolResponse;
 
 abstract class ToolCommand extends GatewayCommand
 {
-    /** @return array<string, mixed>|null|false */
-    protected function repositoryDefinition(mixed $json): array|null|false
+    /**
+     * An apt repository definition given as a JSON object, or `false` after rendering why it is not one.
+     *
+     * @return array<string, mixed>|false
+     */
+    protected function repositoryDefinition(mixed $json): array|false
     {
-        if ($json === null) {
-            return null;
-        }
         try {
             if (! is_string($json)) {
                 throw new JsonException;
@@ -39,7 +40,7 @@ abstract class ToolCommand extends GatewayCommand
             }
         } catch (JsonException) {
         }
-        $this->renderGatewayFailure('tool.repository_invalid', 'Repository must be a JSON object.');
+        $this->renderGatewayFailure('tool.repository_definition_invalid', 'Repository definition must be a JSON object.');
 
         return false;
     }
@@ -74,7 +75,7 @@ abstract class ToolCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $repository = $tool->repository === null ? [] : ['Repository' => json_encode($tool->repository, JSON_UNESCAPED_SLASHES)];
+        $repository = $tool->repository === null ? [] : ['Repository' => $tool->repository];
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
             ...$repository,
             'ID' => $tool->id,
@@ -82,6 +83,7 @@ abstract class ToolCommand extends GatewayCommand
             'Manager' => $tool->manager,
             'Package' => $tool->package,
             'Constraint' => $tool->versionConstraint,
+            'Desired version' => $tool->desiredVersion,
             'Status' => $tool->status,
             'Installed version' => $tool->installedVersion,
             'Failed operation' => $tool->failedOperation,

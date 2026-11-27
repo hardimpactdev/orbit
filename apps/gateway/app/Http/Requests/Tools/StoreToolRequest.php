@@ -22,7 +22,8 @@ final class StoreToolRequest extends FormRequest
             'manager' => ['required', 'string', 'max:32'],
             'package' => ['required', 'string', 'max:255'],
             'version_constraint' => ['nullable', 'string', 'max:255'],
-            ...new AptRepositoryRules()->rules(),
+            'desired_version' => ['nullable', 'string', 'max:255'],
+            'repository' => AptRepositoryRules::name(),
         ];
     }
 
@@ -32,7 +33,7 @@ final class StoreToolRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['node_id', 'manager', 'package', 'version_constraint', 'repository'],
+                ['node_id', 'manager', 'package', 'version_constraint', 'repository', 'desired_version'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -50,7 +51,8 @@ final class StoreToolRequest extends FormRequest
             versionConstraint: is_string($validated['version_constraint'] ?? null)
                 ? $validated['version_constraint']
                 : null,
-            repository: isset($validated['repository']) ? ValidatedData::object($validated['repository']) : null,
+            repository: ValidatedData::nullableString($validated['repository'] ?? null),
+            desiredVersion: ValidatedData::nullableString($this->validated('desired_version')),
         );
     }
 

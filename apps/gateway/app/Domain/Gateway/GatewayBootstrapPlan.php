@@ -20,6 +20,8 @@ use App\Models\Node;
  */
 final readonly class GatewayBootstrapPlan
 {
+    public const string QueuePackage = 'valkey-server';
+
     /** The roles a new Gateway takes on: the Gateway itself, its VPN hub, WebSockets and Swamp. */
     private const array Roles = [RoleName::Gateway, RoleName::Vpn, RoleName::WebSocket, RoleName::Swamp];
 
@@ -44,7 +46,7 @@ final readonly class GatewayBootstrapPlan
         // The waits of a nested fleet read the Gateway database with the sqlite3 client (swamp/ansible/tasks/task-vm-nested-wait.yml).
         $packages[] = 'sqlite3';
         // The queue that records the finished runs of Swamp (docs/reference/gateway-queue.md) needs a Redis server; this Gateway's own, on loopback.
-        $packages[] = 'valkey-server';
+        $packages[] = self::QueuePackage;
         $build = PhpBuildInstaller::input(new RecipeLoader()->source(), [self::Php], pcov: false, extras: 'keep', fpm: 'all', opentelemetry: false);
 
         return [

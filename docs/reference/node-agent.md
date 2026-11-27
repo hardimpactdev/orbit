@@ -50,7 +50,7 @@ The observer posts structured facts to `POST /api/v1/agent/facts` using its [age
 | `units` | none | `docker` state, watched `orbit-process-*` and role units (`load`/`sub`/`state`), and existing `awake` markers | 10 seconds |
 | `checkout` | path | Git metadata, `composer.json`, `artisan`, and `.env` stat for one checkout under `apps_root` | on change |
 | `checkouts` | none | Index of all checkout paths found under `apps_root` (prunes removed `checkout` rows) | on change |
-| `packages` | manager | Installed packages, sources, and keys for one Tool Manager | 60 seconds |
+| `packages` | manager | Installed packages, sources, and keys for one Tool Manager; identical samples renew confirmation for Doctor | 60 seconds |
 | `ufw` | none | `installed`, `enabled`, and parsed rules from `/etc/ufw/user*.rules` (no `ufw` subprocess) | 60 seconds |
 | `env_keys` | path | `.env` file `kind`, sorted key names (never values), and `testing_tracked` | 60 seconds |
 | `accounts` | none | Local `/etc/passwd` and `/etc/group` entries (up to 512) | 60 seconds |
@@ -70,7 +70,7 @@ The observer reads each Tool Manager's local state files directly without invoki
 | `vp` | Vite+ home `bins/*.json` |
 | `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json` and `Caskroom/<cask>/<version>` |
 
-[`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node.
+[`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node. The observer reports what is installed; the Gateway stores [Tool membership and desired versions](/reference/tools#tool-modes) separately.
 
 ### Environment key names
 

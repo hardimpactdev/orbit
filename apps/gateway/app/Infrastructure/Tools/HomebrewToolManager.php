@@ -50,7 +50,7 @@ final readonly class HomebrewToolManager implements ToolManager
 
     public function normalizeVersion(string $rawVersion): ?string
     {
-        return $this->versions->normalize($rawVersion);
+        return $this->versions->normalize(preg_replace('/_[1-9]\d*$/D', '', $rawVersion) ?? $rawVersion);
     }
 
     private function guardSupportedNode(Node $node): void

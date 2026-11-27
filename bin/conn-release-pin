@@ -15,7 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GATEWAY = ROOT / "apps/gateway"
-RECIPE = GATEWAY / "resources/machine-software/recipe.json"
+CORE = GATEWAY / "resources/machine-software/core.yaml"
+HOST_RELEASES = GATEWAY / "resources/machine-software/conn-server-releases.yaml"
 FIXTURES = GATEWAY / "tests/Fixtures"
 GOLDEN = FIXTURES / "production-gateway-converge-main.json"
 CONTRACT = FIXTURES / "conn-server-release.json"
@@ -88,7 +89,7 @@ def read_contract(linux, binary_path, mac, version, sha, folder, version_output)
 
 def capture_fixture():
     test = ["vendor/bin/pest", "tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php",
-            "--filter", "keeps production Gateway runtime recipe", "--colors=never"]
+            "--group=gateway-runtime-pin", "--colors=never"]
     fixture = json.loads(GOLDEN.read_text())
     with tempfile.TemporaryDirectory() as folder:
         prefix = Path(folder) / "capture"
@@ -122,11 +123,13 @@ def main():
     if release["tag_name"] != tag or release["draft"] or release["prerelease"] or not release["published_at"]:
         raise ValueError("expected a published stable Conn Server release")
 
-    recipe = json.loads(RECIPE.read_text())
+    recipe = json.loads(CORE.read_text())
     pin = recipe["instances"]["agent"]["conn-server"]
-    if version_tuple(version) < version_tuple(pin["version"]):
+    catalog = json.loads(HOST_RELEASES.read_text())
+    selected = catalog["releases"][catalog["default"]]
+    if version_tuple(version) < max(version_tuple(pin["version"]), version_tuple(catalog["default"])):
         raise ValueError("the serving Orbit pin already names a newer release")
-    if (pin["macos_arm64"]["bundle_id"], pin["macos_arm64"]["team_id"]) != (BUNDLE, TEAM):
+    if (selected["macos_arm64"]["bundle_id"], selected["macos_arm64"]["team_id"]) != (BUNDLE, TEAM):
         raise ValueError("unexpected Mac signing identity")
 
     base = f"https://github.com/{REPO}/releases/download/{tag}/"
@@ -148,22 +151,27 @@ def main():
         print(json.dumps({"linux_sha256": linux_pin["sha256"], "version_output": contract["version_output"]}))
         return
 
-    if version == pin["version"]:
-        if (pin["artifacts"]["amd64"] != linux_pin
-                or any(pin["macos_arm64"][key] != value for key, value in mac_pin.items())
-                or pin["bin"]["conn-server"] != binary_path
-                or json.loads(CONTRACT.read_text()) != contract):
-            raise ValueError("published release differs from the reviewed pin")
+    known = catalog["releases"].get(version)
+    mac_release = {**mac_pin, "bundle_id": BUNDLE, "team_id": TEAM}
+    if known is not None and (known["linux_x64"] != linux_pin or known["macos_arm64"] != mac_release):
+        raise ValueError("published artifacts differ from the reviewed host release")
+    if version == pin["version"] and (pin["artifacts"]["amd64"] != linux_pin
+                                      or pin["bin"]["conn-server"] != binary_path
+                                      or json.loads(CONTRACT.read_text()) != contract):
+        raise ValueError("published release differs from the reviewed container pin")
+    if version == pin["version"] == catalog["default"]:
         print(f"{tag}: existing pin and launch contract match both published artifacts")
         return
 
-    old = {path: path.read_bytes() for path in (RECIPE, CONTRACT, GOLDEN)}
+    old = {path: path.read_bytes() for path in (CORE, HOST_RELEASES, CONTRACT, GOLDEN)}
     pin["artifacts"]["amd64"] = linux_pin
-    pin["macos_arm64"].update(mac_pin)
     pin["bin"]["conn-server"] = binary_path
-    pin.update(version=version, release_canary=True)
+    pin["version"] = version
+    catalog["releases"][version] = {"linux_x64": linux_pin, "macos_arm64": mac_release, "release_canary": True}
+    catalog["default"] = version
     try:
-        RECIPE.write_text(json.dumps(recipe, indent=4, ensure_ascii=False) + "\n")
+        CORE.write_text(json.dumps(recipe, indent=4, ensure_ascii=False) + "\n")
+        HOST_RELEASES.write_text(json.dumps(catalog, indent=4, ensure_ascii=False) + "\n")
         CONTRACT.write_text(json.dumps(contract, indent=2) + "\n")
         capture_fixture()
         subprocess.run(["vendor/bin/pest", "tests/Feature/Domain/Instances/ContainerServerSwitchTest.php",
@@ -171,6 +179,7 @@ def main():
         args.pr_body.write_text(
             f"Pin [Conn Server {version}](https://github.com/{REPO}/releases/tag/{tag}) for Orbit. "
             "The published SHA-256 manifests and GitHub asset digests agree for both archives. "
+            "The host catalog and Linux container pin are separate; no Node Tool policy is changed. "
             "The Mac bundle identity, Linux archive path, launch contract and Gateway convergence fixture are verified.\n\n"
             f"Conn-Source: {args.source_sha}\n\n"
             "Docs-unaffected: docs/reference/compute-drivers.md: The release changes the Conn Server assets. "

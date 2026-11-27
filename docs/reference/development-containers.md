@@ -9,7 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
-  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/{2027_03_25_000000_create_conn_server_nodes_table,2027_03_26_000000_rename_node_8_conn_server_service}.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
+  - '{bin/conn-release-pin,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php,Infrastructure/MachineSoftware/ConnServerRelease*.php},apps/gateway/resources/machine-software/conn-server-releases.yaml,apps/gateway/database/migrations/{2027_03_25_000000_create_conn_server_nodes_table,2027_03_26_000000_rename_node_8_conn_server_service,2027_03_27_000001_add_conn_server_withdrawal}.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/{t3_copy_rpc.mjs,conn-server-rollout.yml,files/conn-server-probe.py,tasks/conn-server-*.yml},tests/workflow_conn_server_rollout_test.ts}}'
 ---
 
 # Instance containers
@@ -205,54 +205,59 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). The launch check uses the contract version reported by that release. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The core recipe pins the Linux Conn Server tarball, T3, and `chrome-headless-shell`. The Conn launch check uses the contract version reported by the pinned release. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
-The agent folder part `conn-server` in `apps/gateway/resources/machine-software/recipe.json` pins one Conn release, `conn-server-v<X>`, as two assets:
-
-- `artifacts.amd64`: `conn-server-<X>-linux-x64.tar.gz` and its SHA-256. Container hosts unpack it into the agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`.
-- `macos_arm64`, optional: `conn-server-<X>-macos-arm64.zip` and its SHA-256. It also names the signature that its `Conn Server.app` must carry: `bundle_id` (`com.nckrtl.conn-server`) and `team_id`, the Developer ID team (`9SVJ4SYB9B`).
-
-The bundle is signed with the hardened runtime and is not notarized. Releases before 0.5.0 have no zip, so their pin leaves `macos_arm64` out.
-
-```json
-"conn-server": {
-    "version": "<X>",
-    "artifacts": {"amd64": {"url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-linux-x64.tar.gz", "sha256": "…"}},
-    "bin": {"conn-server": "conn-server-<X>-linux-x64/conn-server"},
-    "macos_arm64": {
-        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-macos-arm64.zip",
-        "sha256": "…",
-        "bundle_id": "com.nckrtl.conn-server",
-        "team_id": "9SVJ4SYB9B"
-    }
-}
-```
-
-The recipe loader accepts `macos_arm64` on agent folder parts only and requires the release's exact zip name. Container hosts never read it: the agent folder plan, and so the folder's version, has the Linux tarball alone. The Conn Server rollout to Mac Nodes reads the zip, its SHA-256 and the signing facts from this pin. A change to the pin changes the recipe digest, so a pin bump also updates the hashes in `apps/gateway/tests/Fixtures/production-gateway-converge-main.json`.
+The agent folder part `conn-server` in `core.yaml` pins the Linux x64 asset and its SHA-256. Container hosts unpack it into the shared agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`. Changing this pin changes the container agent folder plan and digest. Changing or removing a host Conn installation does not.
 
 #### Conn Server rollout
 
-`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"|"nodes", "node_ids": [...]}`; `dry_run` and `scope` are required, and `node_ids` comes with scope `nodes` alone) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server.
+`POST /api/v1/fleet/conn-server/rollout` starts `fleet.conn_server_rollout` for Conn Servers running outside containers. It requires `dry_run` and `scope`; `node_ids` is only valid with scope `nodes`. Tool and container convergence cannot trigger this rollout.
 
-The Conn release workflow checks the tagged commit, verifies both published files against their SHA-256 manifests and GitHub digests, and generates the Orbit recipe, launch transcript and convergence fixture. The job that executes the binary supplies the version line and Linux checksum to the App writer. It opens one PR per tag for the existing merge queue. A repeat verifies the same published files. Orbit rejects an older version or different bytes under an existing version.
+In file mode, the active Tool catalog must define the release even for a configured service without a [Tool membership](/reference/tools#host-conn-server-membership). In database mode, a member's desired release governs; for a configured service not yet enrolled, pass `version` or omit it for the release catalog default. The rollout does not enroll those services.
 
-A generated pin sets `release_canary: true`. Once the Gateway serves that recipe, the release fleet pass starts with a dry run on `nick-vm`, the registered standalone canary. It then updates just that Node and reads a known thread through the authenticated local CLI. The Operation records the exact artifacts, Node, version and outcome. A failure holds convergence and, after the swap, restores and checks the previous version. After both canary stages pass, a fleet dry run reports the remaining standalone Nodes' checks.
+If an explicit `version` disagrees with policy, Orbit refuses with `conn_server.release_conflict`. For earlier releases without a canary gate, all selected Nodes must desire the same release; select Nodes explicitly if their versions differ. An unavailable release returns `conn_server.pin_unavailable`.
 
-A missing, unreadable, or invalid serving recipe fails the release fleet phase with `conn_server.recipe_unavailable`. When a valid recipe requires no canary, ordinary fleet convergence proceeds.
-
-Keep a persistent test thread on the canary. As its Conn Server user, put the thread ID and the absolute directory containing `server-runtime.json` in `~/.config/orbit/conn-canary.json`, for example `{"thread_id":"<thread UUID>","state_dir":"/Users/nckrtl/.conn/userdata"}`. The probe reads the serving loopback address and compares the authenticated response's thread ID. Its result omits the thread contents. To retry a failed canary stage, submit `{"scope":"canary","dry_run":false,"retry_operation_id":<failed operation id>}`. To rerun the remaining Nodes' dry run, send `scope: fleet` with `dry_run: true` and the previous dry run's ID in `retry_operation_id`.
-
-Replaying an `Idempotency-Key` with the same input returns the first Operation, even after a canary dry run passes. Use a new key for a new stage or an explicit retry. Reusing the same key with different input returns `409 operation.idempotency_conflict`.
-
-Promote the serving pin with `{"scope":"fleet","dry_run":false,"canary_operation_id":<successful canary operation id>}`. The remaining Nodes must all report `checked` in the fleet dry run. Orbit visits them serially and returns the same promotion receipt on replay. A newer pin requires its own successful canary read.
-
-A failed promotion reports the held or unreached Nodes. Send its ID as `retry_operation_id` with the same canary receipt to continue. The retry skips installations already recorded as updated, matched by Node, platform, service, and path. Changing notification or SSH settings does not make an updated installation eligible again. Orbit holds a retry when Node results are incomplete or a changed Node failed to roll back. Inspect those Nodes before a manual repair.
+The Gateway release ships `conn-server-releases.yaml`, which gives each host release its exact Linux x64 and macOS arm64 asset URLs and SHA-256 checksums. The macOS entry also names the signed `Conn Server.app` bundle and Developer ID team. The app uses the hardened runtime and is not notarized. The host catalog is not an input to container digests.
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health`), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`.
 
-Scope `canary` reaches the canary alone. Scope `fleet` visits the other standalone Nodes for a canary-gated pin. On earlier pins it visits the canary first and then the rest. Scope `nodes` reaches one to four IDs in the request's order. For a canary-gated pin, scope `nodes` can check Nodes. An unknown or repeated ID fails validation. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+Withdrawing the Tool membership excludes the Node from later release rollouts without changing the running service. An explicit Node selection of a withdrawn member is refused. Enrolling the configured service again restores its eligibility.
+
+To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"withdraw":true,"dry_run":true}` to the rollout endpoint. The dry run verifies the configured unit, active release layout, and current health without stopping it. Repeat with `dry_run: false` to notify users of the withdrawal, disable and stop the service, and unlink `current`. No replacement release or download is needed.
+
+Orbit retains the old release and a root-owned recovery record in the installation directory. It attempts to restore the old service and its enablement if stopping or unlinking fails. If the run is interrupted after the record is written, repeat the explicit withdrawal; Orbit verifies the recorded service and completes the stop or unlink without sending another notice.
+
+Repeating a completed withdrawal checks it again. If that check fails, for example because another service answers on the old port, the Node fails with `conn_server.withdraw_failed`, and Orbit leaves the withdrawn service stopped and unlinked.
+
+If the unit is inactive and has no matching recovery record, Orbit refuses with `conn_server.withdraw_recovery_required`. Verify and restore the configured service before trying again.
+
+Withdrawal does not modify a container or uninstall its shared Conn Server. The endpoint refuses Mac service withdrawal; use the service owner's procedure for retiring its LaunchAgent. Restore the configured Linux unit and release before reenrolling a physically withdrawn service.
+
+A Gateway migration changes Node 8's recorded LaunchAgent label from `com.nckrtl.t3-headless` to `com.nckrtl.conn-server`. It leaves other service records and the loaded job itself alone.
+
+Scope `canary` reaches the canary alone. Scope `fleet` reaches the canary first on an ungated release and the eligible followers on a reviewed release. Scope `nodes` reaches one to four IDs in request order; on a reviewed release it can check but not update. An unknown or repeated ID fails validation. Fleet and canary runs require a configured, nonwithdrawn canary (`conn_server.canary_unset`).
+
+##### Reviewed releases and promotion
+
+`bin/conn-release-pin` checks the tagged commit and verifies both published files against their SHA-256 manifests and GitHub asset digests. It updates the host release catalog, the Linux pin in `core.yaml`, the container launch transcript, and the Gateway convergence fixture. It retains prior host releases and does not change `tools.yaml` or any Node's desired version. A repeat verifies the existing pins; older proposals and different bytes under the same version are refused.
+
+A generated host release sets `release_canary: true`. The Gateway release fleet pass starts a dry run only when the designated canary is a Tool member and desires that exact release under the active policy. Otherwise, including when no Node is the designated canary, it proceeds without changing any standalone Conn service. Without a designated, enrolled canary it does not read the Tool catalog, so an unavailable catalog cannot fail the release. A missing, unreadable, or invalid serving host catalog blocks the fleet phase with `conn_server.release_catalog_unavailable`. To start independently of a Gateway release, enroll the canary at the reviewed coordinate and run `scope: canary` with `dry_run: true`, then `dry_run: false`.
+
+The update reads a known thread through the authenticated local CLI before accepting the new service. As the Conn Server user, create `~/.config/orbit/conn-canary.json` with `thread_id` and the absolute `state_dir` containing `server-runtime.json`. The probe compares the authenticated response's thread ID and omits the thread contents. Failure holds the release and, after a swap, restores and verifies the prior service. To retry a failed stage, submit its ID in `retry_operation_id`.
+
+A canary update proves the release only if it is newer than the latest canary dry run and that dry run passed. Any later finished run whose own outcome for the canary is a failure also counts as a failed check, whatever its scope or stage, for example a `scope: nodes` dry run. A follower's failure, a `not_reached` canary, or a run cancelled before it ran is no evidence about the canary. An update run that may have reached the canary without reporting it counts as a failure.
+
+After a failed check, neither the canary nor promotion advances, and `scope: canary` returns that failed run. Retry it with its ID in `retry_operation_id`. Once a fresh check passes, `scope: canary` with `dry_run: false` starts a new canary update, and promotion needs that new receipt.
+
+With no follower, a fleet dry run is the canary check, with the same receipt and retry. Repeating a retry request returns the retry it already started, whether it is still running or finished, for the canary check, canary update and promotion alike. A retry ID that does not name the latest finished attempt of the stage being retried is refused with `conn_server.retry_stale`; Orbit never substitutes another receipt.
+
+The fleet dry run checks only enrolled, nonwithdrawn followers whose exact desired version matches the canary's. Run `scope: fleet` with `dry_run: true` to read that result. If the targets or their settings change, rerun the check using its prior ID in `retry_operation_id`. Then promote with `{"scope":"fleet","dry_run":false,"canary_operation_id":<successful canary ID>}`. A changed artifact or canary requires new proof. A different desired pin, a withdrawn membership, and a service without membership are not promoted.
+
+To continue a failed promotion, send its ID as `retry_operation_id` with the same canary receipt. Orbit skips installations already recorded as updated, matching Node, Tool membership, platform, service and path. Changed SSH or notice settings alone do not make an updated installation eligible again. Orbit holds retries when results are incomplete or a changed Node did not roll back; inspect those Nodes before a manual repair.
+
+Replaying an `Idempotency-Key` with identical input returns the first Operation even if a later stage is ready. Use a new key for a new stage or explicit retry; a reused key with different input returns `409 operation.idempotency_conflict`.
 
 The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A dry run reports each Node even when an earlier check fails. During an update a failure stops the run. A held canary or a hold during promotion also stops it. Later Nodes report `not_reached`.
 
@@ -263,7 +268,7 @@ On a Mac, before staging any files, Orbit runs `launchctl print gui/<uid>/<label
 The phase then checks the release:
 
 1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
-2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
+2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the selected release's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
 3. reads the running server's version from `/health`, as below (`conn_server.health_unreachable`);
 4. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
 5. stops here in a dry run (`checked`).
@@ -276,23 +281,23 @@ Then the swap and the restart. The phase:
 9. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
 10. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
 11. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
-12. waits up to about 3 minutes for a valid `/health` response with the pin's exact version. No round starts after 180 s.
+12. waits up to about 3 minutes for a valid `/health` response with the selected release's exact version. No round starts after 180 s.
 
 From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed, timed out or lost SSH also starts rollback. The Node stays held when Orbit cannot reconnect and verify recovery. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed.
 
-A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. Linux disables proxies for every health read.
+A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. Linux disables proxies and redirects for every health read.
 
 A Mac reads `/health` on 127.0.0.1 with proxies and redirects disabled. A valid Mac response has HTTP status 200, `server: conn-server` and a version string with at least one non-whitespace character. Before any change, including in a dry run, the running server must report its version so a rollback can check it. Linux also requires HTTP 200, `server: conn-server` and a version in this check. Any other answer, or none, fails the Node with `conn_server.health_unreachable`, and nothing is installed or restarted.
 
 A Linux Node makes the `releases` folder beside `current` when it does not exist yet, as on a Node set up before this rollout; a failure to make it is `conn_server.step_failed`. It unpacks the tarball into a new `releases/<X>-<run>` folder, which `mkdir` without `-p` refuses when it exists (`conn_server.backup_exists`), moves `current` to it with one rename, restarts the unit and checks `/health` in the same way. Any failure from the relink until `/health` answers points `current` back and restarts again.
 
-The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node with `conn_server.notice_failed` before anything changes. The URL or the command may hold a token, so the phase logs neither, nor their output, on success or failure.
+`orbit.conn.server_rollout_notice` configures notices for a restart or withdrawal. `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version`, and `event`. A restart sends `conn_server.restart` and the replacement version; withdrawal sends `conn_server.withdrawal` and the verified running version. `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node ID and version appended to its arguments, followed by `conn_server.withdrawal` for a withdrawal only. With neither set, no notice is sent. A failed notice fails the Node with `conn_server.notice_failed` before anything changes. Orbit keeps the URL, command, and their output out of the logs.
 
 The workflow runs the phase with `-i localhost,`, so `localhost` is an inventory host that would take the ssh connection. The tasks that the phase delegates to the Swamp worker, each Node's result and the notice, therefore set a local connection; a test runs the phase this way, over the ssh connection plugin.
 
-The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
+The result names the replacement `version` (null on withdrawal), `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `withdrawn`, `failed` or `not_reached`) with its `reason` when applicable. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
 
 #### Switching an existing T3 container to Conn
 

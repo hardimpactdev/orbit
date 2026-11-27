@@ -1,14 +1,18 @@
 ---
 title: "orbit tool:update"
 sidebarTitle: "tool:update"
-description: "Update one Tool to the manager's current candidate."
+description: "Apply the desired version or update one unpinned Tool to its manager's candidate."
 ---
 
 ```bash
-orbit tool:update <tool> [--repository=JSON] [--idempotency-key=KEY] [--json]
+orbit tool:update <tool> [--tool-version=VERSION] [--repository=NAME] [--idempotency-key=KEY] [--json]
 ```
 
-The result is `applied` when the version changed and `unchanged` when it did not. It is `blocked_by_constraint` when the candidate falls outside the stored constraint. The Tool then stays as it is.
+In database mode, `--tool-version` sets an exact desired version. Without it, Orbit keeps an existing pin or asks the manager for a candidate. In file mode, the active catalog supplies the coordinate and the command refuses overrides.
+
+The result is `applied` when the version changed and `unchanged` when it did not. A floating candidate outside the stored constraint gives `blocked_by_constraint`; an unavailable exact version fails without substituting another version.
+
+For a [host Conn Server](/reference/tools#host-conn-server-membership), update records the desired release without changing the service. Apply the release with a separate rollout.
 
 ## How it works
 

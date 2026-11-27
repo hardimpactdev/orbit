@@ -1,0 +1,19 @@
+---
+title: "orbit tool:apt-repository-remove"
+sidebarTitle: "tool:apt-repository-remove"
+description: "Remove one apt repository that no Tool references."
+---
+
+```bash
+orbit tool:apt-repository-remove <repository> [--yes] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Skip the confirmation. A call without a terminal, or with `--json`, needs it. |
+
+The CLI refuses an ID that is not a positive number with `tool.repository_id_invalid`. Without `--yes`, it reads the repository first and asks for confirmation; the default answer is No. The Gateway refuses with `tool.repository_in_use` while any Tool references the repository; remove those Tools first. Removing the last Tool never removes the repository. Otherwise it starts an Operation that removes the repository's source, keyring and preference from the Node, then deletes the record. A failed removal leaves the repository `failed`; run the command again. See [Apt repositories](/reference/tools#apt-repositories).
+
+## How it works
+
+<div className="flow-at" data-chart="tool/apt-repository-remove"></div>

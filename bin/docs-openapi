@@ -332,11 +332,30 @@ def expand_task_copy_agent_rules(source):
     return TASK_COPY_AGENT_RULES.sub(entries, source)
 
 
+APT_REPOSITORY_DEFINITION_RULES = re.compile(r"\.\.\.AptRepositoryRules::definition\(\s*'([a-z_]+)'\s*\)")
+
+
+def expand_apt_repository_definition_rules(source):
+    """Inline `...AptRepositoryRules::definition('definition')` as the entries PHP gives them, so the add request keeps the
+    fields and patterns of a repository definition."""
+    prefixes = sorted({match.group(1) for match in APT_REPOSITORY_DEFINITION_RULES.finditer(source)})
+    if not prefixes:
+        return source
+    script = ("require 'vendor/autoload.php'; echo json_encode(array_map(static fn (string $prefix): array => "
+              "\\App\\Http\\Requests\\Tools\\AptRepositoryRules::definition($prefix), " + json.dumps(prefixes).replace('"', "'") + "), JSON_THROW_ON_ERROR);")
+    expanded = dict(zip(prefixes, run_json(['php', '-r', script], GW)))
+
+    def entries(match):
+        return ', '.join(f"'{key}' => [" + ', '.join("'" + rule.replace("'", "\\'") + "'" for rule in value) + ']' for key, value in expanded[match.group(1)].items())
+
+    return APT_REPOSITORY_DEFINITION_RULES.sub(entries, source)
+
+
 def load_form_requests():
     reqs = {}
     parents = {}
     for f in sorted(gateway_files('app/Http/Requests', 'Http/Requests')):
-        s = expand_task_copy_agent_rules(resolve_rule_constants(f.read_text(), f))
+        s = expand_apt_repository_definition_rules(expand_task_copy_agent_rules(resolve_rule_constants(f.read_text(), f)))
         parent = re.search(r'class\s+\w+\s+extends\s+(\w+)', s)
         if parent and parent.group(1) != 'FormRequest':
             parents[f.stem] = parent.group(1)

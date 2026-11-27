@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (one Tools phase shared with node:converge). DECISIONS R1 (record-only change starts no run). docs/reference/tools.md#remove-a-tool.
+  %% docs/reference/tools.md#remove-a-tool. R1: a record-only change starts no run.
   %% status: draft
   %% command: tool:remove
   %% kind: tool.remove
@@ -17,20 +17,23 @@ sequenceDiagram
   %%> - `orbit tool:remove 31 --yes`
   %%> - syntax: `<tool> [--yes] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Tool<br/>task #5135 · ripgrep on Node 12
-  alt package belongs to a role
+  alt protected host software, a Tool Orbit does not own outside an apt repository, or host Conn membership
     Note over GW: Delete only the record<br/>no run, package stays
     %%> Why:
     %%> - the recipe owns the package; removing it would break the role
-    GW-->>CLI: Tool removed<br/>package kept for the role
-  else Orbit installed it
+    %%> - a Tool owns its package only when Orbit recorded it: a successful install, an adoption or a convergence that installed it; no failure, retry, cleanup or sibling changes that
+    %%> - withdrawing a host Conn membership leaves the service running and excludes it from future release rollouts
+    GW-->>CLI: Tool removed<br/>package or service kept
+  else Orbit owns the package, or the Tool's apt repository needs a repin
     GW->>SW: Start run, full intent<br/>operation-tool-write
     GW-->>CLI: 202 Accepted<br/>task #5135
-    SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
-    SW->>N: Remove the Tool<br/>ansible · tags tools · absent
-    %%> Why the converge phase:
-    %%> - the same phase with this Tool marked absent; it removes the apt source too when no other Tool uses it
+    SW->>SW: Prepare native SSH<br/>admitted intent · pinned host key
+    SW->>N: Remove the Tool<br/>native SSH
+    %%> Scope:
+    %%> - repin the owned remaining packages of the Tool's apt repository; the repository stays, even after its last Tool
+    %%> - `package_owned: false` skips every package read and plan, keeps the package and only repins
     %%> - a removal that would also remove a held recipe package is refused
-    SW->>N: Check the Tool<br/>ansible · tags check
+    SW->>N: Read resulting state<br/>native SSH
     alt check passes
       SW-->>GW: Run succeeded
       Note over GW: Delete the Tool record
@@ -38,7 +41,11 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code
       Note over GW: Mark the Tool failed
       %%> Retry:
+      %%> - a failed repin keeps the Tool failed with `tool.repository_failed`
       %%> - run the same command again after a fix
+      %%> - a timed-out removal, its start reply lost included, keeps no uninstall authority until its receipt or Swamp shows the package was never reached
+      %%> - until Swamp answers whether an unbound timed-out start became a run, the retry refuses with `tool.removal_unsettled`
+      %%> - a package step that ran, a nonzero exit included, ends uninstall authority unless the check after it finds the package still present, whatever its version
     end
     loop every 2 s until terminal
       CLI->>GW: operation:show #5135

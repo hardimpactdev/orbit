@@ -1,0 +1,38 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Sdk\Requests\Tools;
+
+use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Enums\Method;
+use Saloon\Http\Response;
+
+/** Removes an apt repository no Tool references from its Node. */
+final class RemoveAptRepositoryRequest extends GatewayRequest
+{
+    #[\Override]
+    protected Method $method = Method::DELETE;
+
+    public function __construct(
+        private readonly int $repositoryId,
+        private readonly ?string $idempotencyKey = null,
+    ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
+
+    public function resolveEndpoint(): string
+    {
+        return "/api/v1/apt-repositories/{$this->repositoryId}";
+    }
+
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    {
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+    }
+}

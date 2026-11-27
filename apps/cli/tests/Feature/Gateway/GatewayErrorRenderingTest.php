@@ -1032,6 +1032,13 @@ it('keeps lifecycle failure names and safe outcomes without command output', fun
         ->and(GatewayFailureRenderer::safeDetails('instance.setup_step_failed', ['step' => "bad\nname", 'outcome' => 'secret']))->toBe([]);
 });
 
+it('keeps the reason, Tool and apt repository a refused Tool policy change names, and drops anything else', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('tool.mode_conflict', ['reason' => 'different_repository', 'tool_id' => 18, 'repository' => 'vendor', 'path' => '/etc/secret']))
+        ->toBe(['reason' => 'different_repository', 'tool_id' => 18, 'repository' => 'vendor'])
+        ->and(GatewayFailureRenderer::safeDetails('tool.mode_conflict', ['reason' => 'floating_coordinate', 'tool_id' => null]))->toBe(['reason' => 'floating_coordinate'])
+        ->and(GatewayFailureRenderer::safeDetails('tool.mode_conflict', ['reason' => "bad\nreason", 'tool_id' => -1, 'repository' => '../x']))->toBe([]);
+});
+
 it('keeps the step, deadline outcome, and cleanup of a setup the request deadline stopped', function (): void {
     expect(GatewayFailureRenderer::safeDetails('command.deadline_exceeded', [
         'step' => 'install',

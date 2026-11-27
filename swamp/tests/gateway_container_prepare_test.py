@@ -61,7 +61,7 @@ class BootstrapTest(unittest.TestCase):
                 prep.verify_archive(archive, digest)
 
     def test_runtime_uses_the_repositorys_pinned_arch_specific_builds(self):
-        recipe = json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text())
+        recipe = json.loads((ROOT / "apps/gateway/resources/machine-software/core.yaml").read_text())
         plan = prep.runtime_plan(recipe)
         self.assertEqual(len(plan["incus"]["packages"]), 3)
         self.assertEqual(plan["php"]["sha256"], recipe["instances"]["php"]["versions"]["8.5"]["sha256"])

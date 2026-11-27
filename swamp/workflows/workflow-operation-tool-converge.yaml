@@ -1,0 +1,77 @@
+id: 5bc674ca-5e8d-4524-8871-198134235c2d
+name: operation-tool-converge
+autoContinue: false
+description: Reconcile admitted optional Tools using the shared Ansible phase.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tool.converge, tool.apt_repository_add, tool.apt_repository_remove]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: tools
+    steps:
+      - name: Write the intent
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "tool-converge-intent-" + string(inputs.node_id) }}'
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Prepare pinned SSH input
+        labels: {role: swamp}
+        dependsOn: [{step: Write the intent, condition: {type: succeeded}}]
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "tool-converge-prepare-" + string(inputs.node_id) }}'
+          methodName: toolConvergeInput
+          inputs: {folder: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+      - name: Converge tools
+        labels: {role: swamp}
+        dependsOn: [{step: Prepare pinned SSH input, condition: {type: succeeded}}]
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "tool-converge-ansible-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            timeout: 180010000
+            run: |
+              umask 077
+              export ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg"
+              export ANSIBLE_SSH_ARGS="-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s"
+              export ANSIBLE_STDOUT_CALLBACK=ansible.posix.json
+              case "$ORBIT_TOOLS_SECONDS" in ''|*[!0-9]*) exit 2 ;; esac
+              [ "$ORBIT_TOOLS_SECONDS" -ge 500 ] && [ "$ORBIT_TOOLS_SECONDS" -le 180000 ] || exit 2
+              timeout "$ORBIT_TOOLS_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.json" -e "@$ORBIT_RUN/vars.yml" -e "orbit_run=$ORBIT_RUN" --tags tools "$ORBIT_ANSIBLE/operation-tool-converge.yml" > "$ORBIT_RUN/tools.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Prepare pinned SSH input"].outputs.assets }}'
+              ORBIT_TOOLS_SECONDS: '${{ "tools_seconds" in inputs.intent ? string(inputs.intent.tools_seconds) : "6800" }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+      - name: Report Tool converge
+        labels: {role: swamp}
+        dependsOn:
+          - {step: Write the intent, condition: {type: always}}
+          - {step: Prepare pinned SSH input, condition: {type: always}}
+          - {step: Converge tools, condition: {type: always}}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "tool-converge-report-" + string(inputs.node_id) }}'
+          methodName: toolConvergeResult
+          inputs: {folder: '${{ "/tmp/orbit-ansible-" + run.id }}'}

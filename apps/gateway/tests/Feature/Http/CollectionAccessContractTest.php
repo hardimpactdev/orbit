@@ -91,6 +91,8 @@ function collection_access_policies(): array
             'route:list' => ServingNode::Collection,
             // app/Actions/Schedules/ListSchedulesAction.php:22 filters both target types by accessibleNodeIds.
             'schedule:list' => ServingNode::Collection,
+            // app/Actions/Tools/ListAptRepositoriesAction.php:15 scopes repositories to the required, authorized node_id.
+            'tool:apt-repository-list' => ServingNode::ToolOwning,
             // app/Actions/Tools/ListToolManagersAction.php:27 scopes managers to the required, authorized node_id.
             'tool:manager:list' => ServingNode::ToolOwning,
             // app/Actions/Tools/ListToolsAction.php:17 scopes Tools to the required, authorized node_id.
@@ -236,7 +238,7 @@ function collection_access_violations(array $routes, ?array $policies = null): a
             $violations[$name] = 'The access scope changed; review this route\'s named row policy.';
         } elseif ($scope === ServingNode::ToolOwning) {
             $requestClass = match ($name) {
-                'tool:list' => ListToolsRequest::class,
+                'tool:list', 'tool:apt-repository-list' => ListToolsRequest::class,
                 'tool:manager:list' => ListToolManagersRequest::class,
                 default => null,
             };

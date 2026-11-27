@@ -85,6 +85,22 @@ final class GatewayFailureRenderer
             return self::proofDetails($details);
         }
 
+        if ($code === 'tool.mode_conflict') {
+            // Why a Tool policy change or export is refused, and the membership and apt repository it names.
+            $safe = [];
+            if (is_string($details['reason'] ?? null) && preg_match('/\A[a-z][a-z_]{0,63}\z/D', $details['reason']) === 1) {
+                $safe['reason'] = $details['reason'];
+            }
+            if (is_int($details['tool_id'] ?? null) && $details['tool_id'] > 0) {
+                $safe['tool_id'] = $details['tool_id'];
+            }
+            if (is_string($details['repository'] ?? null) && preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $details['repository']) === 1 && strlen($details['repository']) <= 63) {
+                $safe['repository'] = $details['repository'];
+            }
+
+            return $safe;
+        }
+
         if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed', 'tasks.cancel_waits_for_destroy'], true)) {
             // The operation that holds the target, the one that could not be queued, or the destroy a task cancel waits for, so the caller
             // can follow or cancel it.

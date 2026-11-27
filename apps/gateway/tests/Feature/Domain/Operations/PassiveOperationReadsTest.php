@@ -132,7 +132,7 @@ it('returns recorded state twice without a Swamp call then the job keeps the rea
 it('does not expire on show and the job alone expires an unavailable native run', function (bool $readFirst): void {
     $node = containerDefaultNode();
     $operation = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node_footprint', 'target_id' => $node->id,
-        'node_id' => $node->id, 'status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(3),
+        'node_id' => $node->id, 'status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(4),
         'input' => [], 'lock_key' => 'passive-expiry', 'state' => ['swamp_run_id' => '249be7ac-a6ee-4cd0-a954-4556948eb3bb']]);
     expect(OperationRunBudgets::deadline($operation)->isPast())->toBeTrue();
     $before = $operation->refresh()->getAttributes();

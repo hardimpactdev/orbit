@@ -29,6 +29,33 @@ final class AptRepositoryRules
         ];
     }
 
+    /**
+     * The rules of a definition without its name under `$prefix`, as `tool:apt-repository-add` takes it beside the name.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function definition(string $prefix): array
+    {
+        $rules = [$prefix => ['required', 'array:uris,suites,components,architectures,signing_key', 'required_array_keys:uris,suites,components,signing_key']];
+        foreach (new self()->rules() as $field => $fieldRules) {
+            if ($field !== 'repository' && $field !== 'repository.name') {
+                $rules[$prefix.substr($field, strlen('repository'))] = array_values(array_filter($fieldRules, static fn (string $rule): bool => ! str_starts_with($rule, 'exclude_')));
+            }
+        }
+
+        return $rules;
+    }
+
+    /**
+     * The name a Tool request gives of an apt repository of its Node.
+     *
+     * @return list<string>
+     */
+    public static function name(): array
+    {
+        return ['nullable', 'string', 'max:63', 'regex:/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', 'not_in:caddy,php'];
+    }
+
     /** @param array<string, mixed>|null $definition */
     public function validate(?array $definition, string $manager): void
     {

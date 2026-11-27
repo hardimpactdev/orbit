@@ -4,9 +4,9 @@ import { InventoryProfile, InventoryReceiptInput, inventoryReceipt } from "../no
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
 import { roleAddPlans } from "./role_add_plans.ts";
-import { convergeResult, ReportInput } from "./converge_result.ts";
+import { convergeResult, ReportInput, toolConvergeResult } from "./converge_result.ts";
 import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
-import { convergeInput, phaseCode, roleDigests, rolePhaseCode, roleSiblings, roleSkippable } from "./converge_input.ts";
+import { convergeInput, phaseCode, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, toolConvergeInput } from "./converge_input.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -46,6 +46,21 @@ type Context = {
     extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+
+async function stageConvergeAssets(folder: string, ctx: Context) {
+    const builder = ctx.extensionFile('ansible/build_vars.py');
+    const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
+    const code = phaseCode(builder, helper);
+    const [ansible, , tools] = code;
+    const assets = `${folder}/assets`;
+    const operations = `${assets}/operations`;
+    const stagedHelper = `${operations}/ansible-input/converge_tool.ts`;
+    await Deno.mkdir(`${operations}/ansible-input`, { recursive: true, mode: 0o700 });
+    await copy(ansible, `${assets}/ansible`);
+    await copy(helper, stagedHelper);
+    await copy(tools, `${operations}/tools`);
+    return { builder, stagedHelper, code, assets };
+}
 
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
@@ -134,27 +149,43 @@ export const behavior = {
             arguments: ConvergeInputArgs,
             async execute(raw: z.infer<typeof ConvergeInputArgs>, ctx: Context) {
                 const { folder, operation_id } = ConvergeInputArgs.parse(raw);
-                const builder = ctx.extensionFile('ansible/build_vars.py');
-                const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
-                const code = phaseCode(builder, helper);
-                const [ansible, , tools] = code;
-                const assets = `${folder}/assets`;
-                const operations = `${assets}/operations`;
-                const stagedHelper = `${operations}/ansible-input/converge_tool.ts`;
+                const { builder, stagedHelper, code, assets } = await stageConvergeAssets(folder, ctx);
                 const siblings = roleSiblings.map((path) => ({ source: ctx.extensionFile(path), staged: `${assets}/${path}` }));
                 const phases = await convergeInput(folder, operation_id, builder, stagedHelper, [...code, ...siblings.map(({ source }) => source)]);
                 // Each dispatch has its own worker cache. Later shell steps use the run's
                 // files on the Swamp Node even if this worker drains and clears its cache.
-                await Deno.mkdir(`${operations}/ansible-input`, { recursive: true, mode: 0o700 });
-                await copy(ansible, `${assets}/ansible`);
-                await copy(helper, stagedHelper);
-                await copy(tools, `${operations}/tools`);
                 for (const { source, staged } of siblings) {
                     await Deno.mkdir(staged.slice(0, staged.lastIndexOf("/")), { recursive: true, mode: 0o700 });
                     await copy(source, staged);
                 }
                 const value = Phases.parse({ ready: true, assets: `${assets}/ansible`, unchanged: phases.unchanged });
                 await ctx.writeResource("phases", "phases", value);
+                return value;
+            },
+        },
+        toolConvergeInput: {
+            description: "Stage the Tool play and pinned SSH inventory for one Node",
+            arguments: ReportInput,
+            async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
+                const { folder } = ReportInput.parse(raw);
+                const { stagedHelper, assets } = await stageConvergeAssets(folder, ctx);
+                await toolConvergeInput(folder, stagedHelper);
+                const value = Phases.parse({ ready: true, assets: `${assets}/ansible`, unchanged: [] });
+                await ctx.writeResource("phases", "phases", value);
+                return value;
+            },
+        },
+        toolConvergeResult: {
+            description: "Collect bounded Tool observations and remove the private run folder",
+            arguments: ReportInput,
+            async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
+                const { folder } = ReportInput.parse(raw);
+                const result = await toolConvergeResult(folder);
+                let cleanup = true;
+                try { await Deno.remove(folder, { recursive: true }); }
+                catch (error) { if (!(error instanceof Deno.errors.NotFound)) cleanup = false; }
+                const value = { stdout: JSON.stringify({ ...result, cleanup_complete: cleanup }) };
+                await ctx.writeResource("output", "output", value);
                 return value;
             },
         },

@@ -10,7 +10,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 /** The shipped recipe with `$change` applied to its decoded document. */
 function recipeWithInstances(Closure $change): string
 {
-    $document = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/recipe.json'), true, flags: JSON_THROW_ON_ERROR);
+    $document = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/core.yaml'), true, flags: JSON_THROW_ON_ERROR);
     $change($document);
 
     return json_encode($document, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
@@ -57,54 +57,25 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
     ]);
 });
 
-it('pins the Conn release\'s signed macOS arm64 zip, and a release before 0.5.0 without one', function (): void {
-    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
-    $older = new RecipeLoader()->decode(recipeWithInstances(static function (array &$document): void {
-        unset($document['instances']['agent']['conn-server']['macos_arm64'], $document['instances']['agent']['conn-server']['release_canary']);
-    }));
+it('keeps required container Conn independent of host rollout artifacts', function (): void {
+    $text = recipeWithInstances(static fn () => null);
+    $pin = json_decode($text, true, flags: JSON_THROW_ON_ERROR)['instances']['agent']['conn-server'];
+    $recipe = new RecipeLoader()->decode($text);
+    $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
-    $pin = $recipe->instances->agent['conn-server'];
-    expect($pin->macApp?->artifact->location)->toBe("https://github.com/nckrtl/conn/releases/download/conn-server-v{$pin->version}/conn-server-{$pin->version}-macos-arm64.zip")
-        ->and($pin->macApp?->artifact->digest)->toMatch('/^[a-f0-9]{64}$/D')
-        ->and($recipe->instances->agent['conn-server']->macApp?->bundleId)->toBe('com.nckrtl.conn-server')
-        ->and($recipe->instances->agent['conn-server']->macApp?->teamId)->toBe('9SVJ4SYB9B')
-        ->and($older->instances->agent['conn-server']->macApp)->toBeNull();
+    expect($parts['conn-server'])->toMatchArray([
+        'version' => $pin['version'], 'url' => $pin['artifacts']['amd64']['url'],
+        'sha256' => $pin['artifacts']['amd64']['sha256'], 'bin' => $pin['bin'],
+    ])->and($parts['conn-server']['url'])->toEndWith('-linux-x64.tar.gz');
 });
 
-it('pins the macOS arm64 zip next to the Linux tarball, and gives container hosts the same plan as without it', function (): void {
-    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
-    $without = new RecipeLoader()->decode(recipeWithInstances(static function (array &$document): void {
-        unset($document['instances']['agent']['conn-server']['macos_arm64'], $document['instances']['agent']['conn-server']['release_canary']);
-    }));
-    $part = $recipe->instances->agent['conn-server'];
+it('rejects host rollout metadata in the container pin', function (string $field, mixed $value): void {
+    $text = recipeWithInstances(static function (array &$recipe) use ($field, $value): void {
+        $recipe['instances']['agent']['conn-server'][$field] = $value;
+    });
 
-    expect($part->artifact)->toEqual($without->instances->agent['conn-server']->artifact)
-        ->and($part->bin)->toBe($without->instances->agent['conn-server']->bin)
-        ->and($part->macApp?->artifact->algorithm)->toBe('sha256')
-        // Container hosts install the agent folder plan; it, and so the folder's version, has the Linux tarball alone.
-        ->and(InstanceFolderPlan::for($recipe->instances))->toBe(InstanceFolderPlan::for($without->instances))
-        ->and(InstanceFolderPlan::for($recipe->instances, shift: false))->toBe(InstanceFolderPlan::for($without->instances, shift: false));
-});
-
-it('refuses a macOS app pin that is not the release\'s signed arm64 zip of an agent folder part', function (Closure $change, string $error): void {
-    expect(static fn () => new RecipeLoader()->decode(recipeWithInstances($change)))->toThrow(InvalidArgumentException::class, $error);
-})->with([
-    'another asset' => [static function (array &$document): void {
-        $document['instances']['agent']['conn-server']['macos_arm64']['url'] = str_replace('-macos-arm64.zip', '-linux-x64.tar.gz', $document['instances']['agent']['conn-server']['macos_arm64']['url']);
-    }, 'instances.agent.conn-server.macos_arm64.url: expected the release\'s conn-server-'],
-    'another release' => [static function (array &$document): void {
-        $document['instances']['agent']['conn-server']['macos_arm64']['url'] = 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.0.1/conn-server-0.0.1-macos-arm64.zip';
-    }, 'instances.agent.conn-server.macos_arm64.url: expected the exact version'],
-    'no sha256' => [static function (array &$document): void {
-        unset($document['instances']['agent']['conn-server']['macos_arm64']['sha256']);
-    }, 'instances.agent.conn-server.macos_arm64: expected exactly fields url, sha256, bundle_id, team_id'],
-    'no team id' => [static function (array &$document): void {
-        $document['instances']['agent']['conn-server']['macos_arm64']['team_id'] = 'Developer ID';
-    }, 'instances.agent.conn-server.macos_arm64.team_id: expected a ten-character Developer ID team id.'],
-    'a runtime folder part' => [static function (array &$document): void {
-        $document['instances']['runtime']['composer']['macos_arm64'] = $document['instances']['agent']['conn-server']['macos_arm64'];
-    }, 'instances.runtime.composer.macos_arm64: expected only on an agent folder part.'],
-]);
+    expect(fn () => new RecipeLoader()->decode($text))->toThrow(InvalidArgumentException::class, 'instances.agent.conn-server: expected exactly fields version, artifacts, bin');
+})->with(['gate' => ['release_canary', true], 'Mac asset' => ['macos_arm64', []]]);
 
 it('ships agent-browser as one pinned release binary in the agent folder, which opens the same headless Chrome', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
@@ -124,7 +95,7 @@ it('ships agent-browser as one pinned release binary in the agent folder, which 
 it('pins the browser libraries and fonts as Debian packages of the recipe\'s Ubuntu snapshot, which give no program', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $browser = array_filter($recipe->instances->runtime, static fn (string $name): bool => str_starts_with($name, 'browser-'), ARRAY_FILTER_USE_KEY);
-    $snapshot = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/recipe.json'), true, flags: JSON_THROW_ON_ERROR)['ubuntu']['snapshot'];
+    $snapshot = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/core.yaml'), true, flags: JSON_THROW_ON_ERROR)['ubuntu']['snapshot'];
 
     // What a headless Chromium links and the Ubuntu image lacks, with their own dependencies; and one sans, serif, mono and emoji set.
     expect(array_keys($browser))->toContain('browser-libnss3', 'browser-libnspr4', 'browser-libgbm1', 'browser-libxkbcommon0',

@@ -15,7 +15,7 @@ Deno.test({
     async fn() {
         const recipe = JSON.parse(Deno.readTextFileSync(
             new URL(
-                "../../apps/gateway/resources/machine-software/recipe.json",
+                "../../apps/gateway/resources/machine-software/core.yaml",
                 import.meta.url,
             ),
         ));

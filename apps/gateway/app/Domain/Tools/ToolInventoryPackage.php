@@ -30,6 +30,9 @@ final readonly class ToolInventoryPackage
 
     public const string BLOCK_AUTHORIZATION = 'authorization_required';
 
+    /** A withdrawn Tool of the same package is still finishing its removal. */
+    public const string BLOCK_REMOVAL = 'removal_pending';
+
     /** @param array<string, mixed>|null $repository */
     public function __construct(
         public ToolManagerName $manager,
@@ -73,6 +76,7 @@ final readonly class ToolInventoryPackage
                 self::BLOCK_BOTTLE,
                 self::BLOCK_VERSION,
                 self::BLOCK_AUTHORIZATION,
+                self::BLOCK_REMOVAL,
             ], true)
         ) {
             throw new InvalidArgumentException('An inventory adoption block is invalid.');

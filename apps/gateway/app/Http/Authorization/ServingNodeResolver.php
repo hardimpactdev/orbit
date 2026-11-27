@@ -9,6 +9,7 @@ use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Models\AptRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -492,6 +493,19 @@ final readonly class ServingNodeResolver
     /** @return list<Node> */
     private function toolOwning(Request $request): array
     {
+        $repository = $request->route('repository');
+        if (is_string($repository) && ctype_digit($repository)) {
+            $record = AptRepository::query()->find((int) $repository);
+            if ($record !== null) {
+                return [Node::query()->findOrFail($record->node_id)];
+            }
+            // A replayed removal of a repository its first request already deleted.
+            $receipt = Operation::query()->where('kind', 'tool.apt_repository_remove')->where('idempotency_key', $request->header('Idempotency-Key'))->first();
+            if ($receipt !== null && ($receipt->input['repository_id'] ?? null) === (int) $repository) {
+                return [Node::query()->findOrFail($receipt->node_id)];
+            }
+            throw (new ModelNotFoundException)->setModel(AptRepository::class, [$repository]);
+        }
         $tool = $request->route('tool');
 
         if ($tool instanceof Tool) {

@@ -1,0 +1,38 @@
+sequenceDiagram
+  %% docs/reference/tools.md#apt-repositories
+  %% status: draft
+  %% command: tool:apt-repository-remove
+  %% kind: tool.apt_repository_remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>control Node
+  participant N as Node 12<br/>reached over ssh
+  CLI->>GW: apt-repository-remove<br/>repository 7
+  %%> Command:
+  %%> - `orbit tool:apt-repository-remove 7 --yes`
+  %%> - syntax: `<repository> [--yes] [--idempotency-key=KEY] [--json]`
+  Note over GW: Validate, mark it removing<br/>task #5141 · rex on Node 12
+  %%> Requirements:
+  %%> - no Tool references the repository (`tool.repository_in_use`); remove its Tools first
+  %%> - no other apt write holds Node 12
+  GW->>SW: Start the Tools phase<br/>removing only this repository
+  GW-->>CLI: 202 Accepted<br/>task #5141
+  SW->>N: Remove its source,<br/>keyring and preference
+  alt removed
+    SW-->>GW: Report rex removed
+    Note over GW: Delete the record
+  else the removal failed
+    SW--xGW: Report failed<br/>error_code
+    Note over GW: rex: failed
+    %%> Retry:
+    %%> - run the same command again
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5141
+    GW-->>CLI: status + result
+  end

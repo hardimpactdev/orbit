@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeConvergeResult;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -470,3 +471,22 @@ it('retains the deferred T3 receipt without crediting its role, then credits an 
     expect($this->node->refresh()->release_inputs)->toBe(['roles' => [$role->id => str_repeat('a', 64)]])
         ->and($this->node->converge_digests)->toBe(['roles' => str_repeat('b', 64)]);
 });
+
+it('records each apt repository by its own reported publication, and leaves one the report does not name', function (?string $failure, array $reported, string $status, ?string $code): void {
+    $source = ['uris' => ['https://example.test/apt'], 'suites' => ['1'], 'components' => ['main'],
+        'signing_key' => ['url' => 'https://example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
+    // The convergence's admission made it the Operation whose outcome decides the repository.
+    $record = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'proof', 'definition' => $source, 'status' => 'failed',
+        'error_code' => 'tool.repository_unconfirmed', 'operation_id' => $this->operation->id]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed',
+        'result' => converge_receipt($failure, $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '1.0.0'])->all())
+            + ['repositories' => $reported]]);
+
+    expect([$record->refresh()->status->value, $record->error_code])->toBe([$status, $code]);
+})->with([
+    'published' => [null, [['name' => 'proof', 'status' => 'ready', 'error_code' => null]], 'ready', null],
+    'key mismatch' => [null, [['name' => 'proof', 'status' => 'failed', 'error_code' => 'tool.repository_key_mismatch']], 'failed', 'tool.repository_key_mismatch'],
+    'a failed Tools phase still records what it published' => ['tools', [['name' => 'proof', 'status' => 'ready', 'error_code' => null]], 'ready', null],
+    'not named' => [null, [], 'failed', 'tool.repository_unconfirmed'],
+]);

@@ -1,51 +1,73 @@
 ---
-# Keep the existing Tool repository layout, and never publish an unverified key to APT.
+# Publish one apt repository (apt_repository) and never an unverified key. Its origins are restricted before its key and source are
+# published: the owned Tools that reference it stay preferred, and no Tool that has not been verified installed ever is.
+# The key is read and verified before anything is written: a key that fails to fetch or verify leaves the Node's preference, keyring and
+# source as they were. The candidate, armored or a binary keyring, is read into a private temporary file, never into module output, which
+# carries text only.
+- name: Forget an earlier repository's verified key
+  ansible.builtin.set_fact: { repository_verified_key: null, repository_candidate_dir: {} }
 - name: Inspect the recorded repository keyring
   ansible.builtin.command:
-    argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
+    argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg"]
   register: repository_key
   changed_when: false
   failed_when: false
-- name: Repair a missing or different repository signing key
+- name: Verify a missing or different repository signing key
   vars:
     primary_pattern: '(?m)^pub:[^\n]*\nfpr:::::::::([A-F0-9]+):'
-  when: repository_key.rc != 0 or (repository_key.stdout | regex_findall(primary_pattern)) != [tool.repository.signing_key.fingerprint]
+  when: repository_key.rc != 0 or (repository_key.stdout | regex_findall(primary_pattern)) != [apt_repository.signing_key.fingerprint]
   block:
+    - name: Make a private folder for the signing-key candidate
+      ansible.builtin.tempfile: { state: directory, suffix: .orbit-key }
+      register: repository_candidate_dir
     - name: Read the admitted signing-key candidate
-      ansible.builtin.uri:
-        url: "{{ tool.repository.signing_key.url }}"
-        return_content: true
+      ansible.builtin.get_url:
+        url: "{{ apt_repository.signing_key.url }}"
+        dest: "{{ repository_candidate_dir.path }}/candidate"
+        mode: "0600"
         timeout: 30
-      register: repository_download
     - name: Inspect the candidate primary signing keys before any trusted write
       ansible.builtin.command:
-        argv: [gpg, --batch, --show-keys, --with-colons]
-        stdin: "{{ repository_download.content }}"
+        argv: [gpg, --batch, --show-keys, --with-colons, "{{ repository_candidate_dir.path }}/candidate"]
       register: repository_candidate
       changed_when: false
     - name: Require exactly the recorded primary key
       ansible.builtin.assert:
-        that: (repository_candidate.stdout | regex_findall(primary_pattern)) == [tool.repository.signing_key.fingerprint]
+        that: (repository_candidate.stdout | regex_findall(primary_pattern)) == [apt_repository.signing_key.fingerprint]
         quiet: true
-    - name: Create the Tool keyring folder
-      ansible.builtin.file: { path: /etc/apt/keyrings, state: directory, owner: root, group: root, mode: "0755" }
-    - name: Publish only the verified repository key
-      ansible.builtin.command:
-        argv: [gpg, --batch, --yes, --dearmor, --output, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
-        stdin: "{{ repository_download.content }}"
-      changed_when: true
-- name: Reconcile keyring access
-  ansible.builtin.file: { path: "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg", owner: root, group: root, mode: "0644" }
-- name: Reconcile the recorded repository definition
+    - name: Keep the verified key for its publication
+      ansible.builtin.set_fact: { repository_verified_key: "{{ repository_candidate_dir.path }}/candidate" }
+- name: Hold the repository to its owned Tools before publishing it
   ansible.builtin.copy:
-    dest: "/etc/apt/sources.list.d/orbit-{{ tool.repository.name }}.sources"
-    content: |
-      Types: deb
-      URIs: {{ tool.repository.uris | join(' ') }}
-      Suites: {{ tool.repository.suites | join(' ') }}
-      Components: {{ tool.repository.components | join(' ') }}
-      Architectures: {{ tool.repository.architectures | default(['amd64']) | join(' ') }}
-      Signed-By: /etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg
+    dest: "/etc/apt/preferences.d/orbit-{{ apt_repository.name }}.pref"
+    content: "{{ (repository_pins.stdout | from_json).repository_preferences_held }}"
     owner: root
     group: root
     mode: "0644"
+- name: Publish only the verified repository key
+  when: repository_verified_key is not none
+  block:
+    - name: Create the Tool keyring folder
+      ansible.builtin.file: { path: /etc/apt/keyrings, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the verified key to the keyring
+      ansible.builtin.command:
+        argv: [gpg, --batch, --yes, --dearmor, --output, "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg", "{{ repository_verified_key }}"]
+      changed_when: true
+- name: Reconcile keyring access
+  ansible.builtin.file: { path: "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg", owner: root, group: root, mode: "0644" }
+- name: Reconcile the recorded repository definition
+  ansible.builtin.copy:
+    dest: "/etc/apt/sources.list.d/orbit-{{ apt_repository.name }}.sources"
+    content: |
+      Types: deb
+      URIs: {{ apt_repository.uris | join(' ') }}
+      Suites: {{ apt_repository.suites | join(' ') }}
+      Components: {{ apt_repository.components | join(' ') }}
+      Architectures: {{ apt_repository.architectures | default(['amd64']) | join(' ') }}
+      Signed-By: /etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg
+    owner: root
+    group: root
+    mode: "0644"
+- name: Remove the signing-key candidate
+  when: repository_candidate_dir.path is defined
+  ansible.builtin.file: { path: "{{ repository_candidate_dir.path }}", state: absent }

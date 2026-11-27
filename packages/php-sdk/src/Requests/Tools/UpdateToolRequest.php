@@ -18,12 +18,13 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array<string, mixed>|null $repository */
+    /** @param string|null $repository the name of the Node's apt repository the Tool installs from */
     public function __construct(
         private readonly int $toolId,
         private readonly ?string $idempotencyKey = null,
         #[\SensitiveParameter]
-        private readonly ?array $repository = null,
+        private readonly ?string $repository = null,
+        private readonly ?string $desiredVersion = null,
     ) {}
 
     /** @return array<string, string> */
@@ -32,10 +33,10 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{repository?: array<string, mixed>} */
+    /** @return array{repository?: string, desired_version?: string} */
     protected function defaultBody(): array
     {
-        return $this->repository === null ? [] : ['repository' => $this->repository];
+        return array_filter(['repository' => $this->repository, 'desired_version' => $this->desiredVersion], static fn (mixed $value): bool => $value !== null);
     }
 
     public function resolveEndpoint(): string

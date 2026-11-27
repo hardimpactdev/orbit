@@ -1,0 +1,15 @@
+order = 1500
+cases = [
+  "a write holds the repository to owned packages before the package is read and prefers the acquired package last",
+  "a write without a repository writes no preference",
+  "an unchanged owned package still ends with its repository's own preference",
+  "a refusal or an unverified write never prefers the acting package",
+  "a failed write of the acquired package's preference fails the run after the acquisition",
+]
+file = "swamp/tests/tool_write_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/workflows/workflow-operation-tool-write-209.yaml",
+]

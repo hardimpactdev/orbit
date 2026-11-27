@@ -22,6 +22,7 @@ const tool = (overrides: Partial<Tool> = {}): Tool => ({
     manager: "brew",
     package: "jq",
     version_constraint: null,
+    desired_version: null,
     repository: null,
     status: "installed",
     installed_version: "1.7.1",

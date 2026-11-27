@@ -31,7 +31,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 readonly class ReleaseNodeInputs
 {
-    private const string Recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    private const string Recipe = 'apps/gateway/resources/machine-software/core.yaml';
 
     /** These affect the host as a whole. A release may report their drift but may not apply them. */
     private const array HostFiles = [
@@ -151,11 +151,27 @@ readonly class ReleaseNodeInputs
     public function extractHostTree(string $repository, string $commit, string $folder): void
     {
         $archive = Process::run(['git', '-C', $repository, 'archive', '--format=tar', '-o', $folder.'/host.tar', $commit, '--',
-            self::Recipe, 'apps/gateway/app/Domain/Nodes', 'swamp/ansible/tasks']);
+            dirname(self::Recipe), 'apps/gateway/app/Domain/Nodes', 'swamp/ansible/tasks']);
         $extract = $archive->successful() ? Process::path($folder)->run(['tar', '-xf', 'host.tar']) : null;
         @unlink($folder.'/host.tar');
         if ($extract === null || ! $extract->successful()) {
             throw new RuntimeException('Cannot read the host inputs of a release commit.');
+        }
+        $core = $folder.'/'.self::Recipe;
+        $previous = dirname($core).'/recipe.json';
+        if (! is_file($core) && is_file($previous)) {
+            $raw = ValidatedData::object(json_decode((string) file_get_contents($previous), true, flags: JSON_THROW_ON_ERROR));
+            if (isset($raw['instances'])) {
+                $instances = ValidatedData::object($raw['instances']);
+                $agent = ValidatedData::object($instances['agent']);
+                if (isset($agent['conn-server'])) {
+                    $conn = ValidatedData::object($agent['conn-server']);
+                    unset($conn['macos_arm64'], $conn['release_canary']);
+                    $agent['conn-server'] = $conn;
+                }
+                $raw['instances'] = [...$instances, 'agent' => $agent];
+            }
+            file_put_contents($core, json_encode($raw, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
         }
     }
 

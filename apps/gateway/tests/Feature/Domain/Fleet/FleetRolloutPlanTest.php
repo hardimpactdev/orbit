@@ -6,7 +6,10 @@ use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Tools\ManageToolPolicyAction;
+use App\Actions\Tools\StartToolOperationAction;
 use App\Data\Fleet\DesiredCliReleaseData;
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
@@ -46,6 +49,7 @@ use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\Cluster;
+use App\Models\ConnServerNode;
 use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -54,6 +58,7 @@ use App\Models\Operation;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Tool;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -61,6 +66,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\InstancePool;
 use Tests\Support\ObservedReleaseInputs;
 use Tests\Support\ServingRecipeFixture;
@@ -326,10 +332,10 @@ it('retains the minute retry after partial admission and admits CI callers when 
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });
 
-it('fails the fleet phase before admitting work when the serving recipe cannot be validated', function (string $problem): void {
+it('fails the fleet phase before admitting work when the serving Conn host catalog cannot be validated', function (string $problem): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
-    $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/recipe.json';
+    $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/conn-server-releases.yaml';
     if ($problem === 'missing') {
         File::delete($path);
     } else {
@@ -338,10 +344,79 @@ it('fails the fleet phase before admitting work when the serving recipe cannot b
 
     expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
         ->and($release->refresh()->phases['fleet'])->toBe([
-            'status' => 'failed', 'nodes' => [], 'error_code' => 'conn_server.recipe_unavailable',
+            'status' => 'failed', 'nodes' => [], 'error_code' => 'conn_server.release_catalog_unavailable',
         ])
         ->and(Operation::query()->count())->toBe(0);
 })->with(['missing', 'malformed']);
+
+it('holds the release fleet phase only when the serving reviewed release matches the Conn canary policy', function (string $setup): void {
+    Queue::fake();
+    SwampNodeFixture::ensure();
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/conn-server-releases.yaml';
+    File::copy(resource_path('machine-software/conn-server-releases.yaml'), $path);
+    $current = Yaml::parseFile($path)['default'];
+
+    $canary = Node::query()->findOrFail($this->nodes['dev']);
+    $canary->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-canary']);
+    ConnServerNode::query()->create(['node_id' => $canary->id, 'platform' => 'linux', 'path' => '/opt/conn-server/current',
+        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => ! str_starts_with($setup, 'follower')]);
+    $desired = $setup === 'previous' ? '0.5.2' : $current;
+    $tools = app(StartToolOperationAction::class);
+    $enroll = $tools->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $desired);
+    $member = Tool::query()->findOrFail($enroll->result['tool_id']);
+    if ($setup === 'withdrawn') {
+        $tools->execute('remove', $canary->id, 'conn-server', 'conn-server', null, $member);
+    }
+    if ($setup === 'follower, unreadable Tool catalog') {
+        $catalog = $this->base.'/tools.json';
+        File::put($catalog, json_encode(['schema' => 1, 'packages' => [['manager' => 'conn-server', 'package' => 'conn-server', 'version' => $desired]]], JSON_THROW_ON_ERROR));
+        app(ManageToolPolicyAction::class)->change('file', $catalog);
+        File::delete($catalog);
+    }
+
+    $next = app(ContinueReleaseFleetAction::class)->execute($release);
+    $rollouts = Operation::query()->where('kind', ConnServerRollout::Kind);
+    if ($setup === 'matching') {
+        $check = $rollouts->sole();
+        expect($next)->toBe(15)
+            ->and($release->fresh()->phases['fleet']['conn_server_operation_id'])->toBe($check->id)
+            ->and(array_column($check->input['intent']['nodes'], 'node_id'))->toBe([$canary->id])
+            ->and($check->input['intent']['version'])->toBe($current)
+            ->and($check->input['intent']['dry_run'])->toBeTrue();
+    } else {
+        expect($rollouts->count())->toBe(0)
+            ->and($release->fresh()->phases['fleet'])->not->toHaveKey('conn_server_operation_id')
+            ->and($release->fresh()->phases['fleet']['error_code'] ?? null)->toBeNull();
+    }
+    expect($member->fresh()?->desired_version)->toBe($setup === 'withdrawn' ? null : $desired);
+})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn'], 'follower without a designated canary' => ['follower'],
+    'follower without a designated canary, unreadable Tool catalog' => ['follower, unreadable Tool catalog']]);
+
+it('recovers the previous host digest from a recipe containing the reviewed standalone Conn pin', function (): void {
+    $previous = $this->base.'/previous-recipe';
+    copyRolloutHostTree($previous);
+    $software = $previous.'/apps/gateway/resources/machine-software';
+    $recipe = json_decode(File::get($software.'/core.yaml'), true, flags: JSON_THROW_ON_ERROR);
+    $catalog = Yaml::parseFile(resource_path('machine-software/conn-server-releases.yaml'));
+    $recipe['instances']['agent']['conn-server']['macos_arm64'] = $catalog['releases'][$catalog['default']]['macos_arm64'];
+    $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    File::put($software.'/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+    File::delete($software.'/core.yaml');
+    $git = static fn (string ...$arguments) => Process::path($previous)->run(['git', '-c', 'user.name=test', '-c', 'user.email=test@example.test', ...$arguments])->throw();
+    $git('init', '-q');
+    $git('add', '-A');
+    $git('commit', '-q', '-m', 'previous release with reviewed Conn metadata');
+    $extracted = $this->base.'/extracted-host-tree';
+    File::ensureDirectoryExists($extracted);
+    $inputs = app(ReleaseNodeInputs::class);
+
+    $inputs->extractHostTree($previous, 'HEAD', $extracted);
+
+    expect($inputs->legacyHost($extracted))->toBe($inputs->legacyHost());
+});
 
 it('marks only the Node whose host inputs changed for a host converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
@@ -581,7 +656,7 @@ it('keeps a Node\'s baseline recorded before host inputs were classified by Node
 function copyRolloutHostTree(string $path): void
 {
     $root = dirname(base_path(), 2);
-    $recipe = '/apps/gateway/resources/machine-software/recipe.json';
+    $recipe = '/apps/gateway/resources/machine-software/core.yaml';
     File::ensureDirectoryExists(dirname($path.$recipe));
     File::copy($root.$recipe, $path.$recipe);
     foreach (['/apps/gateway/app/Domain/Nodes', '/swamp/ansible/tasks'] as $folder) {
@@ -888,7 +963,7 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
     $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
     InstancePool::give($node);
     $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
-    $recipe = '/resources/machine-software/recipe.json';
+    $recipe = '/resources/machine-software/core.yaml';
     $gateway = $this->base.'/orbit/apps/gateway';
     $host = app(InstanceHostIntent::class);
     $inputs = app(ReleaseNodeInputs::class);
@@ -923,7 +998,7 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
 it('fingerprints edits to a shared play or a dependency of that role', function (string $path, bool $shared): void {
     $root = $this->base.'/playbooks';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     foreach ([$recipe, $path] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
         copy($repo.'/'.$file, $root.'/'.$file);
@@ -953,7 +1028,7 @@ it('fingerprints edits to a shared play or a dependency of that role', function 
 it('fingerprints a shared Instance host helper only for the role that runs it', function (string $path): void {
     $root = $this->base.'/instance-helper';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     foreach ([$recipe, $path] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
         copy($repo.'/'.$file, $root.'/'.$file);
@@ -981,7 +1056,7 @@ it('fingerprints a shared Instance host helper only for the role that runs it', 
 it('fingerprints a base play change for the roles whose units it applies', function (RoleName $role): void {
     $root = $this->base.'/base-play';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     $play = 'swamp/ansible/tasks/node-converge-base.yml';
     foreach ([$recipe, $play] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
@@ -1025,7 +1100,7 @@ it('fingerprints the Swamp helper tool pins from the selected software plan', fu
     $database = $node->roles()->where('role', RoleName::Database)->sole();
     $root = $this->base.'/recipe-tree';
     copyRolloutHostTree($root);
-    $file = $root.'/apps/gateway/resources/machine-software/recipe.json';
+    $file = $root.'/apps/gateway/resources/machine-software/core.yaml';
     $inputs = app(ReleaseNodeInputs::class);
     $before = $inputs->roles($node, root: $root);
     $host = $inputs->host($root);

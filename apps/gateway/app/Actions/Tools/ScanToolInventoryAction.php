@@ -66,6 +66,8 @@ final readonly class ScanToolInventoryAction
                 $normalized = $version === null ? null : $manager->normalizeVersion($version);
                 $tool = $tools->get($name->value.'|'.$package->name);
                 $block = match (true) {
+                    // A withdrawn Tool is no membership: the observed package stays its own until that removal finishes.
+                    $tool?->withdrawn() === true => ToolInventoryPackage::BLOCK_REMOVAL,
                     in_array($package->name, $protected, true) || ($manager instanceof ReservesRolePackages && $manager->roleOwns($package->name)) => ToolInventoryPackage::BLOCK_PROTECTED,
                     ! $manager->validatePackage($package->name) => ToolInventoryPackage::BLOCK_SOURCE,
                     default => $package->block,
@@ -79,7 +81,7 @@ final readonly class ScanToolInventoryAction
                         default => ToolInventoryPackageKind::Global,
                     },
                     installedVersion: $normalized, dependency: $package->dependency,
-                    registered: $tool !== null, toolId: $tool?->id,
+                    registered: $tool !== null && ! $tool->withdrawn(), toolId: $tool?->withdrawn() === true ? null : $tool?->id,
                     adoption: $block === null ? ToolInventoryPackage::SUPPORTED : ToolInventoryPackage::UNSUPPORTED,
                     adoptionBlock: $block, repository: $tool?->aptRepository?->definition,
                 );

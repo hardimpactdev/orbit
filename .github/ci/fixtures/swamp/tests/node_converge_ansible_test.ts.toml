@@ -16,7 +16,8 @@ cases = [
   "the final software check accepts a matching installed package without writes",
   "the final software check rejects a drifted installed package without writes",
   "package holds: a clean read skips the module, an unheld package is repaired once, check mode only reports, an unknown one fails",
-  "repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys",
+  "repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys, before any write",
+  "a binary keyring and an armored key both verify from a private file, and a wrong key leaves nothing to publish",
   "role phases accept generated extra vars without shadowing each role's intent",
   "a node.converge of a CI Node reads the certificate of the default's Node, and its roles phase trusts that certificate",
   "JavaScript repair replaces stale extracted runtimes and then skips matching state",
@@ -29,6 +30,8 @@ cases = [
   "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
   "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
+  "the Tools phase names every file of each removed repository, and only valid repository names",
+  "the apt repair refreshes even default sources as root without elevating control helpers",
   "the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host",
   "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
   "the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first",
@@ -39,9 +42,9 @@ cases = [
   "a hand converge selects the recorded CLI release",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 106 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1), plus 4s for the two CLI ownership cases (local 1.7s x 2.1)
+cost = 132 # ESTIMATE: previous 106s plus 17s for the privileged refresh case and the added literal round-trip and eligibility cases (about 8s locally x 2.1), plus 9s for the binary-key verification case (about 4s locally x 2.1).
 inputs = [
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/build_vars.py",
@@ -55,6 +58,9 @@ inputs = [
   "swamp/ansible/tasks/node-converge-base.yml",
   "swamp/ansible/tasks/node-converge-role.yml",
   "swamp/ansible/tasks/node-converge-software.yml",
+  "swamp/ansible/tasks/node-converge-tool-repository.yml",
+  "swamp/ansible/tasks/node-converge-tool.yml",
+  "swamp/ansible/tasks/node-converge-tools.yml",
   "swamp/ansible/tasks/node-executor.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-role-runtime.yml",
@@ -66,6 +72,8 @@ inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/extensions/behaviors/operations/tools/constraints.ts",
   "swamp/extensions/behaviors/operations/tools/contract.ts",
+  "swamp/extensions/behaviors/operations/tools/homebrew.ts",
   "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/extensions/behaviors/operations/tools/write_policy.ts",
   "swamp/tests/phase_code_fixture.ts",
 ]

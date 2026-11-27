@@ -50,7 +50,7 @@ async function pin(broken: string[] = []) {
     return new URL(request.url).host === "swamp.example.test" ? new Response(release) : new Response("no", { status: 404 });
   });
   const url = "http://swamp.example.test/swamp-linux-x86_64";
-  Deno.writeTextFileSync(`${root}/repo/apps/gateway/resources/machine-software/recipe.json`,
+  Deno.writeTextFileSync(`${root}/repo/apps/gateway/resources/machine-software/core.yaml`,
     JSON.stringify({ tools: { swamp: { version: "20261114.210101.0-sha.537e03d1", artifacts: { amd64: { url, sha256 } } } } }));
   Deno.writeTextFileSync(`${root}/play.json`, JSON.stringify([{
     hosts: "localhost", gather_facts: false,

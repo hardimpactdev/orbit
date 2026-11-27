@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\ConnServer\ConnServerToolManager;
+use App\Domain\Tools\ToolManagerName;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * The Conn Server that one Node runs, as the Conn Server rollout reaches it (docs/reference/development-containers.md#conn-server-rollout).
@@ -19,7 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $user The user that runs it; on a Mac, the SSH user whose gui domain holds the LaunchAgent.
  * @property bool $canary
  * @property bool $notify_before_restart
+ * @property bool $tool_withdrawn
  * @property-read Node $node
+ * @property-read Tool|null $managedTool
  */
 final class ConnServerNode extends Model
 {
@@ -32,9 +37,16 @@ final class ConnServerNode extends Model
         return $this->belongsTo(Node::class);
     }
 
+    /** @return HasOne<Tool, $this> */
+    public function managedTool(): HasOne
+    {
+        return $this->hasOne(Tool::class, 'node_id', 'node_id')->where('package', ConnServerToolManager::Package)
+            ->whereRelation('manager', 'name', ToolManagerName::ConnServer->value);
+    }
+
     #[\Override]
     protected function casts(): array
     {
-        return ['port' => 'integer', 'canary' => 'boolean', 'notify_before_restart' => 'boolean'];
+        return ['port' => 'integer', 'canary' => 'boolean', 'notify_before_restart' => 'boolean', 'tool_withdrawn' => 'boolean'];
     }
 }

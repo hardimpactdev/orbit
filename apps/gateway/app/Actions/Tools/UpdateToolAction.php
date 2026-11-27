@@ -11,11 +11,10 @@ final readonly class UpdateToolAction
 {
     public function __construct(private StartToolOperationAction $operations) {}
 
-    /** @param array<string, mixed>|null $repository */
-    public function execute(Tool $tool, ?array $repository = null): Operation
+    public function execute(Tool $tool, ?string $repository = null, ?string $version = null): Operation
     {
         $tool->loadMissing('manager');
 
-        return $this->operations->execute('update', $tool->node_id, $tool->manager->name, $tool->package, $tool->version_constraint, $tool, $repository);
+        return $this->operations->execute('update', $tool->node_id, $tool->manager->name, $tool->package, null, $tool, $repository, $version);
     }
 }

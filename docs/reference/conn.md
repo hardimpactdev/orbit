@@ -18,6 +18,8 @@ Conn is Orbit's fork of T3 Code. The optional `conn` [extension](/reference/exte
 
 While `conn` is disabled, every Conn endpoint returns HTTP `409 extension.disabled` and MCP hides Conn tools. Stored profiles, servers, and pairings remain intact, and `ActivityInputRedaction` keeps admin sessions and settings documents out of Activity logs even while the switch is off.
 
+Host Conn Server release membership is separate from Conn profiles and pairing. Use the [protected rollout](/reference/development-containers#conn-server-rollout) to apply a host release or retire a withdrawn Linux service. Neither action changes the Conn Server in a task copy's shared agent folder.
+
 ## Access
 
 Every caller is authenticated by its active WireGuard Node IP (`403 peer.identity_unknown` for unknown peers). Conn reuses standard [node access](/cli/node/access-add) edges (`403 node_access.required` when missing):

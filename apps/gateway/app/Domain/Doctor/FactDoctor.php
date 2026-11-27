@@ -58,6 +58,7 @@ final readonly class FactDoctor
         private RuntimeDoctorIntent $runtime,
         private FirewallInspectionInput $firewall,
         private MachineBus $bus,
+        private ToolDoctor $tools,
     ) {}
 
     /**
@@ -92,6 +93,7 @@ final readonly class FactDoctor
             DoctorFamily::Process => $this->processFamily($inspect($family)),
             DoctorFamily::Firewall => $this->firewallFamily($inspect($family)),
             DoctorFamily::Instance => $this->instanceFamily($inspect($family), $instances),
+            DoctorFamily::Tool => $this->tools->inspect($inspect($family)),
             default => DoctorFamilyReportData::fromIssues($family, 0, []),
         }, $families), $agent);
     }

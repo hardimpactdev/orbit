@@ -1,6 +1,8 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { homebrewBlock } from "./homebrew.ts";
 import { ToolRefusal } from "./contract.ts";
+import { candidate } from "./write_policy.ts";
+import { WriteInput } from "./write.ts";
 
 function fixture(manager: "brew" | "brew-cask") {
     const input = {
@@ -107,4 +109,20 @@ Deno.test("Homebrew requires supported target variations and accepts canonical a
         ToolRefusal,
         "tool.version_probe_failed",
     );
+});
+
+Deno.test("a macOS formula selects the target bottle and compares its exact revision", () => {
+    const { facts } = fixture("brew");
+    const tool = { ...WriteInput.parse({ kind: "tool.update", node_id: 7, user: "orbit", manager: "brew", package: "hello",
+        architecture: "arm64", platform: "macos", desired_version: "2.1.0_1", version_constraint: "^2.1" }),
+        intent_only: false, materialize: null };
+    const record = facts.homebrew as Record<string, unknown>;
+    record.revision = 1;
+    record.versions = { stable: "2.1.0", bottle: true };
+    record.bottle = { stable: { files: { arm64_tahoe: { sha256: "a".repeat(64), url: `https://ghcr.io/v2/homebrew/core/hello/sha256:${"a".repeat(64)}` } } } };
+    facts.os_major = 26;
+    assertEquals(candidate({ ...tool, kind: "tool.update" }, facts), { version: "2.1.0_1", allowed: true });
+    assertThrows(() => candidate({ ...tool, kind: "tool.update", desired_version: "2.1.0" }, facts), ToolRefusal, "tool.desired_version_unavailable");
+    delete facts.os_major;
+    assertThrows(() => candidate({ ...tool, kind: "tool.update" }, facts));
 });

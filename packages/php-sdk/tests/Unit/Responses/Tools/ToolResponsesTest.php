@@ -21,6 +21,8 @@ describe('tool responses', function (): void {
             ->toBe('@openai/codex')
             ->and($response->versionConstraint)
             ->toBe('^0.150')
+            ->and($response->desiredVersion)
+            ->toBe('0.150.1')
             ->and($response->status)
             ->toBe('installed')
             ->and($response->installedVersion)
@@ -40,6 +42,7 @@ describe('tool responses', function (): void {
                 'manager' => 'vp',
                 'package' => '@openai/codex',
                 'version_constraint' => '^0.150',
+                'desired_version' => '0.150.1',
                 'repository' => null,
                 'status' => 'installed',
                 'installed_version' => '0.150.0',
@@ -134,6 +137,7 @@ describe('tool responses', function (): void {
         $toolData['manager'] = $boundedName;
         $toolData['package'] = $boundedText;
         $toolData['version_constraint'] = '';
+        unset($toolData['desired_version']);
         $toolData['status'] = $boundedToken;
         $toolData['installed_version'] = $boundedText;
         $toolData['failed_operation'] = $boundedToken;
@@ -195,6 +199,7 @@ describe('tool responses', function (): void {
                     'manager' => 'vp',
                     'package' => '@openai/codex',
                     'version_constraint' => '^0.150',
+                    'desired_version' => '0.150.1',
                     'repository' => null,
                     'status' => 'installed',
                     'installed_version' => '0.150.0',
@@ -234,6 +239,7 @@ describe('tool responses', function (): void {
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'version constraint' => ['version_constraint'],
+        'desired version' => ['desired_version'],
         'installed version' => ['installed_version'],
         'failed operation' => ['failed_operation'],
         'outcome' => ['outcome'],
@@ -494,6 +500,7 @@ function tool_response_data(): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => '^0.150',
+        'desired_version' => '0.150.1',
         'repository' => null,
         'status' => 'installed',
         'installed_version' => '0.150.0',
@@ -518,8 +525,13 @@ function tool_response_sdk_trace(Throwable $exception): string
     return print_r($sdkFrames, return: true);
 }
 
-it('round trips repository intent on Tool reads', function (): void {
-    $data = [...tool_response_data(), 'repository' => ['name' => 'vendor', 'suites' => ['preview']]];
+it('round trips the repository name on Tool reads', function (): void {
+    $data = [...tool_response_data(), 'repository' => 'vendor'];
     $response = ToolResponse::fromGatewayData($data, tool_response_request_id());
     expect($response->repository)->toBe($data['repository'])->and($response->toArray()['repository'])->toBe($data['repository']);
+});
+
+it('refuses a repository that is not a name on Tool reads', function (): void {
+    expect(fn () => ToolResponse::fromGatewayData([...tool_response_data(), 'repository' => ['name' => 'vendor']], tool_response_request_id()))
+        ->toThrow(InvalidArgumentException::class);
 });

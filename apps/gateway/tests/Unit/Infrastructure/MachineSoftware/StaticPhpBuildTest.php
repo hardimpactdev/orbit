@@ -7,7 +7,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 /** The shipped recipe with one change to its instances.php section. */
 function staticPhpRecipe(callable $change): string
 {
-    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), false, 64, JSON_THROW_ON_ERROR);
+    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/core.yaml')), false, 64, JSON_THROW_ON_ERROR);
     $change($recipe->instances->php);
 
     return json_encode($recipe, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);

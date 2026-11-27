@@ -162,11 +162,11 @@ function swampVaultStandIn(): object
  */
 function containerServerConnUnpinned(): void
 {
-    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/core.yaml')), true, flags: JSON_THROW_ON_ERROR);
     unset($recipe['instances']['agent']['conn-server']);
     $root = sys_get_temp_dir().'/orbit-conn-recipe-'.bin2hex(random_bytes(6));
     mkdir($root.'/release/apps/gateway/resources/machine-software', 0777, true);
-    file_put_contents($root.'/release/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    file_put_contents($root.'/release/apps/gateway/resources/machine-software/core.yaml', json_encode($recipe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
     // The Gateway reads the recipe of its checkout when the checkout is a release link.
     symlink($root.'/release', $root.'/orbit');
     config(['orbit.gateway_checkout' => $root.'/orbit/apps/gateway']);

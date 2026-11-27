@@ -10,10 +10,28 @@ type Input =
         | "architecture"
         | "repository"
         | "repository_packages"
-        | "remove_repository"
     >
-    & { user: string; kind?: string };
+    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
+/** The origin apt matches `Pin: origin` against: the URI's host as written, an IPv6 literal without its brackets and unnormalized. */
+export function origin(uri: string): string {
+    const host = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]*\]|[^/:?#]*)/i.exec(uri)?.[1] ?? "";
+    return host.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+}
+/** Apt preferences of one Orbit repository: priority 990 for the listed packages, and 1 for every other package from its origins. */
+export function preferences(
+    repo: ToolInput["repository"],
+    packages: string[],
+): string {
+    if (repo === null) return "";
+    const hosts = [...new Set(repo.uris.map(origin))];
+    return hosts.map((host) => {
+        const preferred = packages.length === 0
+            ? ""
+            : `Package: ${packages.join(" ")}\nPin: origin "${host}"\nPin-Priority: 990\n\n`;
+        return `${preferred}Package: *\nPin: origin "${host}"\nPin-Priority: 1\n`;
+    }).join("\n");
+}
 const object = (v: unknown) => z.record(z.string(), z.unknown()).parse(v);
 export function stdout(step: Step, absent = false): string {
     if (
@@ -80,10 +98,12 @@ export function commands(input: Input) {
         qualified = (cask ? "homebrew/cask/" : "homebrew/core/") +
             input.package;
     const install = input.kind === "tool.install";
+    const exact = input.desired_version ?? null;
+    const composerRequire = install || exact !== null;
     const composer = [
         "global",
-        install ? "require" : "update",
-        input.package + (install ? ":*" : ""),
+        composerRequire ? "require" : "update",
+        input.package + (exact !== null ? ":" + exact : install ? ":*" : ""),
         "--no-interaction",
         "--no-ansi",
         "--no-progress",
@@ -110,8 +130,17 @@ export function commands(input: Input) {
         prefix,
         home,
         scope,
-        remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
+        // Once the run verified its package: the owned packages of the repository and this one.
+        repository_preferences: preferences(repo, input.repository_packages),
+        // Before the package write and whenever the run stops short of acquiring: only what Orbit already owns, so no interruption can
+        // leave an unacquired package preferred. Selection reads only the repository's source list and installs an exact version.
+        repository_preferences_held: preferences(
+            repo,
+            input.package_owned !== false
+                ? input.repository_packages
+                : input.repository_packages.filter((name) => name !== input.package),
+        ),
         repository: input.repository ??
             {
                 name: "unused",
@@ -124,6 +153,7 @@ export function commands(input: Input) {
                 },
             },
         version: run("--version"),
+        os: ["/usr/bin/sw_vers", "-productVersion"],
         // Linux `brew info` reads the cached cask API; `outdated` is an auto-update command, so it refreshes that
         // API first (HOMEBREW_FORCE_API_AUTO_UPDATE) without `brew update`.
         refresh: cask ? run("outdated", "--cask", "--quiet") : [
@@ -154,7 +184,7 @@ export function commands(input: Input) {
                 ...env,
                 "/usr/bin/apt-cache",
                 ...aptOptions,
-                "policy",
+                exact === null ? "policy" : "madison",
                 "--",
                 input.package,
             ]
@@ -162,7 +192,7 @@ export function commands(input: Input) {
             ? run("info", "--json=v2", formula, qualified)
             : input.manager === "composer"
             ? run(...composer, "--dry-run")
-            : run("info", input.package, "version", "--json"),
+            : run("info", input.package + (exact === null ? "" : "@" + exact.replace(/^v/, "")), "version", "--json"),
         plan: input.manager === "apt"
             ? run("--simulate", "remove", "--", input.package)
             : input.manager === "brew"
@@ -178,12 +208,12 @@ export function commands(input: Input) {
             : input.manager === "composer"
             ? run(...composer)
             : run(
-                install ? "install" : "update",
+                install || exact !== null ? "install" : "update",
                 "-g",
-                input.package,
+                input.package + (exact === null ? "" : "@" + exact.replace(/^v/, "")),
                 ...(install
                     ? ["--node", "lts"]
-                    : ["--reinstall-node-mismatch"]),
+                    : exact === null ? ["--reinstall-node-mismatch"] : []),
             ),
         remove: brew
             ? run("uninstall", formula, input.package)
@@ -199,6 +229,15 @@ export function commands(input: Input) {
             )
             : run("remove", "-g", input.package),
     };
+}
+
+export function aptWrite(packageName: string, version: string, exact: boolean): string[] {
+    return [
+        "/usr/bin/env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive",
+        "/usr/bin/apt-get", "-o", "DPkg::Lock::Timeout=300", "install",
+        "--yes", "--no-install-recommends", "--no-remove",
+        ...(exact ? ["--allow-downgrades"] : []), "--", `${packageName}=${version}`,
+    ];
 }
 export function inventory(
     input: Input,
@@ -279,6 +318,14 @@ export function candidate(
 ) {
     const text = stdout(step);
     if (input.manager === "apt") {
+        const exact = input.desired_version ?? null;
+        if (exact !== null) {
+            const available = text.split("\n").some((line) => {
+                const [name, version, archive] = line.split("|").map((part) => part.trim());
+                return name === input.package && version === exact && Boolean(archive);
+            });
+            return { version: available ? exact : null };
+        }
         const matches = text.split("\n").map((s) =>
             /^\s*Candidate:\s+(\S+)\s*$/.exec(s)
         ).filter((v) => v !== null);

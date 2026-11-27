@@ -1,0 +1,12 @@
+order = 1500
+cases = [
+  "a removal step that failed is followed by the absence check and the decode",
+  "a removal step that succeeded is checked as before",
+]
+file = "swamp/tests/tool_remove_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/workflows/workflow-operation-tool-remove-209.yaml",
+]

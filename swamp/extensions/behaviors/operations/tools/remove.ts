@@ -12,11 +12,16 @@ export type RemovalDecision = {
     error_code?: string;
     manager_version: string | null;
 };
-/** Refuse a removal from its plan: unreadable facts, a Composer non-root, an unsafe cask, or an apt or brew plan that removes more. */
+/** Refuse a removal from its plan: unreadable facts, a Composer non-root, an unsafe cask, or an apt or brew plan that removes more. A package
+ * Orbit does not own is never removed. */
 export function removalDecision(
     input: Input,
     phase: Record<string, unknown> | null,
 ): RemovalDecision {
+    // A package Orbit never owned is never removed, so its source cleanup needs no package facts or removal plan.
+    if (!input.package_owned) {
+        return { ready: true, remove: false, manager_version: null };
+    }
     let managerVersion: string | null = null;
     try {
         if (phase === null) throw new ToolRefusal("tool.version_probe_failed");
@@ -60,7 +65,7 @@ export function removalDecision(
 }
 export const behavior = {
     type: "@nckrtl/tool-remove-command",
-    version: "2026.11.02.3",
+    version: "2026.11.27.1",
     resources: {
         assets: {
             schema: z.record(z.string(), z.unknown()),
@@ -107,26 +112,31 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 let phase = null;
-                try {
-                    phase = {
-                        facts: native.inventory(
-                            args.input,
-                            args.version,
-                            args.query,
-                            args.os,
-                        ),
-                        ...(["apt", "brew"].includes(args.input.manager)
-                            ? {
-                                plan: native.removalPlan(args.input, args.plan),
-                            }
-                            : {}),
-                    };
-                } catch (error) {
-                    if (
-                        !(error instanceof ToolRefusal) &&
-                        !(error instanceof z.ZodError) &&
-                        !(error instanceof SyntaxError)
-                    ) throw error;
+                if (args.input.package_owned) {
+                    try {
+                        phase = {
+                            facts: native.inventory(
+                                args.input,
+                                args.version,
+                                args.query,
+                                args.os,
+                            ),
+                            ...(["apt", "brew"].includes(args.input.manager)
+                                ? {
+                                    plan: native.removalPlan(
+                                        args.input,
+                                        args.plan,
+                                    ),
+                                }
+                                : {}),
+                        };
+                    } catch (error) {
+                        if (
+                            !(error instanceof ToolRefusal) &&
+                            !(error instanceof z.ZodError) &&
+                            !(error instanceof SyntaxError)
+                        ) throw error;
+                    }
                 }
                 const value = removalDecision(args.input, phase);
                 await ctx.writeResource("decision", "decision", value);

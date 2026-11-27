@@ -51,8 +51,9 @@ final class RemoveToolCommand extends ToolActionCommand
                 return self::FAILURE;
             }
 
+            $effect = $existing->manager === 'conn-server' ? 'by withdrawing rollout membership without stopping the service' : 'by uninstalling it and deleting its record';
             if (! $this->confirmAction(
-                "Remove Tool [{$existing->package}] ({$existing->manager} on Node #{$existing->nodeId}) by uninstalling it and deleting its record?",
+                "Remove Tool [{$existing->package}] ({$existing->manager} on Node #{$existing->nodeId}) {$effect}?",
                 'Tool removal cancelled.',
             )) {
                 return self::FAILURE;

@@ -22,7 +22,7 @@ final class AdoptToolRequest extends FormRequest
             'manager' => ['required', 'string', 'max:32'],
             'package' => ['required', 'string', 'max:255'],
             'version_constraint' => ['nullable', 'string', 'max:255'],
-            ...new AptRepositoryRules()->rules(),
+            'repository' => AptRepositoryRules::name(),
         ];
     }
 
@@ -50,7 +50,7 @@ final class AdoptToolRequest extends FormRequest
             versionConstraint: is_string($validated['version_constraint'] ?? null)
                 ? $validated['version_constraint']
                 : null,
-            repository: isset($validated['repository']) ? ValidatedData::object($validated['repository']) : null,
+            repository: ValidatedData::nullableString($validated['repository'] ?? null),
         );
     }
 

@@ -44,10 +44,13 @@ use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
+use App\Models\AptRepository;
 use App\Models\GatewayRelease;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -624,6 +627,37 @@ it('holds only a full-scope converge record for a scoped converge', function (ar
     'base after a role Operation' => [['base' => true], false, false],
 ]);
 
+it('admits actual Tool intent in a full run without mistaking its own hold for another writer', function (): void {
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    $tools = array_map(fn (string $package): Tool => Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id,
+        'package' => $package, 'desired_version' => '1.10', 'installed_version' => '1.10', 'status' => 'installed']), ['tree', 'nano', 'ed', 'ripgrep']);
+    $this->postJson($this->url, [])->assertAccepted();
+    $full = Operation::query()->sole();
+    expect($full->input['_converge']['tool_scope'])->toBeTrue()
+        ->and(array_column($full->input['_converge']['intent']['tools'], 'id'))->toBe(array_column($tools, 'id'))
+        ->and($full->input['_converge']['intent']['tools_seconds'])->toBe(8900)->and($full->input['run_budget_seconds'])->toBe(15600);
+    $full->update(['status' => 'succeeded', 'lock_key' => null]);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $base = Operation::query()->whereKeyNot($full->id)->sole();
+    expect($base->input['_converge']['tool_scope'])->toBeFalse()->and($base->input['_converge']['intent']['tools'])->toBe([]);
+});
+
+it('publishes each apt repository its Tools reference and decides it by its own report from then on', function (): void {
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    $definition = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['stable'], 'components' => ['main'],
+        'signing_key' => ['url' => 'https://packages.example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
+    $repository = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'vendor', 'definition' => $definition, 'status' => 'failed',
+        'error_code' => 'tool.repository_unconfirmed']);
+    Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id, 'package' => 'tree', 'desired_version' => '1.10',
+        'installed_version' => '1.10', 'status' => 'installed', 'owned' => true, 'apt_repository_id' => $repository->id]);
+
+    $this->postJson($this->url, [])->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    expect($operation->input['_converge']['intent']['repositories'])->toBe([['id' => $repository->id, 'repository' => $definition, 'repository_packages' => ['tree'], 'ready' => false]])
+        ->and($repository->refresh()->operation_id)->toBe($operation->id);
+});
+
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
     // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.
     Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode(['agent' => str_repeat('a', 64)]), 'agent_failed_pin' => str_repeat('c', 64)]);
@@ -973,6 +1007,11 @@ it('converges each Node whose host inputs changed with the full Node converge, a
         $member->forceFill(['release_inputs' => ['host' => $member->is($next) ? $inputs->host(node: $next) : ReleaseNodeInputs::NodeScope.str_repeat('d', 64),
             'agent' => app(AgentDelivery::class)->pin($member), 'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($member))]])->save();
     }
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    foreach (['tree', 'nano', 'ed', 'ripgrep'] as $package) {
+        Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id, 'package' => $package,
+            'desired_version' => '1.10', 'installed_version' => '1.10', 'status' => 'installed']);
+    }
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
 
@@ -985,6 +1024,7 @@ it('converges each Node whose host inputs changed with the full Node converge, a
             ->and($capture['intent']['release_roles_only'] ?? false)->toBeFalse()
             ->and($capture['intent']['automatic'])->toBeTrue()
             ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
+            ->and(array_column($capture['intent']['tools'], 'package'))->toBe($member->is($this->node) ? ['tree', 'nano', 'ed', 'ripgrep'] : [])
             ->and($capture['release_inputs']['host'])->toBe($inputs->host(node: $member))
             ->and($release->refresh()->phases['fleet']['nodes'][$member->id]['host'])->toBe('pending');
         succeedConverge($converge);

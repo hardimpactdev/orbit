@@ -125,6 +125,10 @@ def configuration(path=TABLE):
                     any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in cases) or \
                     len(cases) != len(set(cases)):
                 raise ValueError(f'{file}: mandatory_cases needs a declared input and unique case names')
+        phased = fixture.get('phase_inputs', [])
+        if not isinstance(phased, list) or any(not isinstance(path, str) or path not in mandatory or path == file or
+                                               any(char in path for char in '*?') for path in phased) or len(phased) != len(set(phased)):
+            raise ValueError(f'{file}: phase_inputs must list exact inputs with mandatory cases')
         parsed = fixture.get('parsed_yaml_inputs', [])
         if not isinstance(parsed, list) or any(
             not isinstance(path, str) or Path(path).suffix.lower() not in YAML_SUFFIXES or
@@ -354,8 +358,71 @@ def direct_files(paths, fixtures):
         {file for file in fixtures if registry.metadata_path(file) in paths}
 
 
+def renamed_input_scopes(base, head, paths, budget, fixtures):
+    """Select the cases for a resource move and separate phase inputs, not cases whose code and inputs stayed put."""
+    candidates = {file for file in budget['capacity_gap'] if file in paths and not fixtures[file].get('self_hosted')
+                  and fixtures[file].get('mandatory_cases')}
+    if not candidates:
+        return {}
+    names = selection.listed_paths('diff', '--name-status', '--find-renames', '--diff-filter=R', '-z', base, head)
+    renames = {new: old for _, old, new in zip(names[::3], names[1::3], names[2::3])}
+    if not renames:
+        return {}
+    before, old_inventory = registry.read_revision(ROOT, base)
+    after, new_inventory = registry.read_revision(ROOT, head)
+    old_entries = {entry['file']: entry for entry in before.get('fixture', [])}
+    new_entries = {entry['file']: entry for entry in after.get('fixture', [])}
+    tracked = {ref: selection.listed_paths('ls-tree', '-rz', '--full-tree', '--name-only', ref) for ref in (base, head)}
+    diff = selection.listed_paths('diff', '--raw', '--no-renames', '--diff-filter=M', '-z', base, head)
+    modified = {path for header, path in zip(diff[::2], diff[1::2])
+                if header.startswith((':100644 100644 ', ':100755 100755 '))}
+
+    def same_references(path, old, new):
+        if path not in modified:
+            return False
+        old_source, new_source = (subprocess.check_output(['git', 'show', f'{ref}:{path}'], timeout=60)
+                                  for ref in (base, head))
+        replaced = old_source.replace(os.fsencode(old), os.fsencode(new))
+        old_name, new_name = Path(old).name, Path(new).name
+        if old_name != new_name and all(sum(Path(path).name == name for path in tracked[ref]) == 1
+                                       for ref, name in ((base, old_name), (head, new_name))):
+            replaced = re.sub(rb'(?<![\w.-])' + re.escape(os.fsencode(old_name)) + rb'(?![\w.-])',
+                              lambda _: os.fsencode(new_name), replaced)
+        return old_source != new_source and replaced == new_source
+
+    def without_resource(entry, paths):
+        return {**entry, 'inputs': [path for path in entry.get('inputs', []) if path not in paths],
+                'phase_inputs': [path for path in entry.get('phase_inputs', []) if path not in paths],
+                'mandatory_cases': {path: cases for path, cases in entry.get('mandatory_cases', {}).items() if path not in paths}}
+
+    scopes = {}
+    for file in candidates.intersection(before.get('budget', {}).get('capacity_gap', [])):
+        entry, previous = new_entries.get(file), old_entries.get(file)
+        if not entry or not previous or old_inventory.get(file) != new_inventory.get(file):
+            continue
+        prior_patterns = [selection_regex(path) for path in previous.get('inputs', [])]
+        input_patterns = [*prior_patterns, *(selection_regex(path) for path in entry['inputs'])]
+        affected = {path for path in paths if path == file or any(regex.fullmatch(path) for regex in input_patterns)}
+        mandatory = entry['mandatory_cases']
+        prior = previous.get('mandatory_cases', {})
+        for new in mandatory.keys() & renames.keys():
+            old = renames[new]
+            resource = {old, new}
+            phased = set(entry.get('phase_inputs', [])) & (affected - resource - {file})
+            if any(not any(regex.fullmatch(path) for regex in prior_patterns) for path in phased) or \
+                    without_resource(previous, resource | phased) != without_resource(entry, resource | phased) or \
+                    any(not set(prior.get(path, [])).issubset(mandatory[path]) for path in phased | {new}) or \
+                    not set(prior.get(old, [])).issubset(mandatory[new]):
+                continue
+            if new in affected and all(same_references(path, old, new) for path in affected - resource - phased):
+                scopes[file] = phased | {new}
+                break
+    return scopes
+
+
 def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False,
-         comment_only_yaml=()):
+         comment_only_yaml=(), renamed_inputs=None):
+    renamed_inputs = renamed_inputs or {}
     selected, unmapped = {}, []
     machinery = shared_registry or any(path in MACHINERY for path in paths)
     for path in paths:
@@ -396,9 +463,9 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
         # A machinery change reserves the mandatory cases of the machinery canary files only.
         changed = machinery and file in budget['machinery_canary'] or file in paths or file in inventory_changed or \
             file in registry_changed
-        cases = {name for pattern, names in fixture.get('mandatory_cases', {}).items()
-                 if changed or any(selection_regex(pattern).fullmatch(path) for path in paths)
-                 for name in names}
+        cases = ({name for path in renamed_inputs[file] for name in fixture['mandatory_cases'][path]} if file in renamed_inputs else
+                 {name for pattern, names in fixture.get('mandatory_cases', {}).items()
+                  if changed or any(selection_regex(pattern).fullmatch(path) for path in paths) for name in names})
         if not cases:
             continue
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)
@@ -419,6 +486,8 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     # before the other hosted gaps, which keep their order by directness. Size only decides packing.
     listed = lambda file: int(file in gaps and not pool(file) and file not in budget.get('capacity_gap_first', ()))
     for file in sorted(selected, key=lambda file: ((file in gaps) * (1 + pool(file)), listed(file), tuple(-p for p in selected[file]), order[file])):
+        if file in renamed_inputs:
+            continue
         fixture, side = fixtures[file], pool(file)
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
         remaining = [row for row in candidates if row[0] not in reserved_names]
@@ -974,8 +1043,9 @@ def main():
     comment_only_yaml = comment_only_yaml_paths(paths, base, args.head, fixtures)
     inventory_changed = inventory_changes(base, args.head) if registry.metadata_changed(paths) else []
     registry_changed, shared_registry = registry_changes(base, args.head) if registry.metadata_changed(paths) else ([], False)
+    renamed_inputs = renamed_input_scopes(base, args.head, paths, budget, fixtures)
     result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry,
-                  comment_only_yaml=comment_only_yaml)
+                  comment_only_yaml=comment_only_yaml, renamed_inputs=renamed_inputs)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
         selected = planned_units(result)

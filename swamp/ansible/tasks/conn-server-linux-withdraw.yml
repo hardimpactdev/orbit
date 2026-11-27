@@ -1,0 +1,177 @@
+---
+- name: Name the withdrawal record
+  ansible.builtin.set_fact:
+    withdrawal_record: "{{ server.path | dirname }}/.orbit-conn-withdrawal.json"
+    withdrawal_identity: { path: "{{ server.path }}", service: "{{ server.service }}", health_url: "{{ linux_health_url }}" }
+
+- name: Inspect the withdrawal record and its parent
+  ansible.builtin.stat: { path: "{{ item }}", get_checksum: false }
+  loop: ["{{ server.path | dirname }}", "{{ withdrawal_record }}"]
+  register: withdrawal_paths
+  become: true
+  timeout: 20
+
+- name: Require a protected location for withdrawal recovery
+  vars:
+    parent: "{{ withdrawal_paths.results[0].stat }}"
+    receipt: "{{ withdrawal_paths.results[1].stat }}"
+  ansible.builtin.assert:
+    that:
+      - parent.isdir | default(false) and parent.pw_name == linux_releases_owner and not parent.wgrp and not parent.woth
+      - not receipt.exists or (receipt.isreg and receipt.pw_name == linux_releases_owner and receipt.mode == '0600')
+    fail_msg: conn_server.withdraw_recovery_invalid
+    quiet: true
+
+- name: Read the verified withdrawal record
+  when: withdrawal_paths.results[1].stat.exists
+  ansible.builtin.slurp: { src: "{{ withdrawal_record }}" }
+  become: true
+  register: withdrawal_saved
+  timeout: 20
+
+- name: Read the previously verified release
+  ansible.builtin.set_fact:
+    withdrawal_previous: "{{ (withdrawal_saved.content | b64decode | from_json) if withdrawal_saved.content is defined else {} }}"
+
+- name: Read the existing unit enablement
+  ansible.builtin.command: { argv: [timeout, "20", systemctl, is-enabled, --, "{{ server.service }}"] }
+  become: true
+  changed_when: false
+  failed_when: false
+  register: withdrawal_enabled
+
+- name: Refuse an enablement state that withdrawal cannot restore
+  ansible.builtin.assert:
+    that: (withdrawal_enabled.rc == 0 and withdrawal_enabled.stdout == 'enabled') or (withdrawal_enabled.rc == 1 and withdrawal_enabled.stdout == 'disabled')
+    fail_msg: conn_server.withdraw_enablement_unsupported
+    quiet: true
+
+- name: Read the current unit activity
+  ansible.builtin.command: { argv: [timeout, "20", systemctl, is-active, --, "{{ server.service }}"] }
+  become: true
+  changed_when: false
+  failed_when: false
+  register: withdrawal_activity
+
+- name: Determine whether this starts a new withdrawal
+  ansible.builtin.set_fact:
+    withdrawal_fresh: >-
+      {{ linux_current.stat.islnk | default(false) and linux_before_healthy and withdrawal_activity.stdout == 'active'
+         and (not withdrawal_previous or withdrawal_previous.completed | default(false)) }}
+
+# A replay of a finished withdrawal only checks it again: a failed check never brings the retired service back.
+- name: Determine whether this replays a finished withdrawal
+  ansible.builtin.set_fact:
+    withdrawal_replay: "{{ withdrawal_previous.completed | default(false) and not withdrawal_fresh }}"
+
+- name: Require a verified release or a matching recovery record
+  ansible.builtin.assert:
+    that: >-
+      withdrawal_fresh or (withdrawal_previous.identity | default({}) == withdrawal_identity
+      and withdrawal_previous.target is string and withdrawal_previous.version is string and withdrawal_previous.version | length > 0
+      and withdrawal_previous.enablement in ['enabled', 'disabled']
+      and (not linux_current.stat.exists or linux_current.stat.lnk_source == withdrawal_previous.target)
+      and ((withdrawal_activity.stdout == 'inactive' and withdrawal_enabled.stdout == 'disabled' and not linux_before_healthy)
+           or (withdrawal_activity.stdout == 'active' and linux_current.stat.exists and linux_before_healthy
+               and linux_before.json.version == withdrawal_previous.version)))
+    fail_msg: conn_server.withdraw_recovery_required
+    quiet: true
+
+- name: Keep the original release and unit enablement for recovery
+  ansible.builtin.set_fact:
+    withdrawal: >-
+      {{ {'identity': withdrawal_identity, 'target': linux_current.stat.lnk_source, 'version': linux_before.json.version,
+           'enablement': withdrawal_enabled.stdout, 'completed': false} if withdrawal_fresh else withdrawal_previous }}
+
+- name: Report a checked withdrawal
+  when: intent.dry_run
+  ansible.builtin.set_fact:
+    node_result: { node_id: "{{ node_id | int }}", outcome: checked }
+
+- name: Withdraw the service and its active release pointer
+  when: not intent.dry_run
+  block:
+    - name: Send the notice before stopping the service
+      when: withdrawal_fresh and server.notify_before_restart
+      ansible.builtin.include_tasks: conn-server-notice.yml
+      vars:
+        notice_event: conn_server.withdrawal
+        notice_version: "{{ withdrawal.version }}"
+
+    - name: Record the verified release before changing the unit
+      when: withdrawal_fresh
+      ansible.builtin.copy: { dest: "{{ withdrawal_record }}", content: "{{ withdrawal | to_json }}", mode: "0600" }
+      become: true
+      timeout: 20
+
+    - name: Stop and unlink the verified service
+      block:
+        - name: Disable the unit before stopping it
+          ansible.builtin.command: { argv: [systemctl, disable, --, "{{ server.service }}"] }
+          when: withdrawal_enabled.stdout == 'enabled'
+          changed_when: true
+          become: true
+          timeout: 60
+        - name: Stop the disabled unit
+          ansible.builtin.command: { argv: [systemctl, stop, --, "{{ server.service }}"] }
+          when: withdrawal_activity.stdout != 'inactive'
+          changed_when: true
+          become: true
+          timeout: 120
+        - name: Remove the active release link but keep the release as a backup
+          ansible.builtin.command: { argv: [unlink, --, "{{ server.path }}"] }
+          when: linux_current.stat.exists
+          changed_when: true
+          become: true
+          timeout: 20
+        - name: Verify that the unit is now inactive
+          ansible.builtin.command: { argv: [timeout, "20", systemctl, is-active, --, "{{ server.service }}"] }
+          become: true
+          changed_when: false
+          register: withdrawal_active
+          failed_when: withdrawal_active.rc != 3 or withdrawal_active.stdout != 'inactive'
+        - name: Verify that the old service no longer answers
+          ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, follow_redirects: none, return_content: true, timeout: 5 }
+          register: withdrawn_health
+          failed_when: (withdrawn_health.status | default(-1) | int) == 200 or withdrawn_health.json.server | default('') == 'conn-server'
+          timeout: 20
+        - name: Mark the completed withdrawal for safe replay
+          ansible.builtin.copy: { dest: "{{ withdrawal_record }}", content: "{{ withdrawal | combine({'completed': true}) | to_json }}", mode: "0600" }
+          become: true
+          timeout: 20
+        - name: Record the withdrawn Node and recovery release
+          ansible.builtin.set_fact:
+            node_result: { node_id: "{{ node_id | int }}", outcome: withdrawn, previous_version: "{{ withdrawal.version }}" }
+      rescue:
+        - name: Restore the old health and enablement
+          when: not withdrawal_replay
+          block:
+            - name: Restore the old release and restart its unit
+              ansible.builtin.include_tasks: conn-server-linux-start.yml
+              vars:
+                linux_target: "{{ withdrawal.target }}"
+                expected_version: "{{ withdrawal.version }}"
+            - name: Restore the old unit enablement
+              ansible.builtin.command: { argv: [systemctl, enable, --, "{{ server.service }}"] }
+              when: withdrawal.enablement == 'enabled'
+              changed_when: true
+              become: true
+              timeout: 20
+            - name: Require the old server to answer again
+              ansible.builtin.assert:
+                that: linux_health.status | default(-1) == 200 and linux_health.json.server | default('') == 'conn-server' and linux_health.json.version | default('') == withdrawal.version
+                fail_msg: conn_server.health_check_failed
+                quiet: true
+            - name: Record restored service health
+              ansible.builtin.set_fact:
+                rolled_back: true
+                recovered_version: "{{ withdrawal.version }}"
+            - name: Clear the withdrawal record after recovery
+              ansible.builtin.file: { path: "{{ withdrawal_record }}", state: absent }
+              become: true
+              timeout: 20
+          rescue:
+            - name: Note failed withdrawal recovery
+              ansible.builtin.set_fact: { rolled_back: false }
+        - name: Report failure even if withdrawal recovery succeeded
+          ansible.builtin.fail: { msg: conn_server.withdraw_failed }

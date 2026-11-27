@@ -18,7 +18,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array<string, mixed>|null $repository */
+    /** @param string|null $repository the name of the Node's apt repository the Tool installs from */
     public function __construct(
         private readonly int $nodeId,
         #[\SensitiveParameter]
@@ -28,7 +28,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
         #[\SensitiveParameter]
         private readonly ?string $versionConstraint = null,
         #[\SensitiveParameter]
-        private readonly ?array $repository = null,
+        private readonly ?string $repository = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -41,7 +41,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
         return AdoptedToolResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string, repository?: array<string, mixed>} */
+    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string, repository?: string} */
     protected function defaultBody(): array
     {
         return array_filter(

@@ -25,7 +25,8 @@ final class InstallToolCommand extends ToolCommand
         {--node= : Numeric target node ID}
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
-        {--repository= : Signed apt repository as a JSON object}
+        {--tool-version= : Exact manager-native version (database mode)}
+        {--repository= : Name of the Node\'s ready apt repository to install from}
         {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
 
@@ -36,10 +37,6 @@ final class InstallToolCommand extends ToolCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $repositoryDefinition = $this->repositoryDefinition($this->option('repository'));
-        if ($repositoryDefinition === false) {
-            return self::FAILURE;
-        }
         $nodeId = $this->nodeId();
         if ($nodeId === null) {
             return self::FAILURE;
@@ -67,7 +64,7 @@ final class InstallToolCommand extends ToolCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint'), $this->stringOption('idempotency-key'), $repositoryDefinition), OperationResponse::class);
+        $operation = $this->send($connector, new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint'), $this->stringOption('idempotency-key'), $this->stringOption('repository'), $this->stringOption('tool-version')), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Install Tool [{$package}]", 'Tool')

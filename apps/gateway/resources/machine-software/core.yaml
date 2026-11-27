@@ -1733,16 +1733,9 @@
                         "sha256": "ba3d0496c8f6ff329752631c212965f0c20b56b75d50231cc0838adc1e37c688"
                     }
                 },
-                "macos_arm64": {
-                    "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.6/conn-server-0.5.6-macos-arm64.zip",
-                    "sha256": "e796cbf403a10a9705b80e39ce55870faec985d12e0cae175e798719707b61a4",
-                    "bundle_id": "com.nckrtl.conn-server",
-                    "team_id": "9SVJ4SYB9B"
-                },
                 "bin": {
                     "conn-server": "conn-server-0.5.6-linux-x64/conn-server"
-                },
-                "release_canary": true
+                }
             },
             "chrome-headless-shell": {
                 "version": "157.0.8103.78",

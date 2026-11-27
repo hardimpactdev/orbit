@@ -7,7 +7,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 /** The shipped recipe text, with `$change` applied to its decoded document when one is given. */
 function shippedRecipeText(?Closure $change = null): string
 {
-    $text = (string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/recipe.json');
+    $text = (string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/core.yaml');
     if ($change === null) {
         return $text;
     }

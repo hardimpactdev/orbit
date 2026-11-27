@@ -41,7 +41,7 @@ final readonly class ObservedPackages
         }
         ksort($packages);
 
-        return new self($packages, $data, CarbonImmutable::instance($fact->observed_at));
+        return new self($packages, $data, CarbonImmutable::instance($fact->confirmed_at ?? $fact->observed_at));
     }
 
     /** The content of one reported apt source or keyring file, or null when the agent did not report it. */

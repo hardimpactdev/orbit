@@ -3,6 +3,10 @@ cases = [
   "every module that a Mac Node runs has a task timeout of at least 60 s",
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
+  "a Linux withdrawal checks without stopping, then stops and unlinks or restores the old service after a failed stop",
+  "Linux withdrawal resumes after the stop or unlink without restarting or sending the notice again",
+  "a replayed finished withdrawal whose check fails is not restored, even when another service answers on its port",
+  "managed Conn dry runs report observed health rather than the selected replacement",
   "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too",
   "a zip whose SHA-256 differs fails the Node and installs nothing",
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing",
@@ -36,7 +40,7 @@ cases = [
   "an SSH reset during the Mac swap or Linux restart restores the original server",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 636
+cost = 701
 # Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
 slices = 4
 inputs = [
@@ -48,6 +52,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/conn-server-linux-start.yml",
+  "swamp/ansible/tasks/conn-server-linux-withdraw.yml",
   "swamp/ansible/tasks/conn-server-require-transport.yml",
   "swamp/ansible/tasks/conn-server-linux.yml",
   "swamp/ansible/tasks/conn-server-mac-health.yml",
@@ -61,6 +66,10 @@ inputs = [
 [case_costs]
   "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret" = 2
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version" = 11
+  "a Linux withdrawal checks without stopping, then stops and unlinks or restores the old service after a failed stop" = 30 # local 23s + 25%, rounded up + 1s
+  "Linux withdrawal resumes after the stop or unlink without restarting or sending the notice again" = 16 # local 12s + 25% + 1s
+  "a replayed finished withdrawal whose check fails is not restored, even when another service answers on its port" = 6 # local 4s + 25%, rounded up + 1s
+  "managed Conn dry runs report observed health rather than the selected replacement" = 13 # local 9s + 25%, rounded up + 1s
   "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too" = 10
   "a zip whose SHA-256 differs fails the Node and installs nothing" = 6
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing" = 11

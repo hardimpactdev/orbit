@@ -37,7 +37,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
-use App\Infrastructure\MachineSoftware\FolderPin;
+use App\Infrastructure\MachineSoftware\ConnServerRelease;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
@@ -56,7 +56,7 @@ use Throwable;
  * @phpstan-type HostCheck array{host: string, accept: bool, known: bool}
  * @phpstan-type RoleInputs array<int, array{role:string,digest:string}>
  * @phpstan-type NodeInputs array{approved: string|null, host: HostCheck|Throwable, roles: RoleInputs|Throwable, gateway: RoleInputs|Throwable}
- * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>, conn_server_pin: FolderPin|ResourceOperationException|null}
+ * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>, conn_server_pin: ConnServerRelease|ResourceOperationException|null}
  */
 final readonly class ContinueReleaseFleetAction
 {

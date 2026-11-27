@@ -9,7 +9,7 @@
 # of the old seed replaces the nested Gateway's disk as a whole. `swamp_pin_root` and `swamp_pin_link` exist for the play's own test.
 - name: Read the recipe's Swamp
   ansible.builtin.set_fact:
-    swamp_pin: "{{ (lookup('ansible.builtin.file', (control.repository | dirname) ~ '/apps/gateway/resources/machine-software/recipe.json') | from_json).tools.swamp }}"
+    swamp_pin: "{{ (lookup('ansible.builtin.file', (control.repository | dirname) ~ '/apps/gateway/resources/machine-software/core.yaml') | from_json).tools.swamp }}"
 - name: Name the pinned binary
   ansible.builtin.set_fact:
     swamp_pin_folder: "{{ swamp_pin_root | default('/usr/local/lib/orbit-swamp') }}/{{ swamp_pin.artifacts.amd64.sha256 }}"

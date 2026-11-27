@@ -2,11 +2,10 @@ import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import {
-    allows,
     type Context,
+    exactMatches,
     Facts,
     ManagerFields,
-    normalizeVersion,
     PackageInput,
     platformSupports,
     publicVersion,
@@ -15,7 +14,8 @@ import {
     ToolRefusal,
     verifyInstalled,
 } from "./contract.ts";
-import { homebrewBlock, homebrewCandidateVersion } from "./homebrew.ts";
+import { candidate, writeInventory } from "./write_policy.ts";
+export { writeInventory } from "./write_policy.ts";
 export const WriteInput = PackageInput.safeExtend({
     kind: z.enum(["tool.install", "tool.update"]),
     setup: Setup.nullable().default(null),
@@ -39,6 +39,8 @@ export type Decision = {
     installed_version: string | null;
     /** The raw installed coordinate, such as a cask's `1.5.13,<build>`, which tells a new build from the same one. */
     installed_coordinate?: string | null;
+    /** Whether a refused decision read the package; a ready one always did. */
+    inventory_read?: boolean;
     candidate_json: string;
 };
 const plain = (input: Input) => ({
@@ -46,65 +48,31 @@ const plain = (input: Input) => ({
     materialize: null,
     intent_only: false,
 });
-/** The manager's package facts: one admitted scope, a readable manager version and at most one installed version. */
-export function writeInventory(value: unknown) {
-    const facts = Facts.parse(value);
-    if (facts.scope !== "present") {
-        throw new ToolRefusal("tool.manager_unavailable");
-    }
-    if (
-        facts.error_code || !safeVersion(facts.manager_version) ||
-        facts.complete !== true || !facts.versions ||
-        facts.versions.length > 1 ||
-        facts.versions.some((version) => !safeVersion(version))
-    ) throw new ToolRefusal("tool.version_probe_failed");
-    return { facts, present: facts.versions.length === 1 };
-}
 /** Refusals on the installed package before any package write; false when nothing needs writing. */
 export function before(
     input: Input,
     facts: z.infer<typeof Facts>,
     present: boolean,
 ): boolean {
+    // A present package that Orbit never installed, adopted or observed for this Tool is never taken over.
     if (
-        input.kind === "tool.install" && input.tool_status === null && present
+        present && input.kind === "tool.install" &&
+        (input.installed_version === null || !input.package_owned)
     ) throw new ToolRefusal("tool.package_already_installed");
     if (input.kind === "tool.update" && !present) {
         throw new ToolRefusal("tool.version_probe_failed");
     }
+    // An update changes only a package Orbit owns, also one a request queued before the ownership contract asks for.
+    if (input.kind === "tool.update" && !input.package_owned) {
+        throw new ToolRefusal("tool.state_invalid");
+    }
+    if (input.desired_version !== null) {
+        if (!present || !exactMatches(input, facts.versions![0]!)) return true;
+        verifyInstalled(plain(input), facts.versions![0]!);
+        return false;
+    }
     if (present) verifyInstalled(plain(input), facts.versions![0]!);
     return !(input.kind === "tool.install" && present);
-}
-/** The manager's normal candidate, checked against the constraint without selecting a version. */
-export function candidate(
-    input: Input,
-    value: unknown,
-): { version: string; allowed: boolean } {
-    const raw = Public.safeParse(value);
-    if (!raw.success) {
-        throw new ToolRefusal("tool.candidate_version_probe_failed");
-    }
-    const version = input.manager.startsWith("brew")
-        ? homebrewCandidateVersion(input, raw.data)
-        : raw.data.version;
-    if (
-        input.manager.startsWith("brew") && homebrewBlock(input, raw.data, true)
-    ) throw new ToolRefusal("tool.candidate_version_probe_failed");
-    if (raw.data.error_code !== undefined) {
-        throw new ToolRefusal("tool.candidate_version_probe_failed");
-    }
-    if (!safeVersion(version)) {
-        throw new ToolRefusal("tool.candidate_version_unavailable");
-    }
-    if (
-        input.version_constraint !== null &&
-        normalizeVersion(version, input.manager) === null
-    ) throw new ToolRefusal("tool.candidate_version_unparseable");
-    const allowed = allows(plain(input), version);
-    if (!allowed && input.kind === "tool.install") {
-        throw new ToolRefusal("tool.version_constraint_blocked");
-    }
-    return { version, allowed };
 }
 /** Decide from "Check the candidate" whether the package write runs; every refusal happens here, before it (flows/tool.install.mmd, tool.update.mmd). */
 export function decide(input: Input, phase: Phase): Decision {
@@ -119,7 +87,9 @@ export function decide(input: Input, phase: Phase): Decision {
 }
 function choose(input: Input, phase: Phase): Decision {
     let managerVersion: string | null = null,
-        installed = input.installed_version;
+        installed = input.installed_version,
+        read = false;
+    // `inventory_read` tells the Gateway the decision read the package: a refusal before that repeats the version it was admitted with.
     const refused = (code: string, native?: string): Decision => ({
         ready: false,
         mutate: false,
@@ -127,6 +97,7 @@ function choose(input: Input, phase: Phase): Decision {
         ...(native ? { native_error_code: native } : {}),
         manager_version: managerVersion,
         installed_version: installed,
+        inventory_read: read,
         candidate_json: "null",
     });
     if (phase === null) return refused("tool.version_probe_failed");
@@ -145,7 +116,8 @@ function choose(input: Input, phase: Phase): Decision {
             );
         }
         const { facts, present } = writeInventory(phase.facts);
-        installed = present ? facts.versions![0]! : installed;
+        installed = present ? facts.versions![0]! : null;
+        read = true;
         if (typeof phase.refresh_error === "string") {
             return refused(phase.refresh_error);
         }
@@ -159,7 +131,7 @@ function choose(input: Input, phase: Phase): Decision {
                 candidate_json: "null",
             };
         }
-        const chosen = candidate(input, phase.candidate);
+        const chosen = candidate(plain(input), phase.candidate);
         // Update: the same version is nothing to do, a version outside the constraint stops here (flows/tool.update.mmd).
         const outcome = !chosen.allowed
             ? "blocked_by_constraint"
@@ -187,7 +159,7 @@ function choose(input: Input, phase: Phase): Decision {
 }
 export const behavior = {
     type: "@nckrtl/tool-write-command",
-    version: "2026.11.02.7",
+    version: "2026.11.27.1",
     resources: {
         assets: { schema: Public, lifetime: "1d", garbageCollection: 10 },
         decision: { schema: Public, lifetime: "1d", garbageCollection: 10 },
@@ -217,7 +189,6 @@ export const behavior = {
                         package: "",
                         repository: null,
                         repository_packages: [],
-                        remove_repository: false,
                     }).version,
                     packages: args.input.setup?.packages ?? [],
                 };
@@ -287,18 +258,26 @@ export const behavior = {
                             ""
                         : "",
                 };
-                await ctx.writeResource("decision", "decision", value);
-                return value;
+                const write = value.mutate && args.input.manager === "apt"
+                    ? native.aptWrite(args.input.package, value.version, args.input.desired_version !== null)
+                    : native.commands(args.input).write;
+                await ctx.writeResource("decision", "decision", {...value, write});
+                return {...value, write};
             },
         },
         observe: {
             description:
                 "Decode the package state returned by the official end check",
-            arguments: z.object({ input: PackageInput, after: Public }),
+            arguments: z.object({
+                input: PackageInput,
+                after: Public,
+                removal: z.boolean().default(false),
+            }),
             execute: async (
                 args: {
                     input: z.infer<typeof PackageInput>;
                     after: Record<string, unknown>;
+                    removal?: boolean;
                 },
                 ctx: Context,
             ) => {
@@ -310,7 +289,11 @@ export const behavior = {
                     installed_version !== null &&
                     !safeVersion(installed_version)
                 ) throw new ToolRefusal("tool.version_probe_failed");
-                if (typeof installed_version === "string") {
+                // A removal asks only whether the package survived; the version an install would target is no part of that answer.
+                if (typeof installed_version === "string" && !args.removal) {
+                    if (!exactMatches(args.input, installed_version)) {
+                        throw new ToolRefusal("tool.installed_version_mismatch");
+                    }
                     verifyInstalled(
                         plain(
                             WriteInput.parse({

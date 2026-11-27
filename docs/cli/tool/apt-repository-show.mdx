@@ -1,0 +1,11 @@
+---
+title: "orbit tool:apt-repository-show"
+sidebarTitle: "tool:apt-repository-show"
+description: "Show one apt repository."
+---
+
+```bash
+orbit tool:apt-repository-show <repository> [--json]
+```
+
+The repository reports the same fields as [`tool:apt-repository-list`](/cli/tool/apt-repository-list). The CLI refuses an ID that is not a positive number with `tool.repository_id_invalid`. An unknown ID fails with `http.404`.

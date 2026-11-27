@@ -2,7 +2,7 @@
 title: "orbit doctor"
 sidebarTitle: "doctor"
 covers:
-  - apps/gateway/app/Domain/Doctor/{FactDoctor,NodeDoctorIssueCode,InstanceDoctorIssueCode}.php
+  - apps/gateway/app/Domain/Doctor/{FactDoctor,NodeDoctorIssueCode,InstanceDoctorIssueCode,ToolDoctor}.php
 ---
 
 ```bash
@@ -12,7 +12,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | accessible Nodes | Inspect one positive numeric Node ID. |
-| `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, `process`, and `firewall`. |
+| `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, `instance`, `process`, `firewall`, and `tool`. |
 | `--json` | false | Return the report as JSON. |
 
 The Gateway answers at once with the report, from the facts each Node's [agent](/reference/node-agent#facts) reported. It starts no run and never reaches a Node. Node access applies first. Nodes sort by name and ID; the family order is fixed.
@@ -25,7 +25,7 @@ Human output lists Node, Family, Status, Checked, Resource and Finding. JSON ret
 
 After a Gateway moves into a container, the Gateway role checks the host Caddy and Incus services. FrankenPHP serves inside the live release.
 
-Doctor compares the Gateway's records with three facts: `host` (platform, architecture and filesystem space), `units` (role services, Process units and containers, and awake markers) and `ufw` (whether UFW is enabled, and its rules). The agent's liveness gives the agent check. There is no Swamp run, SSH read or repair action.
+Doctor compares Gateway records with `host`, `units`, `ufw`, and `packages` facts. The agent's liveness gives the agent check. There is no Swamp run, SSH read, or repair action.
 
 A check whose fact has not arrived yet, or cannot be read, gives one unverifiable `<family>.inspection_failed` finding for the family and Node: "not observed yet". Other checks continue. The root filesystem check also accepts a `/` reading that the Gateway [kept from an earlier report](/reference/node-agent#facts), but only for 180 seconds after the Gateway received the agent's first report without `/`. After that it is unverifiable. A Node without an observing agent, such as a Mac, gets its lifecycle checks only. A parked task VM gets an informational finding and no other check.
 
@@ -39,16 +39,17 @@ A check whose fact has not arrived yet, or cannot be read, gives one unverifiabl
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. A Process whose [release artifact](/reference/processes-and-schedules#upgrade-a-process) has a known installed version older than the daily check's latest release gets the informational `process.update_available`, with the latest version as expected and the installed one as observed; it needs no fact and leaves Doctor healthy. |
 
 | `firewall` | Rule lifecycle, UFW active state, and missing or extra lines by port, protocol and source. |
+| `tool` | One check per managed Tool. A package absent from a usable inventory gives `tool.not_installed`. A different exact coordinate or an unmet constraint gives `tool.version_mismatch`. A missing package fact or one last confirmed over 12 minutes ago is unverifiable. Host Conn Server is not a package fact; use the protected rollout receipt to check its service. |
 
 A stopped, non-keep-alive development Process desired running is healthy only when the agent reports its awake marker absent. An agent before 0.10.0 reports no markers, so that check is unverifiable there, and so is a Process unit it does not list. This inspection takes no timed samples and does not infer a restart rate.
 
-The existing family selectors `project`, `schedule`, `tool`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
+The family selectors `project`, `schedule`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
 
 `checked` counts the checks performed for a family: platform, disk, agent and reboot for `node`, one per role service, one per Process, and one for UFW. Lifecycle findings need no fact. Checks without a usable fact remain in the count and give unverifiable findings.
 
 ## Informational package discoveries
 
-Doctor does not discover packages. Use the Tool family's native scan and adoption operations. Doctor reads no package-manager scope and stores no inventory.
+Doctor does not discover or adopt packages. It compares managed memberships with facts the Node agent already stored. Use `tool:scan` to view unregistered packages.
 
 ## How it works
 

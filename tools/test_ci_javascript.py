@@ -16,7 +16,7 @@ SPEC.loader.exec_module(installer)
 
 class CiJavascriptTest(unittest.TestCase):
     def test_installs_and_verifies_the_current_recipe_with_its_lock(self):
-        document = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+        document = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())
         selected = {name: document['tools'][name] for name in ('node', 'vp', 'vp-cli', 'pnpm')}
         command = Mock(return_value=({'changed': True, 'retired': ['nodejs']}, ''))
         with patch.object(installer.runpy, 'run_path', return_value={'run': command}), \
@@ -55,7 +55,7 @@ class CiJavascriptTest(unittest.TestCase):
                                   capture_output=True, text=True)
 
     def test_setup_smoke_check_escapes_private_cwd_and_matches_recipe_as_runner(self):
-        version = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['node']['version']
+        version = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())['tools']['node']['version']
         result = self.smoke_check('v' + version)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'v' + version)

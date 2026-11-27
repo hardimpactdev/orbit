@@ -5,16 +5,23 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Tools\AddAptRepositoryRequest;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
+use Orbit\Sdk\Requests\Tools\ConvergeToolsRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Requests\Tools\ListAptRepositoriesRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
+use Orbit\Sdk\Requests\Tools\RemoveAptRepositoryRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
 use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
+use Orbit\Sdk\Requests\Tools\ShowAptRepositoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tools\AdoptedToolResponse;
+use Orbit\Sdk\Responses\Tools\AptRepositoriesResponse;
+use Orbit\Sdk\Responses\Tools\AptRepositoryResponse;
 use Orbit\Sdk\Responses\Tools\ToolInventoryResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -56,7 +63,13 @@ describe('tool requests', function (): void {
         'adopt' => [new AdoptToolRequest(2, 'apt', 'jq'), Method::POST, '/api/v1/tools/adopt', []],
         'update' => [new UpdateToolRequest(41), Method::POST, '/api/v1/tools/41/update', []],
         'remove' => [new RemoveToolRequest(41), Method::DELETE, '/api/v1/tools/41', []],
+        'converge' => [new ConvergeToolsRequest(12), Method::POST, '/api/v1/nodes/12/tools/converge', []],
     ]);
+
+    it('sends explicit Tool IDs only when a converge batch is selected', function (): void {
+        expect(new ConvergeToolsRequest(12)->body()->all())->toBe([])
+            ->and(new ConvergeToolsRequest(12, toolIds: [41, 42])->body()->all())->toBe(['tool_ids' => [41, 42]]);
+    });
 
     it('omits only a null version constraint from install bodies', function (): void {
         expect(new InstallToolRequest(12, 'vp', '@openai/codex')->body()->all())
@@ -457,11 +470,50 @@ it('reads the recorded adopted Tool with the agent liveness', function (): void 
         ->and($adopted->agent?->label())->toBe('online')->and($adopted->possiblyOutdated())->toBeFalse();
 });
 
-it('preserves repository definitions in install adopt and update transport', function (): void {
-    $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
-    foreach ([new InstallToolRequest(12, 'apt', 'hello', repository: $repository), new AdoptToolRequest(12, 'apt', 'hello', repository: $repository), new UpdateToolRequest(41, repository: $repository)] as $request) {
-        expect($request->body()->all()['repository'])->toBe($repository);
+it('sends the repository name in install adopt and update transport', function (): void {
+    foreach ([new InstallToolRequest(12, 'apt', 'hello', repository: 'vendor'), new AdoptToolRequest(12, 'apt', 'hello', repository: 'vendor'), new UpdateToolRequest(41, repository: 'vendor')] as $request) {
+        expect($request->body()->all()['repository'])->toBe('vendor');
     }
     expect(new UpdateToolRequest(41)->body()->all())->toBe([]);
-    expect(new UpdateToolRequest(41, repository: [])->body()->all())->toBe(['repository' => []]);
+});
+
+it('uses the exact apt repository methods, endpoints, queries and bodies', function (): void {
+    $definition = ['uris' => ['https://packages.example.test/apt'], 'suites' => ['stable'], 'components' => ['main'],
+        'signing_key' => ['url' => 'https://packages.example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
+    $list = new ListAptRepositoriesRequest(12);
+    $show = new ShowAptRepositoryRequest(5);
+    $add = new AddAptRepositoryRequest(12, 'vendor', $definition, 'add-key');
+    $remove = new RemoveAptRepositoryRequest(5, 'remove-key');
+
+    expect([$list->getMethod(), $list->resolveEndpoint(), $list->query()->all()])->toBe([Method::GET, '/api/v1/apt-repositories', ['node_id' => 12]])
+        ->and([$show->getMethod(), $show->resolveEndpoint(), $show->query()->all()])->toBe([Method::GET, '/api/v1/apt-repositories/5', []])
+        ->and([$add->getMethod(), $add->resolveEndpoint(), $add->body()->all(), $add->headers()->get('Idempotency-Key')])
+        ->toBe([Method::POST, '/api/v1/apt-repositories', ['node_id' => 12, 'name' => 'vendor', 'definition' => $definition], 'add-key'])
+        ->and([$remove->getMethod(), $remove->resolveEndpoint(), $remove->headers()->get('Idempotency-Key')])->toBe([Method::DELETE, '/api/v1/apt-repositories/5', 'remove-key'])
+        ->and($show)->not->toBeInstanceOf(HasBody::class)->and($remove)->not->toBeInstanceOf(HasBody::class);
+});
+
+it('decodes apt repository reads and the Operations their writes start', function (): void {
+    $repository = ['id' => 5, 'node_id' => 12, 'name' => 'vendor', 'definition' => ['uris' => ['https://packages.example.test/apt'], 'suites' => ['stable'],
+        'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]],
+        'status' => 'failed', 'error_code' => 'tool.repository_unconfirmed', 'tool_count' => 2];
+    $operation = ['id' => 77, 'kind' => 'tool.apt_repository_add', 'status' => 'queued', 'target_type' => 'node_tools', 'target_id' => 12, 'node_id' => 12, 'sequence' => 0];
+    $connector = new GatewayConnector('https://10.44.0.1');
+    $connector->withMockClient(new MockClient([
+        ListAptRepositoriesRequest::class => MockResponse::make(['data' => [$repository], 'meta' => ['request_id' => tool_request_id()]]),
+        ShowAptRepositoryRequest::class => MockResponse::make(['data' => $repository, 'meta' => ['request_id' => tool_request_id()]]),
+        AddAptRepositoryRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => tool_request_id()]], 202),
+        RemoveAptRepositoryRequest::class => MockResponse::make(['data' => [...$operation, 'kind' => 'tool.apt_repository_remove'], 'meta' => ['request_id' => tool_request_id()]], 202),
+    ]));
+
+    $list = $connector->send(new ListAptRepositoriesRequest(12))->dto();
+    $show = $connector->send(new ShowAptRepositoryRequest(5))->dto();
+    expect($list)->toBeInstanceOf(AptRepositoriesResponse::class)
+        ->and($list->toArray())->toBe(['repositories' => [$repository], 'request_id' => tool_request_id()])
+        ->and($show)->toBeInstanceOf(AptRepositoryResponse::class)
+        ->and($show->toArray())->toBe([...$repository, 'request_id' => tool_request_id()])
+        ->and($connector->send(new AddAptRepositoryRequest(12, 'vendor', $repository['definition']))->dto())->toBeInstanceOf(OperationResponse::class)
+        ->and($connector->send(new RemoveAptRepositoryRequest(5))->dto()->kind)->toBe('tool.apt_repository_remove');
+    expect(fn () => AptRepositoryResponse::fromGatewayData([...$repository, 'status' => 'unknown'], 'req'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => AptRepositoryResponse::fromGatewayData([...$repository, 'definition' => null], 'req'))->toThrow(InvalidArgumentException::class);
 });

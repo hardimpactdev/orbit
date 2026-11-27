@@ -11,6 +11,7 @@ enum ToolManagerName: string
     case Composer = 'composer';
     case Brew = 'brew';
     case BrewCask = 'brew-cask';
+    case ConnServer = 'conn-server';
 
     public function operationLockKey(int $nodeId): string
     {

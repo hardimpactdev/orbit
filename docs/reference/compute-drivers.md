@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Domain/Compute}/**
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
-  - "{bin/{php-build,git-build-watch}}"
+  - "{bin/{php-build,git-build-watch,static-php-build},tools/static-php/source-identities.json}"
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools,2027_02_02_000000_add_task_vm_runtime}.php
   - swamp/workflows/{workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
@@ -13,11 +13,11 @@ covers:
 
 # Compute drivers
 
-Orbit pins host and container software through one declarative machine software recipe (`apps/gateway/resources/machine-software/recipe.json`), paired with container host preparation and nested-fleet proof workflows.
+Orbit pins host and container software through one declarative machine software recipe (`apps/gateway/resources/machine-software/core.yaml`), paired with container host preparation and nested-fleet proof workflows.
 
 ## Machine software recipe
 
-`apps/gateway/resources/machine-software/recipe.json` declares the pinned Ubuntu release (`26.04`), target architecture (`amd64` only), tool versions, [PHP build](#php-build), Git packages, role tool sets, and shared Instance folders.
+`apps/gateway/resources/machine-software/core.yaml` declares the pinned Ubuntu release (`26.04`), target architecture (`amd64` only), tool versions, [PHP build](#php-build), Git packages, role tool sets, and shared Instance folders.
 
 ### Recipe schema
 
@@ -43,7 +43,7 @@ Inspect or validate the recipe from the Gateway:
 php artisan orbit:machine-recipe --validate [--validate-ubuntu] [--role=<role>] [--architecture=amd64] [--json]
 ```
 
-Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combining `recipe.json` with the pinned agent delivery manifest). The [standalone Conn Server rollout](/reference/development-containers#conn-server-rollout) reads its pin from the validated recipe source.
+Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity, combining `core.yaml` with the pinned agent delivery manifest. The [standalone Conn Server rollout](/reference/development-containers#conn-server-rollout) uses a separate host release catalog and never changes the core digest.
 
 ### Shared Instance folders
 
@@ -54,7 +54,7 @@ Container hosts publish two read-only shared folders built from the recipe:
   It also holds the `phpactor` PHAR, which a Laravel default runs for its [PHP symbol index](/reference/development-containers#php-symbol-index).
 - **`/opt/orbit-agent` (`agent`, `root:2750`):** `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser`.
 
-An agent folder part may also pin its release's macOS arm64 app as `macos_arm64`: the zip, its SHA-256, and the bundle id and Developer ID team id of its signature. This is not a recipe architecture. No container host installs it, and the folder's plan and version leave it out. Only `conn-server` uses it today; see [Conn Server pin](/reference/development-containers#conn-server-pin).
+The required container `conn-server` pin describes only the Linux asset in the shared agent folder. Separate [host Conn Server releases](/reference/development-containers#conn-server-rollout) do not affect the folder plan or recipe digest. Optional host [Tools](/reference/tools#package-ownership) are not recipe parts either.
 
 #### The Vite+ home
 
@@ -64,7 +64,7 @@ The runtime folder places Vite+ under `/opt/orbit-runtime/vite-plus/<digest>`. C
 
 ### One PHP build
 
-Every Linux Node installs PHP from the same pinned Sury `.deb` package set (`recipe.json` `php`), cached in `/var/cache/orbit/php-packages` with `dpkg-repack` rollback copies. PCOV is enabled for CLI only; OpenTelemetry is enabled for FPM only. Managed INI settings include `99-cve-2026-109618-upload-progress.ini`.
+Every Linux Node installs PHP from the same pinned Sury `.deb` package set (`core.yaml` `php`), cached in `/var/cache/orbit/php-packages` with `dpkg-repack` rollback copies. PCOV is enabled for CLI only; OpenTelemetry is enabled for FPM only. Managed INI settings include `99-cve-2026-109618-upload-progress.ini`.
 
 ### Install the PHP build
 
@@ -77,6 +77,8 @@ Every Linux Node installs PHP from the same pinned Sury `.deb` package set (`rec
 ### Static PHP build
 
 Production and development containers use the static glibc PHP builds defined in `tools/static-php/craft.yml` and built via `bin/static-php-build` (`static-php.yml`, `orbit_static_php` release assets, configured in `instances.php`).
+
+Moving the recipe to `core.yaml` leaves the compiled PHP inputs unchanged. The builder records that exact script SHA-256 as equivalent to the previous one, so the published build ID, URL, and archive checksum stay the same. Any further script change gets its own SHA-256 and needs a new build.
 
 ## Prepare an Instance container host
 

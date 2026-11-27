@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def install(root=ROOT):
     resources = root / 'apps/gateway/resources/machine-software'
-    document = json.loads((resources / 'recipe.json').read_text())
+    document = json.loads((resources / 'core.yaml').read_text())
     payload = {
         'user': 'runner',
         'snapshot': document['ubuntu']['snapshot'],

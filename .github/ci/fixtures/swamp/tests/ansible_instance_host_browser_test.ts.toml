@@ -24,7 +24,7 @@ cost = 362
 slices = 17
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",

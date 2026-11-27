@@ -1,0 +1,78 @@
+{
+    "default": "0.5.6",
+    "releases": {
+        "0.5.1": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-linux-x64.tar.gz",
+                "sha256": "13e71798c9dc672f2b3d11aa28c74fb8f0748ffe3ce7d4a54dc7eab79e3fe124"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-macos-arm64.zip",
+                "sha256": "55d20b2d01e6e3f9b1fc2491fa98cf3245208bb98295bd14faf96b47b98f32bd",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.2": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-linux-x64.tar.gz",
+                "sha256": "554766fc35583e2a2284a8c08581ce47dd729efef30315738eebd8f8ad35f539"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-macos-arm64.zip",
+                "sha256": "40d753aaa246e3137e4ed5cd5caa08586b2dc3eb33f281e5be144b0d3083bb9d",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.3": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.3/conn-server-0.5.3-linux-x64.tar.gz",
+                "sha256": "1a4561e3089ba298641b7e2483f805b03533a490b604cf1f14510110352daeb2"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.3/conn-server-0.5.3-macos-arm64.zip",
+                "sha256": "621306c3d65cdee68773fe2f47de1c1c33fae6ecd9223d3e635d9a14fa790bf6",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.4": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.4/conn-server-0.5.4-linux-x64.tar.gz",
+                "sha256": "680fd90f7d19fc1bf73c2de94473350c91d385ce6c1c730a57f473799e408dda"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.4/conn-server-0.5.4-macos-arm64.zip",
+                "sha256": "72a06a484c10b4bcaf469e36f55684e246f315f6ba59a602dae14c458883b3f6",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.5": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-linux-x64.tar.gz",
+                "sha256": "a60cf81991be8c0a3195b7123ddb62bb2e6c7479a03fb7e1ad7a8a841f9e9f4b"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-macos-arm64.zip",
+                "sha256": "3c07362bf96157df8f0b5628abbaad45f598e692096d5edd25fe3b4bb9b0d4da",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.6": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.6/conn-server-0.5.6-linux-x64.tar.gz",
+                "sha256": "ba3d0496c8f6ff329752631c212965f0c20b56b75d50231cc0838adc1e37c688"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.6/conn-server-0.5.6-macos-arm64.zip",
+                "sha256": "e796cbf403a10a9705b80e39ce55870faec985d12e0cae175e798719707b61a4",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            },
+            "release_canary": true
+        }
+    }
+}

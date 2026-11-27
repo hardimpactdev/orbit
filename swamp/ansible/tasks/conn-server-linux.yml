@@ -4,8 +4,8 @@
 # answers points `current` back and restarts again.
 # `server.path` is the `current` link. Sets `node_result`; a failed check fails with its public code as the message.
 - name: Name the paths of the Node
+  when: not (intent.withdraw | default(false))
   ansible.builtin.set_fact:
-    linux_root: "{{ server.path | dirname }}"
     linux_release: "{{ server.path | dirname }}/releases/{{ version }}-{{ run_id }}"
     linux_stage: "{{ server.path | dirname }}/.stage-{{ run_id }}"
 
@@ -17,27 +17,31 @@
 
 - name: Refuse a Node with no current release
   ansible.builtin.assert:
-    that: linux_current.stat.islnk | default(false)
+    that: linux_current.stat.islnk | default(false) or ((intent.withdraw | default(false)) and not linux_current.stat.exists)
     fail_msg: conn_server.not_installed
     quiet: true
 
 - name: Make the staging folder
+  when: not (intent.withdraw | default(false))
   ansible.builtin.file: { path: "{{ linux_stage }}", state: directory, mode: "0700" }
   become: true
   timeout: 20
 
 - name: Download the tarball
+  when: not (intent.withdraw | default(false))
   ansible.builtin.get_url: { url: "{{ intent.linux.url }}", dest: "{{ linux_stage }}/conn-server.tar.gz", mode: "0600", timeout: 60 }
   become: true
   timeout: 900
 
 - name: Read the tarball's SHA-256
+  when: not (intent.withdraw | default(false))
   ansible.builtin.stat: { path: "{{ linux_stage }}/conn-server.tar.gz", checksum_algorithm: sha256 }
   register: linux_tarball
   become: true
   timeout: 60
 
 - name: Check the tarball's SHA-256
+  when: not (intent.withdraw | default(false))
   ansible.builtin.assert:
     that: linux_tarball.stat.checksum == intent.linux.sha256
     fail_msg: conn_server.hash_mismatch
@@ -52,6 +56,7 @@
   become: true
 
 - name: List the tarball
+  when: not (intent.withdraw | default(false))
   ansible.builtin.command: { argv: [timeout, "60", tar, -tzf, "{{ linux_stage }}/conn-server.tar.gz"] }
   register: linux_listing
   changed_when: false
@@ -61,7 +66,7 @@
   ansible.builtin.assert:
     that:
       - ('path=' ~ server.path ~ '/conn-server ') in linux_exec.stdout
-      - ('conn-server-' ~ version ~ '-linux-x64/conn-server') in linux_listing.stdout_lines
+      - (intent.withdraw | default(false)) or ('conn-server-' ~ version ~ '-linux-x64/conn-server') in linux_listing.stdout_lines
     fail_msg: conn_server.layout_mismatch
     quiet: true
 
@@ -77,27 +82,37 @@
       http://{{ '[' ~ host ~ ']' if ':' in host else host }}:{{ server.port }}/health
 
 - name: Read the running version
-  ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, return_content: true, timeout: 5 }
+  ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, follow_redirects: none, return_content: true, timeout: 5 }
   register: linux_before
   failed_when: false
   timeout: 20
 
+- name: Check the health response
+  ansible.builtin.set_fact:
+    linux_before_healthy: >-
+      {{ linux_before.status | default(-1) == 200 and linux_before.json.server | default('') == 'conn-server'
+         and (linux_before.json.version | default(none)) is string and linux_before.json.version | trim | length > 0 }}
+
 - name: Refuse a running server that does not answer with its version
+  when: not (intent.withdraw | default(false))
   ansible.builtin.assert:
-    that:
-      - linux_before.status | default(-1) | int == 200
-      - linux_before.json.server | default('') == 'conn-server'
-      - linux_before.json.version | default('', true) | string | length > 0
+    that: linux_before_healthy
     fail_msg: conn_server.health_unreachable
     quiet: true
 
 - name: Record a checked Node of a dry run
-  when: intent.dry_run
+  when: intent.dry_run and not (intent.withdraw | default(false))
   ansible.builtin.set_fact:
-    node_result: { node_id: "{{ node_id | int }}", outcome: checked }
+    node_result: >-
+      {{ {'node_id': node_id | int, 'outcome': 'checked'}
+         | combine({'observed_version': linux_before.json.version} if managed_tool else {}) }}
+
+- name: Withdraw a configured Linux host service
+  when: intent.withdraw | default(false)
+  ansible.builtin.include_tasks: conn-server-linux-withdraw.yml
 
 - name: Swap and restart
-  when: not intent.dry_run
+  when: not intent.dry_run and not (intent.withdraw | default(false))
   block:
     - name: Send the notice before the restart
       when: server.notify_before_restart
@@ -150,6 +165,7 @@
           ansible.builtin.assert:
             that:
               - linux_health.json.server | default('') == 'conn-server'
+              - linux_health.status | default(-1) == 200
               - linux_health.json.version | default('') == version
             fail_msg: conn_server.health_check_failed
             quiet: true
@@ -177,7 +193,10 @@
 
         - name: Record the updated Node
           ansible.builtin.set_fact:
-            node_result: { node_id: "{{ node_id | int }}", outcome: updated, thread_read: "{{ true if intent.probe_thread | default(false) else omit }}", previous_version: "{{ linux_before.json.version | default(none) }}" }
+            node_result: >-
+              {{ {'node_id': node_id | int, 'outcome': 'updated', 'previous_version': linux_before.json.version}
+                 | combine({'thread_read': true} if intent.probe_thread | default(false) else {})
+                 | combine({'observed_version': linux_health.json.version} if managed_tool else {}) }}
       rescue:
         - name: Name the cause
           ansible.builtin.set_fact:
@@ -197,7 +216,8 @@
 
             - name: Note whether the old server answers
               ansible.builtin.set_fact:
-                rolled_back: "{{ linux_health.json.version | default('') == linux_before.json.version | default(none) }}"
+                rolled_back: "{{ linux_health.status | default(-1) == 200 and linux_health.json.server | default('') == 'conn-server' and linux_health.json.version | default('') == linux_before.json.version | default(none) }}"
+                recovered_version: "{{ linux_health.json.version | default(none) }}"
           rescue:
             - name: Note that the old server does not answer
               ansible.builtin.set_fact:
@@ -210,6 +230,7 @@
             quiet: true
 
 - name: Remove the staging folder
+  when: not (intent.withdraw | default(false))
   ansible.builtin.file: { path: "{{ linux_stage }}", state: absent }
   become: true
   timeout: 60

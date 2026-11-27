@@ -223,7 +223,14 @@ export function homebrewCandidateVersion(
     facts: Record<string, unknown>,
 ): unknown {
     const record = Row.parse(facts.homebrew);
-    return input.manager === "brew" ? Row.parse(record.versions).stable : ({
+    if (input.manager === "brew") {
+        const stable = Row.parse(record.versions).stable;
+        const revision = z.number().int().nonnegative().default(0).safeParse(record.revision);
+        return typeof stable === "string" && revision.success
+            ? stable + (revision.data === 0 ? "" : `_${revision.data}`)
+            : null;
+    }
+    return ({
         ...record,
         ...Row.parse(
             Row.parse(record.variations ?? {})[homebrewTag(input, facts)] ??

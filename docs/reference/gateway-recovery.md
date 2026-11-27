@@ -184,6 +184,8 @@ Admission reads the target commit's pin from `apps/gateway/resources/agent/froze
 
 The build step verifies free disk space (database size plus 1 GiB), creates the worktree, links shared `.env` and storage, runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` in `apps/cli` and `apps/gateway`, writes the agent manifest, seals source permissions with `REVISION`, and caches config at mode `0600`. Existing sealed releases of the same commit are reused.
 
+For a container build, the installed protocol 4 launcher runs the controller from the admitted commit. That controller archives its own runtime installer and `core.yaml` before the candidate checkout exists. A previous release can keep using its own recipe filename while it serves traffic; the candidate prepare does not read that file. A clean preparation uses `core.yaml` from its own checkout.
+
 #### Release provenance
 
 CI signs each CLI/agent release with Sigstore ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). Both release admission and [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) download `provenance.sigstore.json` without authentication and verify it offline with PHP's OpenSSL extension against `apps/gateway/resources/sigstore/trusted_root.json`.
@@ -347,7 +349,7 @@ A verified Gateway release triggers two distinct layers of fleet work:
 - **Agent and CLI delivery (`fleet.rollout`):** Delivers the pinned `orbit-agent` binary (and packaged CLI on `ci-runner` Nodes) in risk order via `operation-fleet-rollout`. Trigger manually via `POST /api/v1/fleet/rollout`.
 - **Verified release fleet pass:** Runs automatically after a Gateway release verifies and daily at 03:05 Europe/Amsterdam with rollout or refresh enabled.
 
-The fleet pass validates the serving recipe before admitting work. A Conn Server release can require proof from a standalone canary. The pass dry-runs and updates that Node first. A failed canary holds the pass. Its Operation shows the failure and rollback result. The [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains how to retry the failed stage and promote the verified pin.
+The fleet pass validates the serving Conn host release catalog before admitting work. For a reviewed release, it dry-runs and updates the standalone canary only if that Node is enrolled for that exact version. A failed canary holds the pass; its Operation shows the failure and rollback result. The [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains how to retry and promote the verified release without changing other Nodes' pins.
 
 During the verified release fleet pass, each eligible Node (with the serving Gateway Node last) runs delivery and then admits either a scoped role `node.converge` (when role inputs changed) or a full `node.converge` (when host inputs changed). Once all Nodes are `current`, `phases.fleet.status` becomes `current` and default refresh and seed publication may advance.
 

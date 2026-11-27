@@ -12,9 +12,11 @@ orbit tool:remove <tool> [--yes] [--idempotency-key=KEY] [--json]
 | --- | --- |
 | `--yes` | Skip the confirmation. A call without a terminal, or with `--json`, needs it. |
 
-Without `--yes`, the command reads the Tool first. An unknown ID fails there with `http.404`. In a terminal, the command then asks `Remove Tool [package] (manager on Node #ID) by uninstalling it and deleting its record?`. The default answer is No. Declining, Ctrl-C, or end of input exits with `input.cancelled` and changes nothing. Without a terminal, the command fails with `input.confirmation_required`.
+Without `--yes`, the command reads the Tool first. An unknown ID fails there with `http.404`. In a terminal, the command describes the effect and asks for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits with `input.cancelled` and changes nothing. Without a terminal, the command fails with `input.confirmation_required`.
 
-For a [role-owned PHP package](/reference/tools#role-owned-php-packages), such as `php8.5-xml`, the command deletes only the record and leaves the package installed. A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
+For [protected host packages](/reference/tools#protected-packages), including role-owned PHP packages such as `php8.5-xml`, the command deletes only the Tool record and leaves the package installed. It also deletes only the record of a Tool whose package Orbit does not own, such as a first install that failed or was interrupted, whatever happened since. A Tool of an [apt repository](/reference/tools#apt-repositories) runs on the Node to repin the repository's remaining owned packages; an unowned one leaves its package alone. A failed repin keeps the Tool `failed` with `tool.repository_failed`; run the command again. Removing the last Tool of a repository leaves the repository; [`tool:apt-repository-remove`](/cli/tool/apt-repository-remove) removes it. A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
+
+For a [host Conn Server](/reference/tools#host-conn-server-membership), remove withdraws the Tool from rollout without stopping the service. It does not change container Conn.
 
 ## How it works
 
