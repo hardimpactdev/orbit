@@ -22,7 +22,6 @@ use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -31,8 +30,7 @@ use Throwable;
  * The hold of the Nodes that serve a Route write (docs/reference/routes.md#coordinate-publication). Admission takes every Node
  * of the write at once or none; a write that finds one held waits with status `waiting` and starts, oldest first, when the
  * Nodes are free. The terminal state releases them, except for a timed-out write whose run Swamp has not confirmed stopped.
- * The DNS Node is not held: its records are keyed. An update on the Gateway engine also holds, at its start, the Nodes its phases
- * write and its VPN Nodes (`holdEngine`).
+ * The DNS Node is not held: its records are keyed.
  *
  * A removal, and a clone's create whose publication is Caddy only, share their Nodes (`route_withdrawal_holds`): each merges or
  * withdraws its own sections in one Node-local transaction under the Node lock, so several of them on one Node all land. Any other
@@ -155,22 +153,6 @@ final class RoutePublicationHolds
         return $nodes === [] || (! $this->waitingOverlaps($nodes) && $this->acquire($operation->id, $nodes));
     }
 
-    /**
-     * Takes, in the caller's transaction, every Node an engine-run write acts on that its admission did not take: the Nodes of its
-     * site phases and the VPN Nodes whose catalog it publishes. False when another write holds or waits for one of them. The
-     * terminal state frees them with the rest.
-     *
-     * @param  list<int>  $nodes
-     */
-    public function holdEngine(Operation $operation, array $nodes): bool
-    {
-        $held = DB::table('route_publication_holds')->where('operation_id', $operation->id)->pluck('node_id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all();
-        $missing = array_values(array_diff(array_values(array_unique($nodes)), $held));
-        sort($missing);
-
-        return $missing === [] || (! $this->waitingOverlaps($missing) && $this->acquire($operation->id, $missing));
-    }
-
     /** A Route write that waits for a held Node: native workflows report `waiting` too, and those are not ours. */
     public static function waitsForNodes(Operation $operation): bool
     {
@@ -207,41 +189,10 @@ final class RoutePublicationHolds
         if (self::releasesAfterWithdraw($operation->kind) && ($operation->input['route_withdrawn'] ?? false) === true) {
             return [];
         }
-        $nodes = self::phaseNodes($operation);
+        $nodes = [];
         self::collect($operation->input, $nodes);
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
-
-        return $nodes;
-    }
-
-    /**
-     * The Nodes a Route update's or target change's phase plan writes (NativeRouteUpdatePlan, NativeRouteTargetPlan): their
-     * whole Caddyfiles, held as a `publications` entry's Nodes are, so such a write and an engine-run update exclude each other in
-     * either start order. A waiting one is refused at its start when its Nodes' sites changed (`hold_sites`). The VPN Nodes are
-     * not among them: their records are keyed.
-     *
-     * @return list<int>
-     */
-    private static function phaseNodes(Operation $operation): array
-    {
-        $plan = match ($operation->kind) {
-            'route.update' => Arr::get($operation->input, 'route_update.plan'),
-            'route.target_set' => Arr::get($operation->input, 'route_target.plan'),
-            default => null,
-        };
-        $nodes = [];
-        if (! is_array($plan)) {
-            return $nodes;
-        }
-        foreach (['publish', 'stage', 'router', 'app_url', 'retire'] as $phase) {
-            $phaseNodes = Arr::get($plan, $phase.'.site_nodes', []);
-            foreach (is_array($phaseNodes) ? $phaseNodes : [] as $node) {
-                if (is_int($node)) {
-                    $nodes[] = $node;
-                }
-            }
-        }
 
         return $nodes;
     }

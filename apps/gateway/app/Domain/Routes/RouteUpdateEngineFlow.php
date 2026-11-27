@@ -12,7 +12,7 @@ use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Operations\RouteWriteNodes;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -237,30 +237,16 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     }
 
     /**
-     * Holds, with the Operation's start, each Node a step writes: the publish and retire phases' Nodes, the withdrawal's and
-     * the VPN Nodes of the DNS move, of this plan and of the plan it resumes. A Node another write holds refuses the start.
+     * Refuses the start, in its bind transaction, while another open Route write on either engine writes a Node this update
+     * writes (RouteWriteNodes): the serving, edge and retired Nodes and the VPN Nodes, of this plan and of the plan it resumes.
      */
     public static function holdNodes(Operation $operation): void
     {
         if ($operation->kind !== self::Kind) {
             return;
         }
-        $nodes = [];
-        foreach (array_filter([$operation, self::cutoverOwner($operation)]) as $from) {
-            $plan = self::plan($from);
-            foreach (['publish', 'retire'] as $phase) {
-                array_push($nodes, ...ValidatedData::integerList(ValidatedData::object($plan[$phase] ?? [])['site_nodes'] ?? []));
-            }
-            foreach (['dns', 'cleanup'] as $list) {
-                foreach (RouteExecutionProof::objects($plan[$list] ?? []) as $row) {
-                    $nodes[] = ValidatedData::integer($row['node_id']);
-                }
-            }
-        }
-        if (! app(RoutePublicationHolds::class)->holdEngine($operation, $nodes)) {
-            throw new ResourceOperationException('route.publication_held', 'Another Route write holds a Node of this update.', 409);
-        }
-
+        $resumed = self::cutoverOwner($operation);
+        RouteWriteNodes::refuseEngineBeside($operation, RouteWriteNodes::of([$operation->input ?? [], $resumed->input ?? []]));
     }
 
     /**

@@ -11,8 +11,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\RoutePublicationSites;
-use App\Domain\Routes\RouteUpdateEngineFlow;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -732,71 +730,3 @@ it('takes the Instance slot the way the destroy workflow names its container ste
         ->and(RoutePublicationHolds::destroySlot(instanceRemoval(3206)))->toBe(3206 % RoutePublicationHolds::DestroySlots)
         ->and(RoutePublicationHolds::destroySlot(routeWrite([5])))->toBeNull();
 });
-
-/** A Route update admitted with serving Node `$serving` whose plan writes sites on `$sites` and the DNS catalog of VPN Node `$dns`. */
-function engineUpdateWrite(int $serving, array $sites, int $dns): Operation
-{
-    $operation = routeWrite([$serving], 'route.update');
-    $phase = ['site_nodes' => $sites];
-    $operation->update(['input' => [...$operation->input, 'route_update' => ['route_id' => 1, 'result_route_id' => 2, 'plan' => [
-        'publish' => $phase, 'retire' => $phase, 'cleanup' => [], 'dns' => [['node_id' => $dns, 'records' => "address=/new.example/10.44.0.2\n", 'catalog' => "{}\n"]]]]]]);
-
-    return $operation->refresh();
-}
-
-it('leaves the DNS Node of a Swamp-run Route write unheld, as before the engine', function (): void {
-    $holds = app(RoutePublicationHolds::class);
-    [$first, $second] = [engineUpdateWrite(5, [5], 8), engineUpdateWrite(6, [6], 8)];
-
-    expect(RoutePublicationHolds::nodes($first))->toBe([5])
-        ->and($holds->admit($first))->toBeTrue()
-        ->and($holds->admit($second))->toBeTrue()
-        ->and(holder(8))->toBeNull();
-});
-
-it('holds an engine-run update\'s site phase Nodes and VPN Node at its start, refuses a second, and frees them at its end', function (): void {
-    $holds = app(RoutePublicationHolds::class);
-    [$first, $second] = [engineUpdateWrite(5, [5, 7], 8), engineUpdateWrite(6, [6], 8)];
-    $holds->admit($first);
-    $holds->admit($second);
-
-    RouteUpdateEngineFlow::holdNodes($first);
-    expect(holder(7))->toBe($first->id)->and(holder(8))->toBe($first->id)
-        ->and(fn () => RouteUpdateEngineFlow::holdNodes($second))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'));
-
-    finish($first, OperationStatus::Failed);
-    expect(holder(7))->toBeNull()->and(holder(8))->toBeNull();
-    RouteUpdateEngineFlow::holdNodes($second);
-    expect(holder(8))->toBe($second->id);
-
-    Operation::query()->whereKey($second->id)->update(['status' => OperationStatus::Failed, 'finished_at' => now()]);
-    expect($holds->sweep())->toBe(2)->and(holder(8))->toBeNull();
-});
-
-it('makes a Swamp rename whose phase plan writes a Node an engine update holds wait, in either start order', function (string $kind): void {
-    $holds = app(RoutePublicationHolds::class);
-    $phased = static function (int $serving, array $sites) use ($kind): Operation {
-        $operation = routeWrite([], $kind);
-        $key = $kind === 'route.update' ? 'route_update' : 'route_target';
-        $operation->update(['input' => [...$operation->input, $key => ['route_id' => 3, 'result_route_id' => 4,
-            'plan' => ['publish' => ['site_nodes' => [$serving]], 'retire' => ['site_nodes' => $sites], 'cleanup' => [], 'dns' => []]]]]);
-
-        return $operation->refresh();
-    };
-
-    $engine = engineUpdateWrite(5, [5, 7], 8);
-    expect($holds->admit($engine))->toBeTrue();
-    RouteUpdateEngineFlow::holdNodes($engine);
-    $swamp = $phased(9, [7]);
-    expect(RoutePublicationHolds::nodes($swamp))->toBe([7, 9])
-        ->and($holds->admit($swamp))->toBeFalse()
-        ->and($swamp->refresh()->status)->toBe(OperationStatus::Waiting);
-
-    finish($engine);
-    finish($swamp, OperationStatus::Cancelled);
-    $first = $phased(9, [7]);
-    expect($holds->admit($first))->toBeTrue();
-    $later = engineUpdateWrite(5, [5, 7], 8);
-    expect($holds->admit($later))->toBeFalse();
-})->with(['a Route update' => ['route.update'], 'a target change' => ['route.target_set']]);

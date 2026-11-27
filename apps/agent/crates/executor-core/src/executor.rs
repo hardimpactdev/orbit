@@ -510,7 +510,13 @@ mod tests {
     fn sync_order(action: &str, step: &str, nonce: &str, expiry: u64) -> VerifiedOrder {
         let mut fields = payload();
         fields["action"] = action.into();
-        fields["target"] = if action == "instance.fetch_branch" { "7:fetch-12" } else { "12" }.into();
+        fields["target"] = match action {
+            "instance.fetch_branch" => "7:fetch-12",
+            // A Route or DNS action targets its Node.
+            "tls.ensure_csr" | "route.publish_site" | "dns.publish_records" => "7",
+            _ => "12",
+        }
+        .into();
         fields["operation"] = format!("42:{step}").into();
         fields["nonce"] = nonce.into();
         fields["expires_ms"] = expiry.into();

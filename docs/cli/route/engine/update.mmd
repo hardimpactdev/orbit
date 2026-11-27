@@ -25,7 +25,7 @@ sequenceDiagram
     %%> The engine admits nothing here; no run, no Node order
   else Node work needed
     Note over GW: Hold the Route Nodes
-    %%> Admission holds the serving Nodes, as route/update.mmd; an engine start also holds its site phases' Nodes and its VPN Nodes in the bind transaction, or refuses `route.publication_held`
+    %%> Admission holds the serving Nodes, as route/update.mmd; the engine start refuses `route.publication_held` in its bind transaction while any other open Route write writes one of its serving, edge, retired or VPN Nodes, and such a write is refused while this update is open
     alt the engine admits the whole Operation
       %%> Admission, one decision per Operation (EngineKinds::routes):
       %%> - `route.update` is in `ORBIT_ENGINE_KINDS`

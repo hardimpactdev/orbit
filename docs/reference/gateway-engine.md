@@ -78,9 +78,9 @@ One chain never mixes engines: a retry of an update that was bound to Swamp, or 
 
 A first attempt captures its plan again under the Node hold, before any step is sent, and refuses the same way when its side-by-side or lasting Caddyfile differs from the stored one.
 
-The update is receipt-bound, as `instance.destroy` is. In one transaction the Gateway binds the steps, takes the Route's Operation lock and holds the Nodes of its phases and its VPN Nodes. When another write holds one, the start fails with `route.publication_held`. Neither a failure nor a cancel ends the run while an order it may have published has no terminal receipt; it sends no new order meanwhile. A Gateway step whose worker was lost after it was marked sent runs again at its next deadline or nudge.
+The update is receipt-bound, as `instance.destroy` is. In one transaction the Gateway binds the steps and takes the Route's Operation lock. Neither a failure nor a cancel ends the run while an order it may have published has no terminal receipt; it sends no new order meanwhile. A Gateway step whose worker was lost after it was marked sent runs again at its next deadline or nudge.
 
-Every `route.update` and `route.target_set` holds the Nodes of its phase plan at admission, so a Swamp-run rename and an engine-run update wait for each other in either order. The VPN Nodes are not held on Swamp, and the engine runs no DNS move yet.
+An engine-run `route.update` and any other Route write never queue behind each other: whichever is second is refused with `route.publication_held` when both write one Node (a serving or edge Node, a Node the old site leaves, or a VPN Node; `RouteWriteNodes`). The engine start checks in its bind transaction; any other Route write checks right after its record exists, before it holds or dispatches. Swamp writes among themselves keep their publication holds and queue as before.
 
 The Operation lock names the old Route, so `route:destroy` of the replacement refuses with `operation.target_busy` while the update is open.
 

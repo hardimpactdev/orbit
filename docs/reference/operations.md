@@ -182,7 +182,7 @@ After commit, the Gateway pushes any required execution copies to Swamp's vault 
 
 ### One Route write per Node
 
-Route-writing Operations (`instance.create`, `instance.complete`, `instance.destroy`, `instance.unregister`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy`, `route.target_set`) serialize per serving Node via `route_publication_holds`. An engine-run `route.update` also holds, from its start, the Nodes of its site phases and its VPN Nodes. Competing writes enter `waiting` (never `409`) with `hold_wait_reason`:
+Route-writing Operations (`instance.create`, `instance.complete`, `instance.destroy`, `instance.unregister`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy`, `route.target_set`) serialize per serving Node via `route_publication_holds`. An engine-run `route.update` and any other Route write never queue behind each other: whichever is second is refused with `route.publication_held` when both write one Node (a serving or edge Node, a Node the old site leaves, or a VPN Node; `RouteWriteNodes`). The engine start checks in its bind transaction; any other Route write checks right after its record exists, before it holds or dispatches. Competing writes enter `waiting` (never `409`) with `hold_wait_reason`:
 
 | Reason | Meaning |
 | --- | --- |
