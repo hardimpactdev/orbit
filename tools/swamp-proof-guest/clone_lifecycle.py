@@ -689,8 +689,8 @@ class SyncLane(CloneLane):
         except ProofFailure as error:
             # The Swamp container phase can lose its mktemp file in the new container's /tmp while it boots
             # (instance-container-phase.yml, "Move the app account to www-data"). Not this group's code: the fixture's default retries once.
-            failed = self.db(f"SELECT id, json_extract(state,'$.native_failure.detail') AS detail FROM operations WHERE kind='instance.create' "
-                             f"AND status='failed' ORDER BY id DESC LIMIT 1")
+            failed = self.db("SELECT id, json_extract(state,'$.native_failure.detail') AS detail FROM operations WHERE kind='instance.create' "
+                             "AND status='failed' ORDER BY id DESC LIMIT 1")
             if not seed or attempt or not failed or "cannot stat '/tmp/" not in (failed[0]['detail'] or ''):
                 raise
             self.record('default-create-boot-race', {'operation': failed[0]['id'], 'error': str(error)})
@@ -721,7 +721,8 @@ class SyncLane(CloneLane):
                 self.set_capability(True)
                 for name, group in list(self.groups.items()):
                     # The copy is read from the group, not from what start returned: a lost start answer still leaves a copy to remove.
-                    owned = lambda: [row['id'] for row in self.db(f'SELECT id FROM instances WHERE task_workspace_owner_id={group}')]
+                    def owned(group=group):
+                        return [row['id'] for row in self.db(f'SELECT id FROM instances WHERE task_workspace_owner_id={group}')]
                     copies = owned()
                     group_row = self.db(f'SELECT status FROM tasks WHERE id={group}')
                     if group_row and group_row[0]['status'] not in ('cancelled', 'completed'):
