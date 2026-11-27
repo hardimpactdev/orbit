@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-schedule-ensure-timer}.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-process-restart-output,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -154,10 +154,12 @@ A restart is not a desired state, so the family binds it to its order. `process.
 | On the Node | What `process.restart` does | `restarted` |
 | --- | --- | --- |
 | The pinned run, and no attempt for this order | Syncs an attempt file for the order (`/var/lib/orbit/executor/process-restart/<operation>-<step>`), then runs `systemctl restart` or `docker container restart` | `now` |
-| Another run, and no attempt | Nothing: the run it would replace already ended, or an earlier execution of this order restarted it and its attempt ended | `already` |
+| Another run, and no attempt | Nothing: the run it would replace already ended | `already` |
 | An attempt for this order | Never restarts again: it waits up to 30 s for a new run, else fails `process.restart_unresolved` | `recovered` |
 
-The read-back requires a unit loaded, `active` and at its admitted boot policy, or a container `running` with its admitted image, and in both a run other than the pinned one, else `process.state_mismatch` or `process.restart_unverified`. The attempt file is removed once the result is known. A crash after that leaves a run that differs from the pinned one, so a replay answers `already` and acts on nothing. A resend whose `done` record exists gets the journal's stored result, as for every fenced action.
+The read-back keeps identity and readiness apart. It reads up to 30 times, 1 s apart, while the pinned run is still in place or the new run is still changing state, and never restarts while it waits. A verified run is a run other than the pinned one, and a unit loaded, `active` and at its admitted boot policy, or a container `running` with its admitted image. Otherwise the step fails `process.state_mismatch`, `process.restart_unverified`, or `process.restart_unresolved` after an earlier attempt.
+
+The attempt file stays after the result, so the order stays spent across a crash or a reboot before its `done` record is durable. Files older than two days, past the journal's 24-hour `done` retention, are pruned when a new attempt is written. A resend whose `done` record exists gets the journal's stored result, as for every fenced action. Each phase has its own code: `process.boot_failed` for the boot policy, `process.apply_failed` for the read before the restart and the restart, `process.read_failed` for a read after it. The output is a JSON object with `instance` and `restarted`, in key order (`contract/fixtures/executor-process-restart-output.json`).
 
 A unit in an Instance container is not covered: Swamp first moves the container's app account with a script, which no fixed argv reproduces, so the Gateway keeps that shape on Swamp. A property `systemctl show` leaves out never counts as its value. Each failure code names its phase: the change (`process.apply_failed`, `process.unit_missing`, `process.container_missing`), a stop's plain `systemctl stop` after it (`process.unit_stop_failed`), the read-back read (`process.read_failed`, `schedule.read_failed`) or a read of another state (`process.state_mismatch`, `schedule.state_mismatch`); the Gateway keeps these step codes beside the public `operation.native_failed` a Swamp run records.
 

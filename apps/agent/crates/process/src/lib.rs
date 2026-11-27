@@ -63,11 +63,8 @@ pub trait System {
     /// Why the record could not be written and synced.
     fn begin_attempt(&self, key: &str) -> Result<(), String>;
 
-    /// Whether the order `key` recorded an attempt that no end removed.
+    /// Whether the order `key` recorded an attempt.
     fn attempted(&self, key: &str) -> bool;
-
-    /// Removes the order's attempt once its result is known.
-    fn end_attempt(&self, key: &str);
 }
 
 /// The Node's own system: `timeout`-bounded commands.
@@ -94,6 +91,7 @@ impl System for NodeSystem {
 
     fn begin_attempt(&self, key: &str) -> Result<(), String> {
         std::fs::create_dir_all(ATTEMPTS).map_err(|error| error.to_string())?;
+        prune_attempts();
         let file = std::fs::File::create(attempt_path(key)).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| error.to_string())?;
         std::fs::File::open(ATTEMPTS)
@@ -104,14 +102,31 @@ impl System for NodeSystem {
     fn attempted(&self, key: &str) -> bool {
         attempt_path(key).exists()
     }
-
-    fn end_attempt(&self, key: &str) {
-        let _ = std::fs::remove_file(attempt_path(key));
-    }
 }
 
 /// Where a restart's attempt records live, beside the executor's journal.
 const ATTEMPTS: &str = "/var/lib/orbit/executor/process-restart";
+
+/// How long an attempt keeps its order spent: past the journal's `done` retention, when the Gateway sends the order no more.
+const ATTEMPT_RETENTION: std::time::Duration = std::time::Duration::from_secs(2 * 24 * 60 * 60);
+
+/// Removes the attempts of orders no send can reach any more.
+fn prune_attempts() {
+    let Ok(entries) = std::fs::read_dir(ATTEMPTS) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > ATTEMPT_RETENTION);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
 
 fn attempt_path(key: &str) -> std::path::PathBuf {
     std::path::Path::new(ATTEMPTS).join(key)
@@ -618,17 +633,17 @@ const SETTLE_POLLS: u32 = 30;
 
 /// Restarts one host Process at most once for the order `key`, as Swamp's restart does: a unit first gets its admitted boot
 /// policy, then `systemctl restart`; a container `docker container restart`. It acts only while the Process still runs the
-/// pinned instance and the order recorded no earlier attempt; the attempt is durable before the runtime is called. A replay
-/// that finds its own attempt never restarts again: it waits a bounded time for a new run and reports it `recovered`. The
-/// read-back requires a unit loaded, `active` and at its boot policy, or a container `running` with its admitted image, and
-/// in both a run other than the pinned one.
+/// pinned instance and the order recorded no attempt; the attempt is durable before the runtime is called and stays on the
+/// Node, so the order stays spent across a crash or a reboot before its `done` record. A replay that finds its own attempt
+/// never restarts again. Each branch then waits a bounded time for a verified new run: a run other than the pinned one, and a
+/// unit loaded, `active` and at its boot policy, or a container `running` with its admitted image.
 ///
 /// # Errors
 ///
-/// `process.input_invalid`, `process.unit_missing`, `process.container_missing`, `process.apply_failed` for the boot policy or
-/// the restart, `process.read_failed`, `process.state_mismatch` for a read-back in another state, `process.restart_unverified`
-/// for a read-back that still answers the pinned run, or `process.restart_unresolved` for an interrupted attempt whose new run
-/// never showed.
+/// `process.input_invalid`, `process.unit_missing`, `process.container_missing`, `process.boot_failed` for the boot policy,
+/// `process.apply_failed` for the read before the restart or the restart itself, `process.read_failed` for a read after it,
+/// `process.state_mismatch` for a new run that is not ready, `process.restart_unverified` for a restart that left the pinned
+/// run, or `process.restart_unresolved` for an earlier attempt whose new run never showed.
 pub fn restart(
     system: &impl System,
     key: &str,
@@ -643,18 +658,14 @@ pub fn restart(
             format!("{key} is not an order key"),
         ));
     }
-    let result = match (input.runtime, input.boot, input.image.as_deref()) {
+    match (input.runtime, input.boot, input.image.as_deref()) {
         (Runtime::Systemd, Some(boot), None) => restart_unit(system, key, &input, boot),
         (Runtime::Docker, None, Some(image)) => restart_container(system, key, &input, image),
         _ => Err(Failure::new(
             "process.input_invalid",
             "a unit needs its boot policy, a container its image",
         )),
-    };
-    // The result goes to the journal next; a crash before it leaves only a run that differs from the pinned one, which a
-    // replay reports `already` without acting.
-    system.end_attempt(key);
-    result
+    }
 }
 
 /// `<operation>-<step>`: the order's Operation step, with its `:` as `-`, the only characters an attempt's file name holds.
@@ -688,29 +699,76 @@ fn invocation(
     Ok((unit, stdout.trim().to_owned()))
 }
 
-/// What the order does once it knows the run in place: `now` restarts, `already` or `recovered` only reads back.
-fn decide(
+/// One read of the Process after the decision: its run, whether that run is ready, and whether it is still changing state.
+struct Run {
+    instance: String,
+    ready: bool,
+    settling: bool,
+    detail: String,
+}
+
+/// `now` after this order restarted the Process; `already` when the pinned run had ended before it acted; `recovered` when an
+/// earlier execution of this order recorded its attempt, which never restarts again.
+fn act(
     system: &impl System,
     key: &str,
     pinned: &str,
-    current: &dyn Fn() -> Result<String, Failure>,
-) -> Result<Option<&'static str>, Failure> {
+    current: &str,
+    restart: &dyn Fn() -> Result<(), Failure>,
+) -> Result<&'static str, Failure> {
     if system.attempted(key) {
-        for _ in 0..SETTLE_POLLS {
-            if current()? != pinned {
-                return Ok(Some("recovered"));
-            }
-            system.pause();
-        }
-        return Err(Failure::new(
-            "process.restart_unresolved",
-            format!("{key}: an earlier attempt left the pinned run {pinned} in place"),
-        ));
+        return Ok("recovered");
     }
-    Ok(if current()? == pinned {
-        None
-    } else {
-        Some("already")
+    if current != pinned {
+        return Ok("already");
+    }
+    system.begin_attempt(key).map_err(|detail| {
+        Failure::new("process.apply_failed", format!("attempt record: {detail}"))
+    })?;
+    restart()?;
+    Ok("now")
+}
+
+/// Reads the Process until it runs a verified new run, for at most [`SETTLE_POLLS`] reads: it waits while the pinned run is
+/// still in place or the new one is still changing state, and stops at a new run that settled anywhere but ready.
+fn settle(
+    system: &impl System,
+    key: &str,
+    pinned: &str,
+    restarted: &'static str,
+    read: &dyn Fn() -> Result<Run, Failure>,
+) -> Result<Restart, Failure> {
+    let mut run = read()?;
+    for _ in 1..SETTLE_POLLS {
+        let new = run.instance != pinned;
+        if new && (run.ready || !run.settling) {
+            break;
+        }
+        system.pause();
+        run = read()?;
+    }
+    if run.instance == pinned {
+        return Err(if restarted == "recovered" {
+            Failure::new(
+                "process.restart_unresolved",
+                format!("{key}: an earlier attempt left the pinned run {pinned} in place"),
+            )
+        } else {
+            Failure::new(
+                "process.restart_unverified",
+                format!(
+                    "{key}: the pinned run {pinned} is still in place: {}",
+                    run.detail
+                ),
+            )
+        });
+    }
+    if !run.ready {
+        return Err(Failure::new("process.state_mismatch", run.detail));
+    }
+    Ok(Restart {
+        restarted,
+        instance: run.instance,
     })
 }
 
@@ -721,7 +779,7 @@ fn restart_unit(
     boot: Boot,
 ) -> Result<Restart, Failure> {
     let name = input.name.as_str();
-    let (before, _) = invocation(system, name, "process.apply_failed")?;
+    let (before, current) = invocation(system, name, "process.apply_failed")?;
     if !Unit::is(before.load.as_ref(), "loaded") {
         return Err(Failure::new(
             "process.unit_missing",
@@ -735,46 +793,32 @@ fn restart_unit(
     };
     // Swamp's `Set boot policy` runs before its restart, on every run; it changes only what differs.
     if !Unit::is(before.file.as_ref(), file) {
-        systemctl(
-            system,
-            20,
-            if boot == Boot::Enabled {
-                "enable"
-            } else {
-                "disable"
-            },
-            name,
-        )?;
+        let verb = if boot == Boot::Enabled {
+            "enable"
+        } else {
+            "disable"
+        };
+        system
+            .run(20, &[SYSTEMCTL, verb, "--", name])
+            .map_err(|detail| {
+                Failure::new("process.boot_failed", format!("systemctl {verb}: {detail}"))
+            })?;
     }
-    let current = || invocation(system, name, "process.read_failed").map(|unit| unit.1);
-    let restarted = if let Some(done) = decide(system, key, &input.instance, &current)? {
-        done
-    } else {
-        system.begin_attempt(key).map_err(|detail| {
-            Failure::new("process.apply_failed", format!("attempt record: {detail}"))
-        })?;
-        systemctl(system, 60, "restart", name)?;
-        "now"
-    };
-    let (after, instance) = invocation(system, name, "process.read_failed")?;
-    if !Unit::is(after.load.as_ref(), "loaded")
-        || !Unit::is(after.active.as_ref(), "active")
-        || !Unit::is(after.file.as_ref(), file)
-    {
-        return Err(Failure::new(
-            "process.state_mismatch",
-            format!("{name}: {}", after.describe()),
-        ));
-    }
-    if instance.is_empty() || instance == input.instance {
-        return Err(Failure::new(
-            "process.restart_unverified",
-            format!("{name}: InvocationID={instance} after the restart"),
-        ));
-    }
-    Ok(Restart {
-        restarted,
-        instance,
+    let restarted = act(system, key, &input.instance, &current, &|| {
+        systemctl(system, 60, "restart", name)
+    })?;
+    settle(system, key, &input.instance, restarted, &|| {
+        let (unit, instance) = invocation(system, name, "process.read_failed")?;
+        let active = unit.active.as_deref().unwrap_or_default();
+        Ok(Run {
+            ready: !instance.is_empty()
+                && Unit::is(unit.load.as_ref(), "loaded")
+                && active == "active"
+                && Unit::is(unit.file.as_ref(), file),
+            settling: matches!(active, "activating" | "reloading" | "deactivating"),
+            detail: format!("{name}: InvocationID={instance} {}", unit.describe()),
+            instance,
+        })
     })
 }
 
@@ -820,42 +864,28 @@ fn restart_container(
     image: &str,
 ) -> Result<Restart, Failure> {
     let name = input.name.as_str();
-    started(system, name, "process.container_missing")?;
-    let current = || started(system, name, "process.read_failed").map(|run| run.instance);
-    let restarted = if let Some(done) = decide(system, key, &input.instance, &current)? {
-        done
-    } else {
-        system.begin_attempt(key).map_err(|detail| {
-            Failure::new("process.apply_failed", format!("attempt record: {detail}"))
-        })?;
+    let current = started(system, name, "process.container_missing")?.instance;
+    let restarted = act(system, key, &input.instance, &current, &|| {
         system
             .run(60, &[DOCKER, "container", "restart", name])
+            .map(|_| ())
             .map_err(|detail| {
                 Failure::new(
                     "process.apply_failed",
                     format!("docker container restart: {detail}"),
                 )
-            })?;
-        "now"
-    };
-    let after = started(system, name, "process.read_failed")?;
-    if after.status != "running" || after.image != image {
-        return Err(Failure::new(
-            "process.state_mismatch",
-            format!(
-                "{name}: State.Status={} Config.Image={}",
-                after.status, after.image
+            })
+    })?;
+    settle(system, key, &input.instance, restarted, &|| {
+        let run = started(system, name, "process.read_failed")?;
+        Ok(Run {
+            ready: run.status == "running" && run.image == image,
+            settling: matches!(run.status.as_str(), "restarting" | "created"),
+            detail: format!(
+                "{name}: {} State.Status={} Config.Image={}",
+                run.instance, run.status, run.image
             ),
-        ));
-    }
-    if after.instance == input.instance {
-        return Err(Failure::new(
-            "process.restart_unverified",
-            format!("{name}: {} after the restart", after.instance),
-        ));
-    }
-    Ok(Restart {
-        restarted,
-        instance: after.instance,
+            instance: run.instance,
+        })
     })
 }

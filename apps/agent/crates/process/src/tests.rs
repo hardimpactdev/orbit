@@ -66,10 +66,6 @@ impl System for Fake {
     fn attempted(&self, key: &str) -> bool {
         self.attempts.borrow().contains(key)
     }
-
-    fn end_attempt(&self, key: &str) {
-        self.attempts.borrow_mut().remove(key);
-    }
 }
 
 const UNIT: &str = "orbit-process-417-web.service";
@@ -530,8 +526,8 @@ fn a_unit_restart_sets_its_boot_policy_records_its_attempt_then_restarts_once_an
         ]
     );
     assert!(
-        !fake.attempted("42-restart"),
-        "the attempt ends with its result"
+        fake.attempted("42-restart"),
+        "the order stays spent after its result"
     );
 }
 
@@ -564,7 +560,7 @@ fn a_replay_after_the_restart_ran_never_restarts_again() {
     let recovered = restart(&fake, "42-restart", &restart_input("enabled")).expect("recovers");
     assert_eq!(recovered.restarted, "recovered");
     assert_eq!(restarts(&fake), 0);
-    // It died after the attempt ended, before its journal record: the run differs from the pinned one, so nothing acts.
+    // No attempt, and the pinned run already ended before the order acted: nothing restarts.
     let fake = Fake::default()
         .on(
             "/usr/bin/systemctl show --property=LoadState",
@@ -647,7 +643,10 @@ fn a_restart_whose_read_back_is_not_a_new_active_run_fails() {
         restart(&refused, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
         Err("process.apply_failed")
     );
-    assert!(!refused.attempted("42-restart"));
+    assert!(
+        refused.attempted("42-restart"),
+        "a restart that failed still spends its order"
+    );
 }
 
 #[test]
@@ -742,4 +741,155 @@ fn the_gateway_signed_restart_inputs_parse_and_run() {
         restart(&fake, "42-restart", &order["fields"]["input"]).map(|done| done.restarted),
         Ok("now")
     );
+}
+
+#[test]
+fn an_order_stays_spent_across_a_reboot_before_its_done_record() {
+    // A stopped on-demand unit: its pinned run is the empty InvocationID.
+    let input = json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "instance": "", "boot": "disabled"});
+    let first = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "inactive", "disabled")),
+                Ok(&show("loaded", "active", "disabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok(""), Ok("bbb")]);
+    assert_eq!(
+        restart(&first, "42-restart", &input).map(|done| done.restarted),
+        Ok("now")
+    );
+    assert_eq!(restarts(&first), 1);
+    // The Node reboots before the journal's `done` is durable: the attempt is on disk, the disabled unit is inactive with
+    // the same empty InvocationID, and the executor replays the same order.
+    let rebooted = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "inactive", "disabled"))],
+        )
+        .on(INVOCATION, &[Ok("")]);
+    rebooted
+        .attempts
+        .borrow_mut()
+        .extend(first.attempts.borrow().iter().cloned());
+    assert_eq!(
+        restart(&rebooted, "42-restart", &input).map_err(|failure| failure.code),
+        Err("process.restart_unresolved")
+    );
+    assert_eq!(restarts(&rebooted), 0, "the replay never restarts again");
+    // A new Operation restarts once.
+    let fresh = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "inactive", "disabled")),
+                Ok(&show("loaded", "active", "disabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok(""), Ok("ccc")]);
+    fresh
+        .attempts
+        .borrow_mut()
+        .extend(rebooted.attempts.borrow().iter().cloned());
+    assert_eq!(
+        restart(&fresh, "43-restart", &input).map(|done| done.restarted),
+        Ok("now")
+    );
+    assert_eq!(restarts(&fresh), 1);
+}
+
+#[test]
+fn a_new_run_that_is_still_activating_is_waited_for_without_another_restart() {
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "active", "enabled")),
+                Ok(&show("loaded", "activating", "enabled")),
+                Ok(&show("loaded", "active", "enabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok("aaa"), Ok("bbb")]);
+    assert_eq!(
+        restart(&fake, "42-restart", &restart_input("enabled")).map(|done| done.instance),
+        Ok("bbb".to_owned())
+    );
+    assert_eq!(restarts(&fake), 1);
+    let input = json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "instance": "c1@T1", "image": "nginx:1"});
+    let container = Fake::default().on(
+        "/usr/bin/docker container inspect",
+        &[
+            Ok("/orbit-process-417-web c1 T1 running nginx:1"),
+            Ok("/orbit-process-417-web c1 T2 restarting nginx:1"),
+            Ok("/orbit-process-417-web c1 T3 running nginx:1"),
+        ],
+    );
+    assert_eq!(
+        restart(&container, "42-restart", &input).map(|done| done.instance),
+        Ok("c1@T3".to_owned())
+    );
+    assert_eq!(restarts(&container), 1);
+}
+
+#[test]
+fn each_failed_phase_carries_its_own_code() {
+    let boot = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "disabled"))],
+        )
+        .on("/usr/bin/systemctl enable", &[Err("Failed to enable")]);
+    assert_eq!(
+        restart(&boot, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.boot_failed")
+    );
+    assert_eq!(restarts(&boot), 0);
+    let before = Fake::default().on(
+        "/usr/bin/systemctl show --property=LoadState",
+        &[Err("Failed to connect to bus")],
+    );
+    assert_eq!(
+        restart(&before, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.apply_failed")
+    );
+    let after = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "active", "enabled")),
+                Err("Failed to connect to bus"),
+            ],
+        )
+        .on(INVOCATION, &[Ok("aaa")]);
+    assert_eq!(
+        restart(&after, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.read_failed")
+    );
+}
+
+#[test]
+fn the_receipt_outputs_are_the_contract_fixture() {
+    // The executor serializes each answer with `serde_json::json!(…).to_string()`; the Gateway checks these exact strings.
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../contract/fixtures/executor-process-restart-output.json"
+    ))
+    .expect("fixture");
+    assert_eq!(
+        fixture["read"],
+        json!(Instance {
+            instance: "aaa".to_owned()
+        })
+        .to_string()
+    );
+    for restarted in ["now", "already", "recovered"] {
+        assert_eq!(
+            fixture[restarted],
+            json!(Restart {
+                restarted,
+                instance: "bbb".to_owned()
+            })
+            .to_string()
+        );
+    }
 }

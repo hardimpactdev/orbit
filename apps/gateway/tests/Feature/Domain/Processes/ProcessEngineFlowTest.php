@@ -690,7 +690,8 @@ it('names the Swamp step each failed restart phase stands for', function (string
 })->with([
     'unit missing at the read' => ['systemd', 'read', 'process.unit_missing', 'Set boot policy'],
     'container missing at the read' => ['docker', 'read', 'process.container_missing', 'Restart the container'],
-    'unit restart' => ['systemd', 'restart', 'process.apply_failed', 'Restart the Process'],
+    'unit boot policy' => ['systemd', 'restart', 'process.boot_failed', 'Set boot policy'],
+    'unit restart or its read before it' => ['systemd', 'restart', 'process.apply_failed', 'Restart the Process'],
     'interrupted attempt never resolved' => ['systemd', 'restart', 'process.restart_unresolved', 'Restart the Process'],
     'unit read-back' => ['systemd', 'restart', 'process.read_failed', 'Check the unit'],
     'unit still on the pinned run' => ['systemd', 'restart', 'process.restart_unverified', 'Verify the state'],
@@ -738,3 +739,21 @@ it('fences a restarting Process against every other verb until its terminal rece
     expect($operation->refresh()->lock_key)->toBeNull();
     EngineTargetFence::free('process:'.$process->id);
 });
+
+it('settles restarts on the outputs the executor serializes, in any member order', function (string $runtime, string $answer): void {
+    $outputs = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/executor-process-restart-output.json')), true, flags: JSON_THROW_ON_ERROR);
+    $process = ($this->process)(runtime: $runtime);
+    $operation = ($this->operation)($process, 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, 'read', ['status' => 'output', 'stdout' => $outputs['read']]);
+    expect($this->bus->payload(1)['input']['instance'])->toBe('aaa');
+    ($this->receipt)($operation, 'restart', ['status' => 'output', 'stdout' => $outputs[$answer]]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result)->toBe(['ready' => true, 'state' => $runtime === 'docker' ? 'running' : 'active'])
+        ->and(app(ProcessControlEngineFlow::class)->evidence($operation, 'restart', json_encode(array_reverse(json_decode($outputs[$answer], true)), JSON_THROW_ON_ERROR)))->toBeTrue();
+})->with([
+    'unit now' => ['systemd', 'now'], 'unit already' => ['systemd', 'already'], 'unit recovered' => ['systemd', 'recovered'],
+    'container now' => ['docker', 'now'], 'container already' => ['docker', 'already'], 'container recovered' => ['docker', 'recovered'],
+]);

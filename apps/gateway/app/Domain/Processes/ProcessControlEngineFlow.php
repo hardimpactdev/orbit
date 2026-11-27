@@ -88,17 +88,19 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition, Engin
         return [...$order, 'boot' => $running && $input['on_demand'] !== true ? 'enabled' : 'disabled'];
     }
 
-    /** A read answers `{"instance": <run>}`; a restart also says how it restarted, and never answers an empty run. */
+    /** A read answers `{"instance": <run>}`; a restart also says how it restarted, and never answers an empty run. Member order is free. */
     public function evidence(Operation $operation, string $step, string $output): bool
     {
         $answer = json_decode($output, true);
-        if (! is_array($answer) || ! is_string($answer['instance'] ?? null)) {
+        if (! is_array($answer) || array_is_list($answer) || ! is_string($answer['instance'] ?? null)) {
             return false;
         }
+        $keys = array_keys($answer);
+        sort($keys);
 
         return match ($step) {
-            self::ReadStep => array_keys($answer) === ['instance'],
-            self::RestartStep => array_keys($answer) === ['restarted', 'instance'] && $answer['instance'] !== ''
+            self::ReadStep => $keys === ['instance'],
+            self::RestartStep => $keys === ['instance', 'restarted'] && $answer['instance'] !== ''
                 && in_array($answer['restarted'], ['now', 'already', 'recovered'], true),
             default => true,
         };
@@ -152,7 +154,7 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition, Engin
         };
 
         return match (true) {
-            $step === self::ReadStep => $docker ? 'Restart the container' : 'Set boot policy',
+            $step === self::ReadStep, $code === 'process.boot_failed' => $docker ? 'Restart the container' : 'Set boot policy',
             in_array($code, ['process.state_mismatch', 'process.restart_unverified'], true) => 'Verify the state',
             $code === 'process.read_failed' => $docker ? 'Check the container' : 'Check the unit',
             $code === 'process.unit_stop_failed' => 'Stop the unit',
