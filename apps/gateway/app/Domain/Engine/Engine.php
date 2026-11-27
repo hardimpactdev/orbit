@@ -42,7 +42,7 @@ final readonly class Engine
 
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
     private const array FencedSuccess = ['instance.destroy' => 'done', 'dns.publish_records' => 'applied', 'route.withdraw_site' => 'applied', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
-        'instance.clear_base' => 'output', ProcessControlEngineFlow::Action => 'applied', ScheduleEnableEngineFlow::Action => 'output'];
+        'instance.clear_base' => 'output', ProcessControlEngineFlow::Action => 'applied', ProcessControlEngineFlow::ReadAction => 'output', ProcessControlEngineFlow::RestartAction => 'output', ScheduleEnableEngineFlow::Action => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 

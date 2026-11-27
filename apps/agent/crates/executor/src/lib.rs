@@ -155,7 +155,7 @@ impl Run for Families {
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames | Action::InstanceSyncBase | Action::InstanceClearBase => instance(order),
-            Action::ProcessEnsureState | Action::ScheduleEnsureTimer => process(order),
+            Action::ProcessEnsureState | Action::ProcessReadInstance | Action::ProcessRestart | Action::ScheduleEnsureTimer => process(order),
         }
     }
 }
@@ -299,7 +299,7 @@ fn serve() -> Result<(), String> {
     let (held, locked) = std::sync::mpsc::channel();
     let repeating = Arc::clone(&executor);
     std::thread::spawn(move || {
-        match repeating.recover(pending, || {
+        match recover_then_prune(&repeating, pending, &orbit_executor_process::Attempts::node(), || {
             let _ = held.send(());
         }) {
             Ok(recovered) => {
@@ -357,18 +357,41 @@ fn dns(order: &VerifiedOrder) -> Outcome {
     )
 }
 
+/// Recovers every open order, then prunes the old restart attempts: only once no order is open does each old attempt belong
+/// to an order whose `done` record answers its every resend, so an outage of any length never frees a recoverable order to
+/// restart again.
+fn recover_then_prune<R: Run>(
+    executor: &Executor<R>,
+    pending: orbit_executor_core::executor::Pending,
+    attempts: &orbit_executor_process::Attempts,
+    held: impl FnOnce(),
+) -> Result<Vec<orbit_executor_core::executor::Recovered>, orbit_executor_core::journal::JournalError> {
+    let recovered = executor.recover(pending, held)?;
+    attempts.prune_recovered();
+    Ok(recovered)
+}
+
 /// The process family (ADR 0271): a Process's run state and a Schedule's Node timer. A failure's code goes to the Gateway,
 /// its detail only to the log.
 fn process(order: &VerifiedOrder) -> Outcome {
-    let system = orbit_executor_process::NodeSystem;
+    process_on(&orbit_executor_process::NodeSystem, order)
+}
+
+/// The process family on a given system: the Node's own, or a test double.
+fn process_on(system: &impl orbit_executor_process::System, order: &VerifiedOrder) -> Outcome {
     if !process_slot(order.action(), order.target().as_str(), order.input()) {
         log(&format!("{} {} failed: its target is not the slot of the resource it names", order.action(), order.operation()));
         return Outcome::failed(if order.action() == Action::ScheduleEnsureTimer { "schedule.input_invalid" } else { "process.input_invalid" });
     }
     let result = match order.action() {
-        Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(&system, order.input())
+        Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(system, order.input())
             .map(|timer| Outcome::Output { stdout: serde_json::json!(timer).to_string() }),
-        _ => orbit_executor_process::ensure_state(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        Action::ProcessReadInstance => orbit_executor_process::read_instance(system, order.input())
+            .map(|read| Outcome::Output { stdout: serde_json::json!(read).to_string() }),
+        // The order's Operation step keys its attempt, so a replay of this order finds it and a new Operation does not.
+        Action::ProcessRestart => orbit_executor_process::restart(system, &order.operation().as_str().replace(':', "-"), order.input())
+            .map(|restart| Outcome::Output { stdout: serde_json::json!(restart).to_string() }),
+        _ => orbit_executor_process::ensure_state(system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
@@ -428,6 +451,106 @@ fn instance(order: &VerifiedOrder) -> Outcome {
 
 #[cfg(test)]
 mod tests {
+
+    /// A Node's on-demand units after a reboot, behind the process family's real code: each restart starts a new run.
+    struct Rebooted {
+        runs: std::sync::Mutex<std::collections::HashMap<String, String>>,
+        restarts: std::sync::atomic::AtomicUsize,
+        attempts: orbit_executor_process::Attempts,
+    }
+
+    impl orbit_executor_process::System for Rebooted {
+        fn run(&self, _seconds: u32, argv: &[&str]) -> Result<String, String> {
+            let name = argv.last().copied().unwrap_or_default().to_owned();
+            let mut runs = self.runs.lock().expect("runs");
+            let run = runs.entry(name).or_default();
+            match argv.get(1).copied() {
+                Some("restart") => {
+                    let count = self.restarts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    *run = format!("run-{count}");
+                    Ok(String::new())
+                }
+                Some("show") if argv.contains(&"--property=InvocationID") => Ok(run.clone()),
+                Some("show") => Ok(format!(
+                    "LoadState=loaded\nActiveState={}\nSubState=dead\nUnitFileState=disabled\nNextElapseUSecRealtime=\n",
+                    if run.is_empty() { "inactive" } else { "active" }
+                )),
+                _ => Ok(String::new()),
+            }
+        }
+
+        fn begin_attempt(&self, key: &str) -> Result<(), String> {
+            self.attempts.begin(key)
+        }
+
+        fn attempted(&self, key: &str) -> bool {
+            self.attempts.attempted(key)
+        }
+    }
+
+    struct Restarts(Arc<Rebooted>);
+
+    impl Run for Restarts {
+        fn run(&self, order: &VerifiedOrder) -> Outcome {
+            process_on(&*self.0, order)
+        }
+    }
+
+    #[test]
+    fn a_long_outage_with_two_open_restarts_never_restarts_either_again() {
+        let dir = std::env::temp_dir().join(format!("orbit-restart-outage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let attempts = orbit_executor_process::Attempts::at(dir.join("attempts"));
+        let three_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 24 * 60 * 60);
+        let mut journal = String::new();
+        for (nonce, process) in [(1_u8, 417), (2, 418)] {
+            let key = orbit_executor_core::journal::DoneKey {
+                operation: format!("{process}:restart").parse().expect("operation"),
+                action: Action::ProcessRestart,
+                target: format!("7:process-{process}").parse().expect("target"),
+            };
+            // Process 418's order recorded its attempt and restarted its stopped on-demand unit; 417's went down before its
+            // attempt, so its recovery is its first execution and records a new attempt. Then the Node stayed down.
+            if process == 418 {
+                attempts.begin("418-restart").expect("attempt");
+                std::fs::File::options()
+                    .write(true)
+                    .open(dir.join("attempts").join("418-restart"))
+                    .and_then(|file| file.set_modified(three_days_ago))
+                    .expect("age");
+            }
+            let record = orbit_executor_core::journal::Record::Open {
+                nonce: format!("{nonce:032x}").parse().expect("nonce"),
+                key,
+                expires_ms: 1,
+                power_check: PowerCheck::Default,
+                input: serde_json::json!({"process_id": process, "runtime": "systemd", "name": format!("orbit-process-{process}-web.service"),
+                    "instance": "", "boot": "disabled"}),
+            };
+            journal.push_str(&serde_json::to_string(&record).expect("record"));
+            journal.push('\n');
+        }
+        let path = dir.join("journal");
+        std::fs::write(&path, journal).expect("journal");
+
+        // Three days later the Node is back: both units are inactive with an empty InvocationID, the pinned run.
+        let node = Arc::new(Rebooted { runs: std::sync::Mutex::default(), restarts: std::sync::atomic::AtomicUsize::new(0), attempts: attempts.clone() });
+        let (executor, pending) = Executor::open(&path, Restarts(Arc::clone(&node)), || 1_800_000_000_000, |_| {}).expect("open");
+        let recovered = recover_then_prune(&executor, pending, &attempts, || {}).expect("recover");
+
+        assert_eq!(recovered.len(), 2);
+        assert!(matches!(&recovered[0].outcome, Outcome::Output { stdout } if stdout.contains("\"now\"")), "{:?}", recovered[0].outcome);
+        assert!(matches!(&recovered[1].outcome, Outcome::Failed { code, .. } if code == "process.restart_unresolved"), "{:?}", recovered[1].outcome);
+        assert_eq!(node.restarts.load(std::sync::atomic::Ordering::SeqCst), 1, "417 restarts once; 418 never again");
+        // Only now, with both results durable, does the old attempt go; the new one stays.
+        assert!(attempts.attempted("417-restart") && !attempts.attempted("418-restart"));
+        let (_, again) = Executor::open(&path, Restarts(Arc::clone(&node)), || 1_800_000_000_000, |_| {}).expect("reopen");
+        let again = recover_then_prune(&executor, again, &attempts, || {}).expect("nothing open");
+        assert_eq!(again.len(), 0);
+        assert_eq!(node.restarts.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use super::*;
 
     #[test]
@@ -491,6 +614,8 @@ mod tests {
         assert!(process_slot(Action::ProcessEnsureState, "7:process-417", &state));
         assert!(!process_slot(Action::ProcessEnsureState, "7:process-418", &state));
         assert!(!process_slot(Action::ProcessEnsureState, "7", &state));
+        assert!(process_slot(Action::ProcessRestart, "7:process-417", &state));
+        assert!(!process_slot(Action::ProcessReadInstance, "7:process-418", &state));
         let timer = serde_json::json!({"schedule_id": "7f3c0a5e-1b2c-4d3e-8f90-0123456789ab"});
         assert!(process_slot(Action::ScheduleEnsureTimer, "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab", &timer));
         assert!(!process_slot(Action::ScheduleEnsureTimer, "7:process-417", &timer));

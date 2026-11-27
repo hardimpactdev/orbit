@@ -1,0 +1,6 @@
+{
+    "read": "{\"instance\":\"aaa\"}",
+    "now": "{\"instance\":\"bbb\",\"restarted\":\"now\"}",
+    "already": "{\"instance\":\"bbb\",\"restarted\":\"already\"}",
+    "recovered": "{\"instance\":\"bbb\",\"restarted\":\"recovered\"}"
+}
