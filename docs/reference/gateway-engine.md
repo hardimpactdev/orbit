@@ -157,7 +157,8 @@ Eligibility comes from the Process and its placement, for both verbs, so one Pro
 - a Process of an Instance not placed on app-dev, such as a production release layout;
 - any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
 - a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain;
-- any Process on a Node the Gateway's own roles do not place in development (`Node::placementEnvironment`, the rule Instance placement reads): an app-prod Node, a Node with both app roles or with neither, a Node with no row, or a Node Process the intent names on another Node;
+- any Process on a Node that the Gateway's own roles do not place in development (`Node::placementEnvironment`, the rule Instance placement reads). That is an app-prod Node, a Node with both app roles or neither, or a Node with no row;
+- a Node Process whose intent names another Node;
 - any intent with `production_control`, a production release.
 
 The production limit reads only the Gateway's records, never the agent version or the Node's capability report: an app-prod Node that reports the process actions still runs the Swamp workflow. Admitting app-prod is a separate change.
