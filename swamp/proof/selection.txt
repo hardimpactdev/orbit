@@ -329,6 +329,9 @@ swamp/ansible/tasks/task-copy-base-names.yml  task:sync
 swamp/proof/task/sync.cases.yaml  task:sync
 apps/gateway/app/Domain/Tasks/TaskSyncEngineFlow.php  task:sync
 apps/agent/crates/instance/src/sync.rs  task:sync
+swamp/proof/task/cancel.cases.yaml  task:cancel
+apps/gateway/app/Domain/Tasks/TaskEnd.php  task:cancel
+apps/gateway/app/Domain/Tasks/TaskCancelIntent.php  task:cancel
 swamp/extensions/behaviors/operations/certificates/manifest.yaml  instance:clone instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-dev-command/manifest.yaml  instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-source-command/manifest.yaml  instance:clone
