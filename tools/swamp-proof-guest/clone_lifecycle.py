@@ -750,7 +750,7 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
             'tracked edit': ('f=$(git ls-files | head -n 1); printf "proof\\n" >> "$f"', 'git checkout -- "$(git ls-files | head -n 1)"'),
             'untracked file': ('printf "proof\\n" > orbit-proof-untracked.txt', 'rm orbit-proof-untracked.txt'),
             'stash': ('f=$(git ls-files | head -n 1); printf "proof\\n" >> "$f"; git stash push --quiet', 'git stash drop --quiet'),
-            'new branch': (f'git branch orbit-proof; git -c user.name=proof -c user.email=proof@invalid commit-tree -m proof "$(git rev-parse HEAD^{{tree}})" -p HEAD'
+            'new branch': ('git branch orbit-proof; git -c user.name=proof -c user.email=proof@invalid commit-tree -m proof "$(git rev-parse HEAD^{tree})" -p HEAD'
                            ' | xargs git update-ref refs/heads/orbit-proof', 'git branch -D --quiet orbit-proof'),
         }
         for label, (change, undo) in edits.items():
