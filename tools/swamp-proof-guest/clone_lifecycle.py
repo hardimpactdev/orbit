@@ -656,6 +656,7 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
 
 SYNC_STEPS = ('fetch', 'sync', 'clear')
 SYNC_FIELDS = {'default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start', 'work'}
+CREDENTIAL = ('x-access-token', 'ghs_', 'github_pat_')
 # The scan builds its patterns from pieces, so neither its own argv nor its script text holds one and matches itself. It prints only
 # where a credential form is and how often, never a value: a process (environment or argv), a file anywhere in the copy's checkout and
 # its home and temporary folders, or Git configuration.
