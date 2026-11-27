@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% process.restart on the Gateway engine: the `process` family's `process.read_instance` and `process.restart`, a restart that runs at most once per Operation even when a receipt is lost (ADR 0267, ADR 0271; ProcessControlEngineFlow). Runtime proof on a nested fleet is pending.
+  %% process.restart on the Gateway engine: the `process` family's `process.read_instance` and `process.restart`, a restart that runs at most once per Operation even when a receipt is lost (ADR 0267, ADR 0271; ProcessControlEngineFlow). Proved on a nested fleet by swamp/proof/process/restart.cases.yaml.
   %% A restart is not a desired state. The step carries evidence of the run it replaces (systemd's InvocationID, a random ID per run, or Docker's container ID and StartedAt) and records an attempt for its order before it calls the runtime. A changed value proves a restart happened; an unchanged value after an interrupted call proves nothing, so the step never restarts on that replay and reports the outcome unresolved.
   %% status: built
   %% command: process:restart

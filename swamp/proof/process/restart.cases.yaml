@@ -1,0 +1,44 @@
+command: process:restart
+chart: process/engine/restart
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases:
+  - id: signed-and-swamp-process-restart
+    batch: fresh-fleet
+    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp", "path:refused"]
+    summary: Restart a host systemd, a host Docker and an on-demand host-Instance Process through the signed executor, each run changing once; drop the restart receipt of a systemd and a Docker restart after the Node ran it, so a second send answers from the journal and the run changed once, not twice; restart again after that terminal receipt, once; retry a restart that failed after its stop; restart the same shapes on Swamp with the family absent; keep a Horizon-shaped restart on Swamp with the family present; a sibling Process keeps its main PID and activation time throughout.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1800
+    setup:
+      - restart_fixture: {}
+    act:
+      - host_instance: {name: host}
+      - process_create: {name: sibling, start: true}
+      - process_create: {name: unit, start: true}
+      - process_create: {name: box, runtime: docker, start: true}
+      - process_create: {name: hosted, start: true, instance: host}
+      - process_create: {name: legacy, start: true}
+      - process_create: {name: horizon}
+      - process_restart: {name: unit, via: engine, sibling: sibling}
+      - process_restart: {name: box, via: engine, sibling: sibling}
+      - process_restart: {name: hosted, via: engine, sibling: sibling, on_demand: true}
+      - restart_replay: {name: unit, sibling: sibling}
+      - process_restart: {name: unit, via: engine, sibling: sibling, key: unit-restart-after-replay}
+      - restart_replay: {name: box, sibling: sibling}
+      - process_restart: {name: box, via: engine, sibling: sibling, key: box-restart-after-replay}
+      - restart_retry: {name: unit}
+      - process_restart: {name: legacy, via: swamp, sibling: sibling}
+      - process_restart: {name: box, via: swamp, sibling: sibling}
+      - process_restart: {name: hosted, via: swamp, sibling: sibling, on_demand: true}
+      - restart_refused: {name: horizon}
+    expect:
+      - process_compare: {}
+      - process_cleanup: {}
+uncovered:
+  "path:engine": "Host systemd, host Docker and an on-demand host-Instance Process (boot policy disabled while running) on app-dev. The host Instance is a fixture row, as in swamp/proof/process/start.cases.yaml: Orbit makes no new host (non-container) Instance."
+  "path:refused": "A Horizon-shaped Node Process (`/usr/bin/php artisan horizon`, the shape GatewayHorizon::runs recognises, not a real Horizon) stays on Swamp here. A dev-server Process (`vp-dev`, `vite`) has no fleet case: its preset needs an Instance with a dev route and a JavaScript checkout the fixture host Instance does not have. An Instance-container Process and a Gateway release container have none either, as for process:start. Gateway tests cover those refusals (ProcessEngineFlowTest)."
+  "path:receipt-lost": "The fault drops the restart step's receipt after the Node ran it. A lost read receipt is a read-only resend; an attempt with no done record (an executor crash mid-restart) is covered by executor tests."
+  "path:step-failed": "The failure is a restart whose start fails on a fixture drop-in whose ExecStartPre exits 1 (process.apply_failed), after the stop. Read-back failures and process.restart_unresolved are covered by executor tests."
+  "path:capability": "Fallback is shown with the process family absent from the executor (no process action reported). A Node on agent 0.31 or 0.32 that reports process.ensure_state without process.restart is covered by Gateway tests."
