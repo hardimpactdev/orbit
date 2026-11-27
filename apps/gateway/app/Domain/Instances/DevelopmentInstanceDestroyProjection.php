@@ -130,27 +130,42 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         $failure = $step?->error_code;
         $detail = $step?->error_detail;
         $removed = $run->succeeded();
-        $label = $failure === 'instance.removal_stop_failed' ? 'Stop the container' : 'Delete the container';
-        $code = $failure === null ? null : (in_array($failure, self::PhaseCodes, true) ? $failure : 'instance.removal_incomplete');
+        // A Route withdrawal step fails as the Swamp run's "Withdraw the Route" does; the release never fails, and its line is in the result.
+        $withdrawal = $step !== null && preg_match('/\A(dns|withdraw|sibling)-/', $step->name) === 1;
+        $release = self::holdRelease($run->output('release'));
+        $label = match (true) {
+            $withdrawal => 'Withdraw the Route',
+            $failure === 'instance.removal_stop_failed' => 'Stop the container',
+            default => 'Delete the container',
+        };
+        $code = match (true) {
+            $failure === null => null,
+            $withdrawal => 'route.withdrawal_failed',
+            default => in_array($failure, self::PhaseCodes, true) ? $failure : 'instance.removal_incomplete',
+        };
         $data = [...$run->times(), 'status' => $removed ? 'succeeded' : ($failure === null ? 'cancelled' : 'failed'), 'error_code' => $code,
             ...($failure === null ? [] : ['failure' => ['failed_step' => $label,
                 'detail' => $detail ?? 'The Node refused or could not complete the signed removal.', 'stderr_recorded' => $detail !== null]])];
         $result = match (true) {
-            $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])],
-            $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code],
+            $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at']), ...$release],
+            $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code, ...($withdrawal ? ['withdrawal_error_code' => $failure] : []), ...$release],
             default => [],
         };
         if ($removed && ! $operation->status->terminal()) {
             app(ContainerDestroyExecutionCopies::class)->remove($operation);
         }
 
-        DB::transaction(function () use ($operation, $removed, $data, $result, $code): void {
+        DB::transaction(function () use ($operation, $removed, $data, $result, $code, $withdrawal): void {
             $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
             if (! $operation->status->terminal()) {
                 if ($removed) {
                     $this->removed($operation, $result);
                 } else {
-                    $this->failed($operation, $code ?? 'operation.cancelled', $code === null ? InstanceRemovalStep::SourcePreparation : InstanceRemovalStep::RuntimeCleanup);
+                    $this->failed($operation, $code ?? 'operation.cancelled', match (true) {
+                        $code === null => InstanceRemovalStep::SourcePreparation,
+                        $withdrawal => InstanceRemovalStep::RouteTargetClear,
+                        default => InstanceRemovalStep::RuntimeCleanup,
+                    });
                 }
             }
             $this->direct->project($operation, $data, $result);

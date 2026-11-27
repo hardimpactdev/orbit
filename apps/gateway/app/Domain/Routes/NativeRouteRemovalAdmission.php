@@ -8,6 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
@@ -42,10 +44,25 @@ final readonly class NativeRouteRemovalAdmission
         $capture = app(NativeRouteLifecycleInput::class)->capture($route, ['offline' => $offline], true, restorable: false);
 
         return $this->operations->execute($kind, 'route', $route->id, $nodeId, [
-            'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline,
+            'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline, // A private Route without a Process or an Ingress placement: a Node-local proxy to a loopback upstream is one too.
+            // Its own placement only: an Ingress elsewhere in its cluster serves other Routes; Ingress work of this one is in its plan.
+            'route_private_development' => $route->publication === RoutePublication::Private && ($route->customProxy?->process_id === null),
+            'route_guards' => $offline || ! RouteFileGuards::wanted($kind) ? [] : app(RouteFileGuards::class)->capture(self::guarded(ValidatedData::object($capture['intent']['plan'])),
+                app(DevelopmentSiteRepository::class)->all()->reject(static fn (DevelopmentSite $site): bool => $site->domain === $route->domain)->values()),
             'route_lifecycle' => $capture['intent'], 'certificates' => $capture['certificates'], 'execution_secrets' => $capture['execution_secrets'],
             'node_ids' => $nodes, 'participant_node_ids' => array_values(array_unique([...$nodes, ...ValidatedData::integerList($capture['participant_node_ids'])])),
             'access_node_ids' => $nodes, 'caller_node_id' => $caller?->id,
         ], 'operator', $requestId);
+    }
+
+    /**
+     * The Nodes whose files the engine's withdrawal replaces: each Node that leaves the Route and each VPN Node.
+     *
+     * @param  array<string, mixed>  $plan
+     * @return list<int>
+     */
+    private static function guarded(array $plan): array
+    {
+        return [...ValidatedData::integerList($plan['retire_nodes']), ...array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns']))];
     }
 }

@@ -151,6 +151,8 @@ def wait_for(read, message, seconds, interval=0.25):
 
 class CloneLane:
     KINDS = ('instance.create', 'instance.destroy')
+    FAMILIES = 'power\nproof\n'
+    ROOT = '.'
     # The executor family the capability switch adds, an action it then reports, and one it must stop reporting without it.
     FAMILY, PRESENT, ABSENT = 'instance', 'instance.clone', 'instance.destroy'
     # Other actions the family must report exactly when it is enabled.
@@ -215,7 +217,7 @@ class CloneLane:
     def setup(self, repository, branch):
         self.identify()
         code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
-                                                             'repository_url': repository, 'default_branch': branch, 'root': '.'})
+                                                             'repository_url': repository, 'default_branch': branch, 'root': self.ROOT})
         require(code == 201, f'disposable project admission: HTTP {code} {error}')
         self.project = int(project['id'])
         self.default = self.create('default', 'swamp', seed=True)['instance']
@@ -258,7 +260,7 @@ class CloneLane:
                                 'nats': self.nats_identity, 'routes': self.routes, 'advertisement': live})
 
     def install(self, staged):
-        gateway_paths = (GUEST_STATE, '/etc/nats/nats.conf', '/usr/local/bin/nats-server', '/var/lib/nats',
+        gateway_paths = (GUEST_STATE, '/etc/nats', '/usr/local/bin/nats-server', '/var/lib/nats',
                          '/etc/systemd/system/' + NATS_UNIT, '/etc/systemd/system/' + ENGINE_UNIT)
         node_paths = ('/etc/orbit/executor', '/var/lib/orbit/executor', EXECUTOR, '/etc/systemd/system/' + EXECUTOR_UNIT)
         for node, paths, user in (('gateway', gateway_paths, 'nats'), (self.node, node_paths, 'orbit-executor-relay')):
@@ -321,7 +323,7 @@ class CloneLane:
 
     def set_capability(self, enabled):
         if self.capability is not enabled:
-            self.put(self.node, '/etc/orbit/executor/enabled', (self.FAMILY + '\n' if enabled else '') + 'power\nproof\n')
+            self.put(self.node, '/etc/orbit/executor/enabled', (self.FAMILY + '\n' if enabled else '') + self.FAMILIES)
             # The work read switches the capability for every read it compares: no restart may meet systemd's start limit.
             self.guest(self.node, 'sh', '-c', 'systemctl reset-failed "$1" 2>/dev/null || :', 'sh', EXECUTOR_UNIT)
             self.systemctl(self.node, 'restart', EXECUTOR_UNIT)
@@ -485,7 +487,8 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                    'path=/mnt/orbit-proof', '--project', POOL)
         self.db(f"UPDATE instance_runtimes SET inner_volume='{inner}' WHERE instance_id={instance} AND clone_source_instance_id={self.default}")
         legacy, signed, marker, mirror = self.artifacts(instance)
-        self.guest(self.node, 'install', '-d', legacy, signed, str(Path(marker).parent))
+        # mkdir, not install: install -d re-modes an existing folder, and the marker's is Caddy's 2775 hibernation folder.
+        self.guest(self.node, 'mkdir', '-p', legacy, signed, str(Path(marker).parent))
         self.guest(self.node, 'touch', legacy + '/plan', signed + '/plan.json', marker)
         self.guest(self.node, 'sh', '-eu', '-c', 'if test ! -e "$1"; then git init --bare --quiet "$1"; fi', 'sh', mirror)
 
@@ -945,7 +948,7 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         self.guest('gateway', 'sh', '-eu', '-c', '''
             systemctl stop orbit-gateway-engine.service nats-server.service 2>/dev/null || :
             cat "$1/gateway-env" > "$2/.env"
-            rm -rf "$1" /etc/nats/nats.conf /var/lib/nats /usr/local/bin/nats-server /etc/systemd/system/nats-server.service /etc/systemd/system/orbit-gateway-engine.service
+            rm -rf "$1" /etc/nats /var/lib/nats /usr/local/bin/nats-server /etc/systemd/system/nats-server.service /etc/systemd/system/orbit-gateway-engine.service
             userdel nats 2>/dev/null || :
             systemctl daemon-reload
         ''', 'sh', GUEST_STATE, self.gateway_app)

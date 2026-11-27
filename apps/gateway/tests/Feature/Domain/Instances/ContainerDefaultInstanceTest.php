@@ -301,6 +301,22 @@ it('serves a container Instance\'s Route by proxying to FrankenPHP at its bridge
         ->and(str_contains($caddy, 'php_fastcgi'))->toBeFalse();
 });
 
+it('serves a container Instance\'s web-root site with that Route\'s own leaf', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/x']);
+    InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+        'power_state' => InstanceRuntimePowerState::Running]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
+        'publication' => 'private', 'domain' => 'docs.tool.test', 'status' => 'pending', 'web_root' => 'docs']);
+
+    $site = app(DevelopmentSiteRepository::class)->workloadSite($instance, $route);
+
+    expect($site->certificateDirectory())->toBe("/etc/caddy/orbit-certificates/route-{$route->id}/current")
+        ->and(app(DevelopmentCaddyConfigRenderer::class)->render(collect([$site])))->toContain("orbit-certificates/route-{$route->id}/current/cert.pem");
+});
+
 it('records a created routed container default at its first seed and admits deployment without a policy tick', function (): void {
     $node = containerDefaultNode();
     $node->update(['tld' => 'beast.test']);

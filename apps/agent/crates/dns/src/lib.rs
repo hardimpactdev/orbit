@@ -106,10 +106,16 @@ struct Input {
     catalog: BlobRef,
 }
 
+/// A file's desired bytes as a blob. `from_sha256` (feature `dns.guarded_records`) names the live bytes the Gateway
+/// rendered from: the file is replaced only when it still holds them, or kept when it already holds the desired bytes.
+/// For the catalog it names the canonical form of those bytes ([`catalog_sha256`]), because Swamp's withdrawal writes the
+/// same catalog with its own key order and `{}` where the Gateway writes `[]`.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BlobRef {
     blob: BlobDigest,
+    #[serde(default)]
+    from_sha256: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -126,12 +132,33 @@ struct BlobDigest {
 ///
 /// # Errors
 ///
-/// `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed` or `dns.restart_failed`.
+/// `dns.input_invalid`, `dns.content_missing`, `owned_revision_conflict` (a guarded file holds neither the rendered-from nor
+/// the desired bytes; nothing is written), `dns.write_failed`, `dns.check_failed` or `dns.restart_failed`.
 pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: Input = serde_json::from_value(input.clone()).map_err(|error| Failure::new("dns.input_invalid", error.to_string()))?;
     let mut contents = Vec::new();
     for (path, blob) in [(RECORDS, &input.records), (CATALOG, &input.catalog)] {
         contents.push((path, system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("dns.content_missing", detail))?));
+    }
+    // Under the Node's DNS publication lock, as the Gateway's and Swamp's DNS writers: nothing changes the files between the guard
+    // and the write.
+    let _lock = lock(system)?;
+    // Every guard is checked before any write, so a refusal leaves both files as they were.
+    for ((path, content), blob) in contents.iter().zip([&input.records, &input.catalog]) {
+        if let Some(from) = &blob.from_sha256 {
+            let live = fs::symlink_metadata(system.path(path)).ok().filter(fs::Metadata::is_file).and_then(|_| fs::read(system.path(path)).ok()).unwrap_or_default();
+            // A catalog compares by its canonical form against both states: Swamp may already have written the desired catalog
+            // in its own serialization, which a forward retry keeps rather than refuses.
+            let (rendered, desired) = if *path == CATALOG {
+                let live = catalog_sha256(&live);
+                (live.clone(), live.is_some() && live == catalog_sha256(content))
+            } else {
+                (Some(sha256_hex(&live)), false)
+            };
+            if live != *content && !desired && rendered.as_deref() != Some(from.as_str()) {
+                return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this Operation")));
+            }
+        }
     }
     // Each replaced file with what it held before: a plain file's bytes, or None when there was none.
     let mut replaced: Vec<(&str, Option<Vec<u8>>)> = Vec::new();
@@ -155,6 +182,67 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
         .run(60, &["/usr/bin/systemctl", "restart", "dnsmasq.service", "orbit-private-dns.service"])
         .map_err(|detail| Failure::new("dns.restart_failed", detail))?;
     Ok(u32::try_from(replaced.len()).unwrap_or(u32::MAX))
+}
+
+/// The lock file every private DNS writer of this Node takes (`DnsmasqPrivateDnsManager`, `orbit_route_withdraw`).
+const LOCK: &str = "/run/lock/orbit-dnsmasq.lock";
+
+/// Takes the exclusive DNS publication lock, waiting up to 60 s for another writer.
+fn lock(system: &impl System) -> Result<File, Failure> {
+    let path = system.path(LOCK);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(0o400_000)
+        .open(&path)
+        .map_err(|error| Failure::new("dns.publish_lock_invalid", error.to_string()))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(200)),
+            Err(fs::TryLockError::WouldBlock) => return Err(Failure::new("dns.publish_busy", "the DNS publication lock stayed held")),
+            Err(fs::TryLockError::Error(error)) => return Err(Failure::new("dns.publish_lock_failed", error.to_string())),
+        }
+    }
+}
+
+/// The digest of a catalog's canonical form: its JSON with every object's keys in byte order, an empty array read as an
+/// empty object (PHP's empty map), compact, and one newline. Writers differ only in these; any other change is a new digest.
+/// None for bytes that are not JSON, which no guard matches.
+#[must_use]
+pub fn catalog_sha256(bytes: &[u8]) -> Option<String> {
+    fn canonical(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut entries: Vec<_> = map.into_iter().collect();
+                entries.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+                serde_json::Value::Object(entries.into_iter().map(|(key, value)| (key, canonical(value))).collect())
+            }
+            serde_json::Value::Array(items) if items.is_empty() => serde_json::Value::Object(serde_json::Map::new()),
+            serde_json::Value::Array(items) => serde_json::Value::Array(items.into_iter().map(canonical).collect()),
+            other => other,
+        }
+    }
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let mut text = serde_json::to_vec(&canonical(value)).ok()?;
+    text.push(b'\n');
+    Some(sha256_hex(&text))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
 }
 
 /// Puts back what each replaced file held before; a file that did not exist is removed. Best effort: the failure the

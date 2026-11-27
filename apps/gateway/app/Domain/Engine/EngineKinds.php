@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Processes\ProcessControlEngineFlow;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Schedules\ScheduleEnableEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,7 +21,7 @@ use Throwable;
 
 /**
  * Which Operation kinds run on the state machine (ADR 0271 N4): a kind moves as a whole, and runs on the engine only when
- * the Gateway setting names it and every Node its steps touch has reported the primitives they need. Any other Operation
+ * the Gateway setting names it and every Node its steps touch has reported the primitives, and the inputs, they need. Any other Operation
  * starts on Swamp.
  */
 final readonly class EngineKinds
@@ -31,6 +32,7 @@ final readonly class EngineKinds
         'firewall.deny' => FirewallEngineFlow::class,
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
+        'route.destroy' => RouteDestroyEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
         InstanceDestroyEngineFlow::Kind => InstanceDestroyEngineFlow::class,
         'instance.complete' => InstanceCompleteEngineFlow::class,
@@ -62,13 +64,19 @@ final readonly class EngineKinds
             return false;
         }
         try {
-            $actions = [];
+            $actions = $features = [];
             $definition = $this->definition($operation->kind);
             foreach ($definition->steps($operation) as $step) {
                 if ($step->node > 0) {
                     $actions[$step->node] ??= $this->bus->nodeActions($step->node);
                     if (! in_array($step->action, $actions[$step->node], true)) {
                         return false;
+                    }
+                    if ($step->features !== []) {
+                        $features[$step->node] ??= $this->bus->nodeFeatures($step->node);
+                        if (array_diff($step->features, $features[$step->node]) !== []) {
+                            return false;
+                        }
                     }
                 }
             }

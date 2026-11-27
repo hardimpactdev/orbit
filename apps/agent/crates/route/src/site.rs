@@ -11,12 +11,12 @@ use serde::Deserialize;
 
 use crate::{strings, BlobRef, Failure, System};
 
-const CERTIFICATES: &str = "/etc/caddy/orbit-certificates";
+pub(crate) const CERTIFICATES: &str = "/etc/caddy/orbit-certificates";
 const TRUST: &str = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt";
-const CADDYFILE: &str = "/etc/caddy/Caddyfile";
+pub(crate) const CADDYFILE: &str = "/etc/caddy/Caddyfile";
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z_][a-z0-9_-]{0,31}$").expect("a valid pattern"));
-static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]\.[0-9]{1,2}$").expect("a valid pattern"));
+pub(crate) static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]\.[0-9]{1,2}$").expect("a valid pattern"));
 static SCOPE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._-]*$").expect("a valid pattern"));
 static CERTIFICATE_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9a-f]{16}$").expect("a valid pattern"));
 
@@ -83,10 +83,10 @@ struct Link {
 /// A PHP-FPM pool: the shared development pool of a version, or a production account's own.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Pool {
-    version: String,
-    user: Option<String>,
-    content: BlobRef,
+pub(crate) struct Pool {
+    pub(crate) version: String,
+    pub(crate) user: Option<String>,
+    pub(crate) content: BlobRef,
 }
 
 #[derive(Debug, Deserialize)]
@@ -179,14 +179,14 @@ fn validate(input: &Input) -> Result<(), Failure> {
     }
 }
 
-fn pool_path(pool: &Pool) -> String {
+pub(crate) fn pool_path(pool: &Pool) -> String {
     match &pool.user {
         Some(user) => format!("/etc/orbit/php-fpm/{user}/generated/pool.conf"),
         None => format!("/etc/php/{}/fpm/pool.d/orbit-scopes.conf", pool.version),
     }
 }
 
-fn pool_test(pool: &Pool) -> Vec<String> {
+pub(crate) fn pool_test(pool: &Pool) -> Vec<String> {
     let version = &pool.version;
     match &pool.user {
         Some(user) => vec![
@@ -201,7 +201,7 @@ fn pool_test(pool: &Pool) -> Vec<String> {
     }
 }
 
-fn pool_unit(pool: &Pool) -> String {
+pub(crate) fn pool_unit(pool: &Pool) -> String {
     match &pool.user {
         Some(user) => format!("orbit-{user}-php{}-fpm.service", pool.version),
         None => format!("php{}-fpm.service", pool.version),
@@ -232,9 +232,9 @@ fn access_argv(kind: AclKind, user: Option<&str>, paths: &[String]) -> Vec<Strin
     argv
 }
 
-struct Site<'a, S: System> {
-    system: &'a S,
-    changes: u32,
+pub(crate) struct Site<'a, S: System> {
+    pub(crate) system: &'a S,
+    pub(crate) changes: u32,
 }
 
 impl<S: System> Site<'_, S> {
@@ -303,7 +303,7 @@ impl<S: System> Site<'_, S> {
     }
 
     /// Writes a file only when its bytes differ, and repairs owner and mode on an unchanged one. Answers whether it changed.
-    fn file(&mut self, value: &str, content: &[u8], uid: u32, gid: u32, mode: u32) -> Result<bool, Failure> {
+    pub(crate) fn file(&mut self, value: &str, content: &[u8], uid: u32, gid: u32, mode: u32) -> Result<bool, Failure> {
         let dest = self.system.path(value);
         if let Ok(meta) = fs::symlink_metadata(&dest) {
             if meta.file_type().is_file() {
@@ -363,7 +363,7 @@ impl<S: System> Site<'_, S> {
     }
 
     /// Validates the candidate as `caddy` and moves it over the live file only when content or metadata differ.
-    fn caddyfile(&mut self, content: &[u8], caddy: u32) -> Result<(), Failure> {
+    pub(crate) fn caddyfile(&mut self, content: &[u8], caddy: u32) -> Result<(), Failure> {
         let live = self.system.path(CADDYFILE);
         let candidate = format!("/etc/caddy/.orbit-candidate-{}", std::process::id());
         let path = self.system.path(&candidate);
