@@ -125,6 +125,10 @@ When `instance.create` recorded `services: seed` and no database, Valkey ACL use
 
 For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names. `names` sends `SIGHUP` first to live-reload Conn Server and preserve active connections, restarting T3 once only if reload fails, then polls until the new label appears.
 
+### The workspace read
+
+The workspace unsaved-work read (`ContainerWorkspaceRead`, which Conn's Remove and the unacknowledged destroy call) is no kind: it is a synchronous [signed read](/reference/executor#signed-reads) of `instance.work_read`, decided on each read by the Node's report. A Node that reports the action answers it; any other Node, or a Gateway without a bus, is read over SSH exactly as before. Both paths give the same answer (`instance/container/work-read-engine.mmd`).
+
 ### Capability reporting
 
 An executor reports `{actions, node_targets, features, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets, and `features` advertises optional action inputs such as `instance.t3_pairing`). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately.
@@ -218,6 +222,7 @@ Because all processes on a Node share its WireGuard address, each Node also load
 - Direct gets of its own content keys `n<id>.*`.
 - Writing its own capability key `$KV.NODES.n<id>`.
 - Subscribing to its own inbox prefix `_INBOX.node-<id>.>`.
+- Subscribing to its own [signed reads](/reference/executor#signed-reads) on `orbit.node.<id>.reads`, which only the Gateway publishes, and one reply to each request within five seconds (`resp`).
 
 Order signatures remain the execution boundary: neither the bus nor another Node can forge an order.
 

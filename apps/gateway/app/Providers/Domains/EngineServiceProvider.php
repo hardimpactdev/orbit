@@ -8,6 +8,7 @@ use App\Console\Commands\EngineConsumeCommand;
 use App\Console\Commands\EngineKeysCommand;
 use App\Console\Commands\EngineSetupCommand;
 use App\Domain\Engine\MachineBus;
+use App\Domain\Engine\NodeReadBus;
 use App\Infrastructure\Engine\EngineBus;
 use Illuminate\Support\ServiceProvider;
 
@@ -19,6 +20,7 @@ final class EngineServiceProvider extends ServiceProvider
         // One connection per process for publishes; the consumer opens its own for subscriptions.
         $this->app->singleton(EngineBus::class);
         $this->app->bind(MachineBus::class, EngineBus::class);
+        $this->app->bind(NodeReadBus::class, EngineBus::class);
     }
 
     public function boot(): void

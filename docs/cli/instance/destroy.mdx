@@ -66,7 +66,7 @@ On the Gateway engine, an eligible forced clone removal runs as one signed `inst
 
 <div className="flow-at" data-chart="instance/container/destroy-engine"></div>
 
-The Remove button in Conn first reads the workspace for unsaved work. This read is synchronous and is not an Operation, so its chart has no kind of its own and is placed here, beside the removal it gates. This design awaits implementation and runtime proof.
+The Remove button in Conn first reads the workspace for unsaved work. This read is synchronous and is not an Operation, so its chart has no kind of its own and is placed here, beside the removal it gates. A Node whose executor reports `instance.work_read` answers it as a [signed read](/reference/executor#signed-reads); any other Node is read over SSH as before. The path is built; its runtime proof is pending.
 
 <div className="flow-at" data-chart="instance/container/work-read-engine"></div>
 
