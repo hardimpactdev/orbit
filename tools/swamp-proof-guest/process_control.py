@@ -93,7 +93,7 @@ class ProcessLane(CloneLane):
             args += ['--image=' + IMAGE, '--command=sleep', '--command=infinity']
         elif name == 'horizon':
             # The shape GatewayHorizon::runs recognises: a Node host unit running `artisan horizon`, whose stop waits for its drain.
-            args += ['--command=php', '--command=artisan', '--command=horizon']
+            args += ['--command=/usr/bin/php', '--command=artisan', '--command=horizon']
         else:
             args += ['--command=/bin/sleep', '--command=infinity']
         if start:
