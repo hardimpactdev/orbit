@@ -13,6 +13,7 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
@@ -42,6 +43,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -160,6 +162,11 @@ final readonly class AdmitNodeRoleOperationAction
 
         $admit = fn (): Operation => DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
+            if ($role === RoleName::Analytics) {
+                // Its cleanup deletes the Plausible Process (NodeRoleRemovalProjection::recordCleanup).
+                EngineTargetFence::processesFree(Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)
+                    ->where('name', PlausibleProcess::NAME)->pluck('id')->all());
+            }
             $this->guardMutable($node, $role, removing: true);
             if ($role === RoleName::Swamp) {
                 throw new NodeRoleValidationException("Role [{$role->value}] runs this removal's Swamp run, so it can't remove itself.", [

@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseServers\DestroyDatabaseServerAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Nodes\AdmitNodeRemovalOperationAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Schedules\AddScheduleData;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
@@ -26,6 +31,7 @@ use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -35,6 +41,9 @@ use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
+use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
+use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -490,3 +499,97 @@ it('refuses synchronous Process writers while an engine stop is outstanding, and
         ->and($operation->result)->toBe(['ready' => true, 'state' => 'inactive'])
         ->and($process->refresh()->desired_state->value)->toBe('stopped');
 })->with(['removal', 'start']);
+
+/** An engine stop of the Process with its order sent and no receipt yet: the Process is fenced. */
+function outstandingEngineStop(object $test, Process $process): Operation
+{
+    $operation = ($test->operation)($process, 'process.stop');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    expect($operation->refresh()->lock_key)->toBe('process:'.$process->id);
+
+    return $operation;
+}
+
+it('refuses a Node removal that would delete a fenced Process before teardown starts', function (): void {
+    $process = ($this->process)();
+    outstandingEngineStop($this, $process);
+    $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
+
+    expect(fn () => app(AdmitNodeRemovalOperationAction::class)->execute($this->node, $caller, offline: true, force: true))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->where('kind', 'node.remove')->exists())->toBeFalse()
+        ->and($this->node->refresh()->status->value)->toBe('active');
+});
+
+it('refuses an analytics role removal that would delete its fenced Plausible Process', function (): void {
+    $this->node->roles()->create(['role' => RoleName::Analytics, 'status' => 'active']);
+    $plausible = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => PlausibleProcess::NAME,
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'redis:7'], 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    outstandingEngineStop($this, $plausible);
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->remove($this->node, RoleName::Analytics, force: true))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->where('kind', 'node.role_remove')->exists())->toBeFalse();
+});
+
+it('refuses a database server removal whose Docker Process is fenced', function (): void {
+    $process = ($this->process)(runtime: 'docker');
+    outstandingEngineStop($this, $process);
+    $server = DatabaseServer::query()->create(['slug' => 'fixture-postgres', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $process->id, 'port' => 5432, 'tag' => '16', 'root_password' => 'fixture-only', 'status' => 'active']);
+
+    expect(fn () => app(DestroyDatabaseServerAction::class)->execute($server))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->where('kind', 'database_server.destroy')->exists())->toBeFalse()
+        ->and(DatabaseServer::query()->whereKey($server->id)->exists())->toBeTrue();
+});
+
+it('refuses an Instance removal that would delete its fenced Process, and a Process order never binds beside an open removal', function (): void {
+    $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $shop = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'shop', 'checkout_path' => '/home/orbit/apps/shop',
+        'branch' => 'main', 'vite_port' => 5173, 'status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => false]);
+    $worker = Process::query()->create(['owner_type' => 'instance', 'owner_id' => $shop->id, 'name' => 'worker', 'runtime' => 'systemd',
+        'runtime_config' => ['command' => ['php', 'artisan', 'queue:work']], 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    $stop = outstandingEngineStop($this, $worker);
+
+    expect(fn () => app(StartInstanceDestroyAction::class)->execute($shop, force: true))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+        ->and(Process::query()->whereKey($worker->id)->exists())->toBeTrue();
+
+    // The removal admitted first owns the Process: a new engine stop of it does not bind.
+    ($this->receipt)($stop, 'converge', ['status' => 'applied', 'changes' => 1]);
+    Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $shop->id, 'node_id' => $this->node->id,
+        'status' => OperationStatus::Running, 'lock_key' => 'instance:'.$shop->id, 'input' => ['instance_id' => $shop->id]]);
+    $again = ($this->operation)($worker, 'process.stop');
+    expect(fn () => app(StartSwampRun::class)->start($again))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+});
+
+it('ends an engine stop and frees its fence when a removal already deleted the Process row', function (): void {
+    $process = ($this->process)();
+    $operation = outstandingEngineStop($this, $process);
+    Process::query()->whereKey($process->id)->delete();
+
+    ($this->receipt)($operation, 'converge', ['status' => 'applied', 'changes' => 1]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->lock_key)->toBeNull();
+});
+
+it('refuses AI-router collector reconvergence before any collector write while its Process is fenced', function (): void {
+    $collector = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => AiRouterProcess::NAME,
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/local/bin/orbit-agent', 'ai-router']], 'restart_policy' => 'always',
+        'desired_state' => 'running', 'status' => 'active']);
+    AiRouterProcessSource::query()->create(['process_id' => $collector->id, 'source_revision' => 'old-revision', 'activation_pending' => false]);
+    outstandingEngineStop($this, $collector);
+
+    expect(fn () => app(NativeAiRouterRuntimeLifecycle::class)->converge($this->node, []))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    $source = AiRouterProcessSource::query()->findOrFail($collector->id);
+    expect($source->source_revision)->toBe('old-revision')
+        ->and($source->activation_pending)->toBeFalse()
+        ->and($collector->refresh()->systemd_activation_pending)->toBeFalse();
+});
