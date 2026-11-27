@@ -56,6 +56,8 @@ units = module('task_check_units', ROOT / 'bin/ci-units')
 # bin/cli-contract owns which CLI tests replay an SDK fixture.
 contract = module('task_check_contract', ROOT / 'bin/cli-contract')
 
+# The Rust enum of the executor's actions, which bin/check-executor-actions reads.
+EXECUTOR_ACTIONS = 'apps/agent/crates/executor-core/src/action.rs'
 PARTS = ('ci-plan', 'docs-impact', 'check-flows', 'docs-lint', 'pint', 'phpstan', 'swamp-shape', 'ci-policy',
          'fixture-population', 'pest', 'fixtures')
 PHP_PROJECTS = review['PHP_PROJECTS']
@@ -618,7 +620,9 @@ def main(argv=None):
         build = [['bin/build-api']] if jobs['api-reference'] else []
         record(timed('docs-impact', [*build, review['docs_impact_command'](ROOT, base, common)], deadline))
     if want('check-flows'):
-        record(timed('check-flows', [['node', 'bin/check-flows']], deadline, env={'BASE': base}) if docs_inputs
+        # A new executor action is a docs input too: its catalogue row is what bin/check-executor-actions looks for.
+        record(timed('check-flows', [['node', 'bin/check-flows'], ['node', 'bin/check-executor-actions']], deadline,
+                     env={'BASE': base}) if docs_inputs or EXECUTOR_ACTIONS in paths
                else Part('check-flows', 'not selected', 0, 'no tooling, docs or API reference input changed'))
     if want('docs-lint'):
         # Root composer check writes docs/openapi.json before the docs build, so the lint never reads a stale one.
