@@ -5,6 +5,7 @@ covers:
   - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-process-restart-output,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
+  - bin/check-executor-actions
   - swamp/ansible/tasks/node-executor.yml
 ---
 
@@ -95,6 +96,92 @@ Orders for the same target execute serially under a per-target lock; different t
 
 `discard` and `instance.destroy` accept a canonical positive Instance ID even after Incus has removed its container. Destroy verifies that the saved Incus project, container, pool, ACL, and optional inner volume belong to that ID before taking any action. This lets a new order recover a lost receipt or finish cleanup without weakening the live-target check for sleep, wake, or graceful stop.
 
+## Primitives
+
+The executor holds primitives, and the Gateway holds Operations. A primitive changes or reads one resource on a Linux host. The Gateway's PHP composes primitives into the steps of an Operation ([Gateway engine](/reference/gateway-engine#steps-and-transitions)), so a new Operation kind normally needs no Rust and no agent release. [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#the-owners-decisions) decision N3 owns this rule.
+
+`ufw.ensure_rule` is the model for the shape. `firewall:allow` is one step that sends one typed rule. The executor reads the Node's ufw table, changes only what differs, reads the table again, and answers how many changes it made.
+
+### What a primitive may be
+
+Every action in the executor's enum must meet these five conditions. A pull request that adds or changes an action states how it meets each one. A task that touches the executor names the five conditions as a deliverable, so a miss blocks under [the reviewer rule](/reference/tasks#the-reviewer-rule).
+
+| Condition | What it means |
+| --- | --- |
+| One resource | It acts on one kind of resource that any Linux host can have: a file, a systemd unit, a firewall rule, an Incus instance, a Git repository, a service's configuration. |
+| No Orbit concept | Its name and its input describe the resource. An Instance, a Route, a Process, a Schedule and a task copy exist only in the Gateway. |
+| Explicit input | The Gateway sends every name, path, owner, mode and content. The Rust code builds no Orbit name and holds no Orbit path. |
+| Desired state | It reads the resource, changes only what differs, reads it back, and answers the number of changes. A repeat changes nothing. |
+| Typed input | It never runs a command, a script or an argument list that the order carries. The commands a primitive runs are fixed in its Rust code. |
+
+Desired state applies wherever the resource allows it; a restart, for example, is bound to its order instead. A workspace folder and a unit name pattern are examples of Orbit paths and names that arrive in the input. The order of the steps, the content of each file, and what a failure means for the Operation belong to the Operation's flow in the Gateway.
+
+### The catalogue
+
+The catalogue is the full set of primitives that the Operations on the engine need. A primitive marked planned replaces the actions named beside it, and the [rewrite list](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule) in ADR 0271 gives the order.
+
+| Primitive | Resource | State | Replaces |
+| --- | --- | --- | --- |
+| `proof.noop` | Nothing: it proves the order path | Built | |
+| `sleep`, `wake`, `discard` | The frozen state of one container | Built; [stays one call each](#primitives-that-span-more-than-one-file-or-call) | |
+| `ufw.ensure_rule` | One ufw rule, port or route | Built for port rules; route rules planned | The `ufw route allow` call inside `instance.clone`; the rule removals of `instance.destroy` |
+| `tls.ensure_csr` | One private key and its signing request | Built; its folder pattern, owner, mode and certificate subject move into the input | |
+| `file.ensure` | One file, folder or link: content, owner, mode, an optional digest it must still hold, or absent | Planned | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
+| `file.line.ensure` | One line or one marked block of lines in a file | Planned | The `/etc/hosts` and NSS edits of `instance.start` and `instance.prepare` |
+| `file.read` | The content of one small file, read only | Planned | The seed manifest and seed take reads of `instance.clone` and `instance.prepare` |
+| `dotenv.ensure` | Keys of one dotenv file | Planned | The `APP_URL` edit of `route.publish_site`; the `.env` merge of `instance.checkout` |
+| `json.ensure` | Keys of one JSON file | Planned | The JSON merges of `instance.prepare` |
+| `posix.acl.ensure` | The access list of one path | Planned | The `setfacl` calls of `route.publish_site` |
+| `ca.trust.ensure` | One certificate in a trust store | Planned | The trust steps of `route.publish_site` and `instance.prepare` |
+| `hostname.ensure` | The host name of one machine | Planned | The host name steps of `instance.start` and `instance.names` |
+| `account.ensure` | One user account and its group | Planned | The app-account step of `instance.start` |
+| `config.apply` | One set of configuration files that share a lock | Planned | `dns.publish_records`; the Caddy and PHP-FPM parts of `route.publish_site` and `route.withdraw_site` |
+| `http.probe` | One HTTP answer, read with a bounded wait and a typed expectation | Planned | The Caddy read-back of `route.withdraw_site`; the readiness waits of `instance.t3` and `instance.fleet_ready` |
+| `systemd.unit.ensure` | One unit: enabled, running or stopped | Planned | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
+| `systemd.unit.restart`, `systemd.unit.signal` | One run of one unit, restarted or signalled at most once per order | Planned | `process.read_instance` and `process.restart` for units; the reload of `instance.names` |
+| `docker.container.ensure`, `docker.container.restart` | One Docker container | Planned | The container branches of the process family |
+| `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Planned | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
+| `incus.instance.read` | The state, configuration and snapshots of one Incus instance, read only | Planned | The seed choice of `instance.clone`; the machine id read of `instance.prepare` |
+| `incus.acl.ensure`, `incus.device.ensure`, `incus.volume.ensure` | One network ACL, one device, one storage volume | Planned | The rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, their removal in `instance.destroy` |
+| `git.fetch` | One ref fetched into one repository | Planned | `instance.fetch_branch`; the bundle transfer of `instance.checkout` and `instance.sync_base` |
+| `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Planned | `instance.checkout`, the branch rename of `instance.names` |
+| `git.ref.ensure` | One ref, set only from an expected old value, or absent | Planned | The ref moves of `instance.sync_base` and `instance.clear_base` |
+| `git.worktree.read` | The state of one work tree, read only | Planned | `instance.work_read`, the evidence reads of `instance.sync_base` |
+| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Planned | `instance.t3`, whose T3 names go with it |
+
+Three notes apply to every row.
+
+| Note | Rule |
+| --- | --- |
+| Where it acts | The input names the machine and the user: the Node, or one Incus instance on it. An Incus primitive can also address the Incus server inside an instance. |
+| Starting and removing an instance | `incus.instance.ensure` keeps the id-map shift of the root filesystem and the ZFS dataset repair. Each is part of starting or removing one instance. |
+| Programs with their own interface | ufw, Incus, Docker, Git and the Conn Server are programs on the host, so each has typed primitives. A record that only the Gateway holds has none. |
+
+A rewrite may refine a planned primitive's input. It may not weaken the five conditions.
+
+### Primitives that span more than one file or call
+
+Three groups of primitives hold work that splitting would break. Each names one resource, and each takes explicit input once its rewrite lands.
+
+| Primitive | What it holds together | Why it stays one call |
+| --- | --- | --- |
+| `config.apply` | The files with the digest each must still hold, their validators from a fixed list (Caddy, PHP-FPM, dnsmasq), the units to reload or restart, and a lock path | It holds the lock from the first check to the reload and restores the old files on failure. Separate steps would let two Operations interleave. |
+| `sleep`, `wake`, `discard` | A container's frozen state, its memory plan and its marker | A wake runs inside a visitor's request and holds that state under one lock ([The wake inside the request](#the-wake-inside-the-request)). |
+| `conn.session.issue`, `conn.pairing.issue` | The call to the Conn Server and the sealing of its answer | The answer is sealed to the Gateway's key on the Node, so a token never travels in a readable receipt. |
+
+### Add a primitive
+
+Compose the Operation from the catalogue first. Add a primitive only for a resource that the catalogue lacks.
+
+1. Write the Operation's steps as a flow in the Gateway from existing primitives, and update the command's chart in the same pull request.
+2. For a missing resource, add one primitive with a typed input, a result bound and a row in the catalogue.
+3. State in the pull request which resource it is and how the primitive meets the five conditions.
+4. Never add a primitive for an Operation, for one step of one Operation, or to port a Swamp phase or script as a whole.
+
+`bin/check-executor-actions` holds the catalogue and the code together. Every action in the Rust enum has a row marked Built, or a line in `docs/reference/executor-actions-predating.txt` until its rewrite deletes it. That list only shrinks: CI fails a line that the base commit lacks. The check also fails a new action whose name starts with an Orbit concept, such as `instance` or `route`.
+
+A new primitive ships in an agent release and reaches a Node through the pin. A flow that uses only existing primitives ships in a Gateway release alone.
+
 ## The machine bus
 
 When `/etc/orbit/executor/nats.json` is present, `orbit-executor serve` also connects to the [Gateway engine](/reference/gateway-engine) NATS JetStream bus without credentials (admitted by WireGuard IP and guarded by `orbit_bus_guard` nftables so only `root` can connect).
@@ -103,7 +190,7 @@ On the bus, the executor reports `{actions, node_targets, features, version, clo
 
 ### Action primitives
 
-The executor implements these action families:
+The executor implements these action families today. Only `proof.noop` meets the [five conditions](#what-a-primitive-may-be) in full. `ufw.ensure_rule` meets them except that its Rust code holds Orbit's rule order and comment prefix, because it places a rule from the table it reads in the same call. The power actions are a [named exception](#primitives-that-span-more-than-one-file-or-call). Every other action in this table and in the two family tables below predates the rule and is replaced through the [rewrite list](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule). No new action follows their shape.
 
 | Primitive | Family | Behavior |
 | --- | --- | --- |
