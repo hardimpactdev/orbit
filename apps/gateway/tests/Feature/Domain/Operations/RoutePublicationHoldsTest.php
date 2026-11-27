@@ -773,3 +773,30 @@ it('holds an engine-run update\'s site phase Nodes and VPN Node at its start, re
     Operation::query()->whereKey($second->id)->update(['status' => OperationStatus::Failed, 'finished_at' => now()]);
     expect($holds->sweep())->toBe(2)->and(holder(8))->toBeNull();
 });
+
+it('makes a Swamp rename whose phase plan writes a Node an engine update holds wait, in either start order', function (string $kind): void {
+    $holds = app(RoutePublicationHolds::class);
+    $phased = static function (int $serving, array $sites) use ($kind): Operation {
+        $operation = routeWrite([], $kind);
+        $key = $kind === 'route.update' ? 'route_update' : 'route_target';
+        $operation->update(['input' => [...$operation->input, $key => ['route_id' => 3, 'result_route_id' => 4,
+            'plan' => ['publish' => ['site_nodes' => [$serving]], 'retire' => ['site_nodes' => $sites], 'cleanup' => [], 'dns' => []]]]]);
+
+        return $operation->refresh();
+    };
+
+    $engine = engineUpdateWrite(5, [5, 7], 8);
+    expect($holds->admit($engine))->toBeTrue();
+    RouteUpdateEngineFlow::holdNodes($engine);
+    $swamp = $phased(9, [7]);
+    expect(RoutePublicationHolds::nodes($swamp))->toBe([7, 9])
+        ->and($holds->admit($swamp))->toBeFalse()
+        ->and($swamp->refresh()->status)->toBe(OperationStatus::Waiting);
+
+    finish($engine);
+    finish($swamp, OperationStatus::Cancelled);
+    $first = $phased(9, [7]);
+    expect($holds->admit($first))->toBeTrue();
+    $later = engineUpdateWrite(5, [5, 7], 8);
+    expect($holds->admit($later))->toBeFalse();
+})->with(['a Route update' => ['route.update'], 'a target change' => ['route.target_set']]);

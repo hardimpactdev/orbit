@@ -150,11 +150,11 @@ it('takes a fenced step\'s output and applied receipts, also when the journal re
         ->and(FencedRouteDefinition::$finished)->toBe('succeeded');
 });
 
-it('fails a fenced Route step whose order expired, which the journal keeps as its result, instead of sending it forever', function (): void {
+it('resends a fenced Route step whose order expired before it ran, as the executor journals no result for it', function (): void {
     ($this->start)();
     ($this->receipt)($this->a, 'csr-0', ['status' => 'failed', 'code' => 'executor.order_expired', 'action' => 'tls.ensure_csr', 'target' => (string) $this->a->id]);
 
-    expect(($this->step)('csr-0')->status)->toBe('failed')->and(($this->step)('csr-0')->error_code)->toBe('executor.order_expired');
+    expect(($this->step)('csr-0')->status)->toBe('sent')->and(($this->step)('csr-0')->error_code)->toBeNull();
 });
 
 it('keeps the fence after one Node fails while another Node\'s published order has no receipt, and ends once it has one', function (): void {

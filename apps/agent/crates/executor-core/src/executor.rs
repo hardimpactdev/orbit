@@ -547,6 +547,7 @@ mod tests {
     fn only_fenced_actions_keep_an_expiry_out_of_the_journal() {
         assert!(Action::InstanceDestroy.receipt_fenced() && Action::InstanceSyncBase.receipt_fenced() && Action::InstanceClearBase.receipt_fenced()
             && Action::InstanceFetchBranch.receipt_fenced());
+        assert!(Action::TlsEnsureCsr.receipt_fenced() && Action::RoutePublishSite.receipt_fenced() && Action::DnsPublishRecords.receipt_fenced());
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
     }
 

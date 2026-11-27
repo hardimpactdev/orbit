@@ -22,6 +22,7 @@ use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -206,10 +207,41 @@ final class RoutePublicationHolds
         if (self::releasesAfterWithdraw($operation->kind) && ($operation->input['route_withdrawn'] ?? false) === true) {
             return [];
         }
-        $nodes = [];
+        $nodes = self::phaseNodes($operation);
         self::collect($operation->input, $nodes);
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
+
+        return $nodes;
+    }
+
+    /**
+     * The Nodes a Route update's or target change's phase plan writes (NativeRouteUpdatePlan, NativeRouteTargetPlan): their
+     * whole Caddyfiles, held as a `publications` entry's Nodes are, so such a write and an engine-run update exclude each other in
+     * either start order. A waiting one is refused at its start when its Nodes' sites changed (`hold_sites`). The VPN Nodes are
+     * not among them: their records are keyed.
+     *
+     * @return list<int>
+     */
+    private static function phaseNodes(Operation $operation): array
+    {
+        $plan = match ($operation->kind) {
+            'route.update' => Arr::get($operation->input, 'route_update.plan'),
+            'route.target_set' => Arr::get($operation->input, 'route_target.plan'),
+            default => null,
+        };
+        $nodes = [];
+        if (! is_array($plan)) {
+            return $nodes;
+        }
+        foreach (['publish', 'stage', 'router', 'app_url', 'retire'] as $phase) {
+            $phaseNodes = Arr::get($plan, $phase.'.site_nodes', []);
+            foreach (is_array($phaseNodes) ? $phaseNodes : [] as $node) {
+                if (is_int($node)) {
+                    $nodes[] = $node;
+                }
+            }
+        }
 
         return $nodes;
     }

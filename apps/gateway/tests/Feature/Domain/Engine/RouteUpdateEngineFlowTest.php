@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineStepNotYet;
@@ -13,6 +14,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -21,6 +23,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -166,18 +169,6 @@ it('resumes from the attempt that committed the cutover, past a later forward re
         ->and(array_column(updateSteps($next), 0))->toBe(['final-3', 'sibling-3']);
 });
 
-it('refuses to resume a lasting Caddyfile that a sibling Route changed since the cutover, rather than overwrite it', function (): void {
-    $first = updateOperation(updateIntent());
-    $first->forceFill(['status' => OperationStatus::Failed, 'state' => ['swamp_run_id' => 'engine-'.$first->id]])->save();
-    OperationEngineStep::query()->forceCreate(['operation_id' => $first->id, 'name' => 'cutover', 'node_id' => 0, 'action' => 'route.cutover', 'target' => 'gateway',
-        'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 60_000, 'status' => 'done', 'output' => 'cutover 9 to 10']);
-
-    RouteUpdateEngineFlow::assertChain(updateOperation(updateIntent()), true);
-    $sibling = updateOperation(updateIntent(['retire' => updatePhase(['caddy' => [['node_id' => 3, 'content' => "new.orbit {\n}\nsibling.orbit {\n}\n"]]], [1])]));
-    expect(fn () => RouteUpdateEngineFlow::assertChain($sibling, true))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
-});
-
 it('probes any other site the Node serves, a proxy without an Instance target included, and fails a Node without an address', function (): void {
     $site = static fn (string $domain): DevelopmentSite => new DevelopmentSite(3, '10.44.0.2', 'proxy', '', '', null, $domain);
     $node = (new Node)->forceFill(['id' => 3, 'wireguard_ip' => '10.44.0.2']);
@@ -264,4 +255,42 @@ it('fences the replacement Route of an open engine-run update against a removal,
 
     $update->forceFill(['status' => OperationStatus::Failed])->save();
     RouteUpdateEngineFlow::assertNotFenced($replacement);
+});
+
+it('keeps a chain on Swamp whose unbound uncertain start the expiry rewrote to a timeout', function (): void {
+    $expired = updateOperation(updateIntent());
+    $expired->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out'])->save();
+
+    expect(RouteUpdateEngineFlow::owner(updateOperation(updateIntent())))->toBe('swamp');
+});
+
+it('refuses a record-only edit of the replacement an open engine update publishes', function (): void {
+    $update = updateOperation(updateIntent());
+    $update->forceFill(['state' => ['swamp_run_id' => 'engine-'.$update->id]])->save();
+    $replacement = (new Route)->forceFill(['id' => 10, 'kind' => 'app']);
+
+    expect(fn () => app(AdmitRouteOperationAction::class)->start('route.update', $replacement, ['mode' => 'publication']))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+});
+
+it('resumes a stored lasting Caddyfile only while the catalog still renders it for that Node, under the hold', function (): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'app-dev', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit']));
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
+    $current = app(NodeCaddyfileRenderer::class)->render($node)->content;
+    $resume = function (string $lasting) use ($node): Operation {
+        DB::table('route_publication_holds')->delete();
+        Operation::query()->where('kind', 'route.update')->delete();
+        $first = updateOperation(updateIntent(['retire' => [...updatePhase(['caddy' => [['node_id' => $node->id, 'content' => $lasting]]], [1]), 'site_nodes' => [$node->id]]]));
+        $first->forceFill(['status' => OperationStatus::Failed, 'state' => ['swamp_run_id' => 'engine-'.$first->id]])->save();
+        OperationEngineStep::query()->forceCreate(['operation_id' => $first->id, 'name' => 'cutover', 'node_id' => 0, 'action' => 'route.cutover', 'target' => 'gateway',
+            'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 60_000, 'status' => 'done', 'output' => 'cutover 9 to 10']);
+
+        // The identical retry's own capture has no lasting row: the catalog already serves the replacement.
+        return updateOperation(updateIntent(['retire' => [...updatePhase([], []), 'site_nodes' => []]]));
+    };
+
+    RouteUpdateEngineFlow::holdNodes($resume($current));
+    expect(fn () => RouteUpdateEngineFlow::holdNodes($resume($current."sibling.orbit {\n}\n")))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
 });

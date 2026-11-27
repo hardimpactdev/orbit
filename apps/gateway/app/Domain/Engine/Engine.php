@@ -43,12 +43,6 @@ final readonly class Engine
     private const array FencedSuccess = ['instance.destroy' => 'done', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
         'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', 'dns.publish_records' => 'applied'];
 
-    /**
-     * Fenced Route actions whose expired order the executor's journal keeps as the step's result (orbit-executor-core
-     * `ends_operation`): a resend repeats it, so it is the step's terminal failure.
-     */
-    private const array ExpiryEnds = ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records', RouteUpdateEngineFlow::RemovalAction];
-
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
     /**
@@ -213,12 +207,6 @@ final readonly class Engine
         // A redelivered order's replay carries the first order's result once it exists: that result is the step's.
         if ($status === 'refused' && $reason === 'replayed_nonce' && is_array($line['first'] ?? null)) {
             self::record($step, ValidatedData::object($line['first']), $receiptBound);
-
-            return;
-        }
-        if ($receiptBound !== null && ($line['code'] ?? null) === 'executor.order_expired' && in_array($step->action, self::ExpiryEnds, true)
-            && ($line['action'] ?? null) === $step->action && ($line['target'] ?? null) === $step->target) {
-            $step->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'executor.order_expired']);
 
             return;
         }

@@ -16,6 +16,7 @@ use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
@@ -223,7 +224,8 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         foreach (self::attempts($operation) as $earlier) {
             if (Engine::owns($earlier)) {
                 $owners['engine'] = true;
-            } elseif (isset($earlier->state['swamp_run_id']) || $earlier->error_code === 'swamp.start_uncertain') {
+            } elseif (isset($earlier->state['swamp_run_id']) || in_array($earlier->error_code, ['swamp.start_uncertain', 'operation.timed_out'], true)) {
+                // An unbound attempt that timed out may have been an uncertain start whose code the expiry replaced: Swamp may run it.
                 $owners['swamp'] = true;
             }
         }
@@ -257,6 +259,10 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         }
         if (! app(RoutePublicationHolds::class)->holdEngine($operation, $nodes)) {
             throw new ResourceOperationException('route.publication_held', 'Another Route write holds a Node of this update.', 409);
+        }
+        $resumed = self::cutoverOwner($operation);
+        if ($resumed !== null) {
+            self::assertLastingCurrent($resumed);
         }
     }
 
@@ -301,10 +307,18 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         if (! $engine && $owner === 'engine') {
             throw new ResourceOperationException('route.update_engine_chain', 'This Route update began on the engine; its retry runs there or not at all.', 409);
         }
-        $resumed = $engine ? self::cutoverOwner($operation) : null;
-        if ($resumed !== null) {
-            $caddy = static fn (Operation $from): array => array_column(RouteExecutionProof::objects(ValidatedData::object(self::plan($from)['retire'] ?? [])['caddy'] ?? []), 'content', 'node_id');
-            if ($caddy($resumed) !== $caddy($operation)) {
+    }
+
+    /**
+     * Under the Node hold, a resumed update's stored lasting Caddyfile must still be what the catalog renders for that Node now:
+     * after the cutover the catalog no longer serves the old name, so an unchanged retry renders the same bytes, and a sibling
+     * Route published or withdrawn since then makes them differ. A stale file is refused before it can overwrite the sibling.
+     */
+    private static function assertLastingCurrent(Operation $resumed): void
+    {
+        foreach (RouteExecutionProof::objects(ValidatedData::object(self::plan($resumed)['retire'] ?? [])['caddy'] ?? []) as $row) {
+            $render = app(NodeCaddyfileRenderer::class)->render(Node::query()->findOrFail(ValidatedData::integer($row['node_id'])));
+            if (! $render->buildable() || $render->content !== ValidatedData::string($row['content'])) {
                 throw new ResourceOperationException('route.publication_stale', 'A Route changed on this update\'s Nodes since its cutover; run the update again once it settles.', 409);
             }
         }
