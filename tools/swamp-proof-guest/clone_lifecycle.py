@@ -1451,20 +1451,25 @@ class CancelLane(SyncLane):
         seen = {}
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline and not ('cancel' in seen and 'cli' in seen):
-            cancel_row, destroy_row = self.operation_times(cancel), self.operation_times(destroy)
+            # One pass reads in the order the ends must come, each read after the one before: the CLI's exit, then the copy, the destroy and
+            # the cancel. So a copy read as present beside a cancel read as ended is a real fault, and an exit is never seen before its cancel.
+            exited = process.poll() is not None
             gone = self.runtime(instance) is None and not self.resources(instance)['incus']
-            if destroy_row['status'] in TERMINAL and 'destroy' not in seen:
-                seen['destroy'] = self.at()
-                event('destroy ended', destroy=destroy_row, cancel=cancel_row, copy_gone=gone)
+            destroy_row = self.operation_times(destroy)
+            cancel_row = self.operation_times(cancel)
+            now = self.at()
             if gone and 'gone' not in seen:
-                seen['gone'] = self.at()
+                seen['gone'] = now
                 event('copy gone', cancel=cancel_row)
+            if destroy_row['status'] in TERMINAL and 'destroy' not in seen:
+                seen['destroy'] = now
+                event('destroy ended', destroy=destroy_row, cancel=cancel_row, copy_gone=gone)
             if cancel_row['status'] in TERMINAL and 'cancel' not in seen:
-                seen['cancel'] = self.at()
+                seen['cancel'] = now
                 event('cancel ended', cancel=cancel_row, destroy=destroy_row, copy_gone=gone)
                 require(gone and destroy_row['status'] == 'succeeded', f'cancel {cancel} ended before its copy was gone')
-            if process.poll() is not None and 'cli' not in seen:
-                seen['cli'] = self.at()
+            if exited and 'cli' not in seen:
+                seen['cli'] = now
                 event('cli task:cancel exited', rc=process.returncode)
             time.sleep(0.2)
         if 'cli' not in seen:
