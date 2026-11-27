@@ -23,7 +23,9 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(3)
 sock.sendto(query, (server, 53))
 data = sock.recv(1024)
-print(json.dumps({'rcode': data[3] & 15, 'answers': struct.unpack('>H', data[6:8])[0]}))'''
+answers = struct.unpack('>H', data[6:8])[0]
+# dnsmasq answers one A record, last in the reply: its address.
+print(json.dumps({'rcode': data[3] & 15, 'answers': answers, 'address': socket.inet_ntoa(data[-4:]) if answers else None}))'''
 
 
 def traced(method):
@@ -118,21 +120,23 @@ class RouteLane(CloneLane):
         records = self.guest('gateway', 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', domain, RECORDS)
         answer = json.loads(self.guest('gateway', 'python3', '-c', DNS_QUERY, domain, self.gateway_address))
         return {'caddy_lines': int(caddy), 'caddy_admin': int(admin) > 0, 'leaf_paths': int(leaves), 'dns_record_lines': int(records),
-                'dns_answers': answer['answers'], 'dns_rcode': answer['rcode'], 'https': self.https(domain)}
+                'dns_answers': answer['answers'], 'dns_rcode': answer['rcode'], 'dns_address': answer['address'],
+                'https': self.https(domain, answer['address'] or self.node_ip)}
 
     @staticmethod
     def present(state):
         return state['caddy_lines'] > 0 and state['caddy_admin'] and state['leaf_paths'] == 1 and state['dns_record_lines'] > 0 and state['dns_answers'] > 0 \
-            and state['https'] != '000'
+            and state['dns_address'] == '10.45.0.2' and state['https'] != '000'
 
     @staticmethod
     def absent(state):
         return (state['caddy_lines'], state['caddy_admin'], state['leaf_paths'], state['dns_record_lines'], state['dns_answers'], state['https']) \
             == (0, False, 0, 0, 0, '000')
 
-    def https(self, domain):
+    def https(self, domain, address):
+        """A request to the address the VPN Node's DNS answers (the Route Node's when it answers none), trusting only the nested root."""
         response = subprocess.run(['curl', '--noproxy', '*', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '5',
-                                   '--cacert', self.ca_path, '--resolve', f'{domain}:443:{self.node_ip}', f'https://{domain}/'],
+                                   '--cacert', self.ca_path, '--resolve', f'{domain}:443:{address}', f'https://{domain}/'],
                                   capture_output=True, text=True, timeout=8)
         return response.stdout or '000'
 
@@ -192,7 +196,7 @@ class RouteLane(CloneLane):
 
     @traced
     def route_destroy(self, name, via, sibling, fault=None):
-        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'dns-conflict') and (fault is None or via == 'engine'), 'invalid route destroy case')
+        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial') and (fault is None or via == 'engine'), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
         sibling_before = self.healthy(sibling)
         self.set_dns(via == 'engine')
@@ -200,13 +204,14 @@ class RouteLane(CloneLane):
         before = self.state(domain, scope)
         require(self.present(before), f'Route {domain} is not live before its removal')
         path, key = f'routes/{route}', name + '-route-destroy'
-        failed = self.dns_conflict(name, path, key, sibling) if fault == 'dns-conflict' else None
+        failed = self.partial_withdrawal(name, path, key, sibling) if fault == 'partial' else None
         started = time.monotonic()
         if fault == 'receipt':
             admitted, interrupted = self.dropped_withdraw(path, key, domain, scope, sibling)
         else:
             admitted, interrupted = self.admitted('DELETE', path, {}, key), None
         operation = int(admitted['id'])
+        grace = self.in_grace(operation, domain, scope) if via == 'engine' and fault is None else None
         sibling_during = self.healthy(sibling)
         self.terminal(operation, seconds=240)
         elapsed = round((time.monotonic() - started) * 1000)
@@ -217,7 +222,7 @@ class RouteLane(CloneLane):
         sibling_after = self.healthy(sibling)
         result = {'route': route, 'domain': domain, 'operation': summary, 'before': before, 'after': after, 'fault': fault,
                   'sibling': {'domain': self.routes_made[sibling]['domain'], 'before': sibling_before, 'during': sibling_during, 'after': sibling_after},
-                  'request_through_terminal_ms': elapsed, 'dns_failure': failed, 'interrupted': interrupted}
+                  'request_through_terminal_ms': elapsed, 'partial_failure': failed, 'interrupted': interrupted, 'in_grace': grace}
         if via == 'engine':
             steps = {step['name']: step for step in summary['steps']}
             require(all(step['status'] == 'done' for step in steps.values()) and {'dns-0', 'grace', f'withdraw-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
@@ -236,27 +241,48 @@ class RouteLane(CloneLane):
         self.routes_made[name]['destroy_result'] = result
         self.record(name + '-route-destroy', result)
 
-    def dns_conflict(self, name, path, key, sibling):
-        """A change to the live DNS records that the Gateway did not render: the guarded DNS step refuses and writes nothing.
-        The site is kept, then the same command converges once the records are the Gateway's again."""
-        original = self.guest('gateway', 'cat', RECORDS)
-        self.guest('gateway', 'sh', '-eu', '-c', 'printf "# proof: a change the Gateway did not render\\n" >> "$1"', 'sh', RECORDS)
+    def dns_done(self, operation):
+        def done():
+            rows = {row['name']: row for row in self.steps(operation)}
+            return rows if rows.get('dns-0', {}).get('status') == 'done' else None
+        return wait_for(done, f'route.destroy {operation} did not withdraw its DNS answers', 60, interval=0.25)
+
+    def in_grace(self, operation, domain, scope):
+        """Inside the 31 s grace: the answers are gone from the VPN Node while the Route Node still serves the site and its leaf."""
+        rows = self.dns_done(operation)
+        state = self.state(domain, scope)
+        later = {row['name']: row for row in self.steps(operation)}[f'withdraw-{self.node_id}']
+        require(state['dns_record_lines'] == 0 and state['dns_answers'] == 0 and state['caddy_lines'] > 0 and state['caddy_admin']
+                and state['leaf_paths'] == 1 and state['https'] != '000' and later['first_sent_ms'] is None,
+                f'route.destroy {operation} did not keep the site live through the DNS grace: {state}')
+        return {'state': state, 'dns_done_ms': rows['dns-0']['done_ms'], 'withdraw_sent_ms_at_read': later['first_sent_ms']}
+
+    def partial_withdrawal(self, name, path, key, sibling):
+        """A failure after part of the withdrawal applied: once the DNS step withdrew the answers, the Route Node's Caddyfile gets a
+        change the Gateway did not render, so its withdrawal refuses. The answers stay withdrawn and the site stays served; the fault
+        alone is then removed, and the same command converges forward."""
+        domain, scope = self.routes_made[name]['domain'], self.routes_made[name]['scope']
+        original = self.guest(self.node, 'sha256sum', CADDYFILE).split()[0]
+        row = self.admitted('DELETE', path, {}, key + '-partial')
+        operation = int(row['id'])
         try:
-            row = self.admitted('DELETE', path, {}, key + '-conflict')
-            operation = int(row['id'])
+            self.dns_done(operation)
+            self.guest(self.node, 'sh', '-eu', '-c', 'printf "# proof: a change the Gateway did not render\\n" >> "$1"', 'sh', CADDYFILE)
             terminal = self.terminal(operation, expect='failed', seconds=120)
-            summary = self.operation(operation, 'engine')
-            dns = next(step for step in summary['steps'] if step['name'] == 'dns-0')
-            kept = self.state(self.routes_made[name]['domain'], self.routes_made[name]['scope'])
-            require(dns['status'] == 'failed' and terminal['error_code'] and self.present(kept)
-                    and self.db(f"SELECT id FROM routes WHERE domain='{self.routes_made[name]['domain']}'"),
-                    f'route.destroy {operation} did not stop at the DNS conflict with the Route kept')
-            failure = {'operation': summary, 'error_code': terminal['error_code'], 'failed_step': terminal.get('failed_step'), 'kept': kept,
-                       'sibling': self.healthy(sibling)}
         finally:
-            self.put('gateway', RECORDS, original + '\n')
-        require(self.guest('gateway', 'cat', RECORDS) == original, 'the DNS records were not restored')
-        return failure
+            self.guest(self.node, 'sh', '-eu', '-c', 'tail -n 1 "$1" | grep -qx "# proof: a change the Gateway did not render" && sed -i "\\$d" "$1" || :',
+                       'sh', CADDYFILE)
+        require(self.guest(self.node, 'sha256sum', CADDYFILE).split()[0] == original, 'the Caddyfile fault was not removed exactly')
+        summary = self.operation(operation, 'engine')
+        steps = {step['name']: step for step in summary['steps']}
+        left = self.state(domain, scope)
+        require(steps['dns-0']['status'] == 'done' and steps[f'withdraw-{self.node_id}']['status'] == 'failed'
+                and steps[f'withdraw-{self.node_id}']['error_code'] == 'owned_revision_conflict'
+                and left['dns_answers'] == 0 and left['dns_record_lines'] == 0 and left['caddy_lines'] > 0
+                and self.db(f"SELECT id FROM routes WHERE domain='{domain}'"),
+                f'route.destroy {operation} did not stop after its DNS withdrawal with the site kept: {left}')
+        return {'operation': summary, 'error_code': terminal['error_code'], 'failed_step': terminal.get('failed_step'), 'left': left,
+                'sibling': self.healthy(sibling)}
 
     def dropped_withdraw(self, path, key, domain, scope, sibling):
         step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'

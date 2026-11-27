@@ -7,7 +7,7 @@ cases:
   - id: signed-route-withdrawal
     batch: fresh-fleet
     covers: ["path:admitted", "path:dns", "path:grace", "path:withdraw", "path:sibling", "path:lost-receipt", "path:failed", "path:retry", "path:swamp"]
-    summary: Withdraw additional web-root sites (the only Routes route:destroy removes from a live Instance) on the signed executor, with the 31 s grace, a dropped withdrawal receipt, a refused DNS write and its forward retry, and a Swamp fallback when the VPN Node lacks the guarded DNS input; a sibling Route on the same Node answers throughout.
+    summary: Withdraw additional web-root sites (the only Routes route:destroy removes from a live Instance) on the signed executor, with the 31 s grace, a dropped withdrawal receipt, a withdrawal refused after the DNS answers were withdrawn and its forward retry, and a Swamp fallback when the VPN Node lacks the guarded DNS input; a sibling Route on the same Node answers throughout.
     exclusive: true
     fails_on_base: true
     timeout: 1500
@@ -23,7 +23,7 @@ cases:
       - route_create: {name: interrupted, clone: target, web_root: tests}
       - route_destroy: {name: interrupted, via: engine, sibling: neighbour, fault: receipt}
       - route_create: {name: retry, clone: target, web_root: tests}
-      - route_destroy: {name: retry, via: engine, sibling: neighbour, fault: dns-conflict}
+      - route_destroy: {name: retry, via: engine, sibling: neighbour, fault: partial}
       - route_create: {name: fallback, clone: target, web_root: tests}
       - route_destroy: {name: fallback, via: swamp, sibling: neighbour}
     expect:
@@ -32,6 +32,6 @@ cases:
 uncovered:
   "path:withdraw": "One Route Node. A Route served by two Nodes, a leaf-only Node, and a shared PHP-FPM pool kept for another Route are not covered."
   "path:dns": "One VPN Node, which is the Gateway in the nested fleet. Two VPN Nodes and a domain inside the TLD (no DNS step) are not covered."
-  "path:failed": "The DNS failure is a refused guarded write (owned_revision_conflict) that writes nothing. A Caddy or PHP-FPM reload failure after a write is not covered."
+  "path:failed": "The partial failure is a refused Caddy withdrawal (owned_revision_conflict) after the DNS step applied. A Caddy or PHP-FPM reload failure after a write is not covered."
   "path:swamp": "Fallback is shown for a VPN Node without the dns family (no dns.publish_records, no dns.guarded_records). An executor that reports the action without the feature needs an older executor build and is not covered."
   "path:refused": "Public Routes, Process proxies, --offline, LAN rules and an Ingress edge take Swamp at admission; their refusals are covered by Gateway tests only."

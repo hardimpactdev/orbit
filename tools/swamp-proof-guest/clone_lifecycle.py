@@ -426,7 +426,8 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                    'path=/mnt/orbit-proof', '--project', POOL)
         self.db(f"UPDATE instance_runtimes SET inner_volume='{inner}' WHERE instance_id={instance} AND clone_source_instance_id={self.default}")
         legacy, signed, marker, mirror = self.artifacts(instance)
-        self.guest(self.node, 'install', '-d', legacy, signed, str(Path(marker).parent))
+        # mkdir, not install: install -d re-modes an existing folder, and the marker's is Caddy's 2775 hibernation folder.
+        self.guest(self.node, 'mkdir', '-p', legacy, signed, str(Path(marker).parent))
         self.guest(self.node, 'touch', legacy + '/plan', signed + '/plan.json', marker)
         self.guest(self.node, 'sh', '-eu', '-c', 'if test ! -e "$1"; then git init --bare --quiet "$1"; fi', 'sh', mirror)
 
