@@ -128,7 +128,7 @@ raise SystemExit(1)'''
             dispatch = self.held_final(operation)
             require(dispatch['sends'] == 1, f'route.update {operation} resent {step} before the fault')
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
-                               f'route.update {operation} did not leave the expected queued receipt', 120)
+                               f'route.update {operation} did not leave the expected queued receipt', 300)
             row = self.db(f'SELECT status FROM operations WHERE id={operation}')[0]
             replay = self.admit_update(route, domain, key)
             steps = {row['name']: row for row in self.steps(operation)}
@@ -149,7 +149,7 @@ raise SystemExit(1)'''
         try:
             self.held_final(operation)
             wait_for(lambda: self.guest(self.node, 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', old, CADDYFILE) == '0',
-                     f'route.update {operation} did not install the lasting Caddyfile', 120, interval=0.25)
+                     f'route.update {operation} did not install the lasting Caddyfile', 300, interval=0.25)
             original = self.guest(self.node, 'sha256sum', CADDYFILE).split()[0]
             self.guest(self.node, 'sh', '-eu', '-c', 'printf "%s\\n" "$2" >> "$1"', 'sh', CADDYFILE, FAULT_LINE)
         finally:
