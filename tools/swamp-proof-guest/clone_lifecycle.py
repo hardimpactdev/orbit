@@ -865,11 +865,15 @@ class SyncLane(CloneLane):
 
     def watched(self, instance, act):
         # Scans the copy again and again while `act` runs, then once more after it.
-        hits, stop = [], threading.Event()
+        hits, failures, stop = [], [], threading.Event()
 
         def watch():
-            while not stop.is_set():
-                hits.extend(self.credential_hits(instance))
+            try:
+                while not stop.is_set():
+                    hits.extend(self.credential_hits(instance))
+            except Exception as error:
+                # A scan that could not run found nothing: it must fail the check, not read as no hits.
+                failures.append(type(error).__name__)
 
         watcher = threading.Thread(target=watch, daemon=True)
         watcher.start()
@@ -878,6 +882,8 @@ class SyncLane(CloneLane):
         finally:
             stop.set()
             watcher.join(60)
+        if failures or watcher.is_alive():
+            raise ProofInfrastructure(f'the credential scan during the sync did not run through ({failures or "still running"})')
         return value, sorted(set(hits))
 
     def bundled(self, operation):
@@ -968,10 +974,11 @@ class SyncLane(CloneLane):
             self.record('credential-scan-check', {'found_sentinel': self.scan_check(instance)})
         before, other_before = self.state(instance), (self.state(other), self.resources(other))
         if fault == 'held-ref':
-            # The failed import may already have brought the objects in; the retry starts from the stripped copy again.
+            # Only the injected lock goes; the retry recovers from what the failure left. The failed import already brought the head in,
+            # so the retry moves origin/<default> without another bundle.
             self.held_ref(name, instance, group, key, before)
-            self.strip(instance)
-            require(self.state(instance) == before, 'the copy changed between the failed import and its retry')
+            before = self.state(instance)
+            require(before['holds_tip'] and before['origin'] != self.tip, 'the failed import did not leave the head in the copy with origin/<default> unmoved')
         since = int(time.time()) - 1
         started = time.monotonic()
 
@@ -985,8 +992,12 @@ class SyncLane(CloneLane):
         behind = int(self.work(instance, 'rev-list', '--count', f'{after["head"]}..refs/remotes/origin/{self.branch}'))
         owners = self.imported_owners(instance, since)
         bundled = self.bundled(operation) if via == 'engine' else None
-        require(not before['holds_tip'] and after['holds_tip'] and owners == ['agent'] and bundled in (True, None),
-                f'Sync {operation} did not import the missing head as agent ({owners}, bundled {bundled})')
+        if fault == 'held-ref':
+            require(after['holds_tip'] and bundled is False and owners in ([], ['agent']),
+                    f'Sync {operation} did not recover from the failed import without a new bundle (bundled {bundled}, {owners})')
+        else:
+            require(not before['holds_tip'] and after['holds_tip'] and owners == ['agent'] and bundled in (True, None),
+                    f'Sync {operation} did not import the missing head as agent ({owners}, bundled {bundled})')
         require(before['origin'] != after['origin'] == self.mirror_head(instance) == self.tip == result.get('default_commit')
                 and result.get('behind_by') == behind and result.get('branch_commit') == after['head_commit'] and SYNC_FIELDS <= set(result),
                 f'Sync {operation} did not advance origin/{self.branch} to the mirror head with its result')
@@ -1006,7 +1017,7 @@ class SyncLane(CloneLane):
             require(set(SYNC_STEPS) <= set(done) and all(sum(item['record'] == 'open' and item['operation'] == f'{operation}:{step}' for item in journal) == 1
                                                          for step in SYNC_STEPS), f'Sync {operation} did not execute each step once on the Node')
             if fault == 'receipt':
-                require(done['fetch']['sends'] >= 2 and sum(item['record'] == 'seen' and item['operation'] == f'{operation}:fetch' for item in journal) >= 2,
+                require(done['fetch']['sends'] == 2 and sum(item['record'] == 'seen' and item['operation'] == f'{operation}:fetch' for item in journal) >= 2,
                         f'Sync {operation} did not resend its fetch')
         outcome = {'instance': instance, 'group': group, 'sibling': other, 'advertisement': advertised, 'before': before, 'after': after,
                    'operation': summary, 'result': result, 'credential_hits': hits, 'bundled': bundled, 'imported_owners': owners,
