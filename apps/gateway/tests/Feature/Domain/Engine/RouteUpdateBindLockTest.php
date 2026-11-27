@@ -5,12 +5,15 @@ declare(strict_types=1);
 use App\Actions\Routes\RouteMutationState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\Engine;
+use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RouteWriteNodes;
 use App\Domain\Routes\NativeRouteUpdateInput;
+use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -112,6 +115,16 @@ beforeEach(function (): void {
         return Operation::query()->forceCreate(['kind' => 'route.update', 'status' => OperationStatus::Queued, 'target_type' => 'route',
             'target_id' => $route->id, 'node_id' => null, 'input' => [...$input, 'route_update' => $capture['intent'], 'execution_secrets' => []], 'state' => []]);
     };
+    // A refused recheck ends the Operation with its own code, frees its lock and Nodes, sends no order and writes no Route.
+    $this->refused = function (Operation $operation, array $routes): void {
+        $operation->refresh();
+        expect($operation->status)->toBe(OperationStatus::Failed)
+            ->and($operation->error_code)->toBe('route.publication_stale')
+            ->and($operation->result)->toBe(['error_code' => 'route.publication_stale', 'failed_step' => 'Check the Route Nodes'])
+            ->and($operation->lock_key)->toBeNull()
+            ->and($this->bus->orders)->toBe([])
+            ->and(Route::query()->orderBy('id')->get()->map->getAttributes()->all())->toBe($routes);
+    };
     // Each outermost transaction's hold in ms, and whether it read the catalog (route_targets) while it held the lock.
     $this->holds = [];
     $outside = DB::transactionLevel();
@@ -164,20 +177,42 @@ it('binds a large Node\'s update without planning in the write transaction, and 
         ->and($this->bus->orders)->not->toBe([]);
 });
 
-it('refuses a sibling Route published between admission and bind at the first step, before any Node order', function (): void {
+it('refuses a sibling Route published between admission and bind at the first step, before any Node order, and changes no Route', function (): void {
     $operation = ($this->admit)();
     ($this->site)('blog', 'blog.fixture.test');
+    $routes = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
 
     app(StartSwampRun::class)->start($operation);
     app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
 
-    $operation->refresh();
-    expect(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'current')->sole()->error_code)->toBe('route.publication_stale')
-        ->and($operation->status)->toBe(OperationStatus::Failed)
-        ->and($operation->error_code)->toBe('route.publication_stale')
-        ->and($operation->lock_key)->toBeNull()
-        ->and($this->bus->orders)->toBe([]);
+    expect(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'current')->sole()->error_code)->toBe('route.publication_stale');
+    ($this->refused)($operation, $routes);
 });
+
+it('refuses a forward retry after the cutover when the replacement Route or only a sibling changed, without writing any Route', function (string $change): void {
+    $first = ($this->admit)();
+    $first->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'route.withdraw_failed', 'state' => ['swamp_run_id' => 'engine-'.$first->id]])->save();
+    OperationEngineStep::query()->forceCreate(['operation_id' => $first->id, 'name' => 'cutover', 'node_id' => 0, 'action' => 'route.cutover', 'target' => 'gateway',
+        'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 60_000, 'status' => 'done', 'output' => 'cutover']);
+    app(RouteUpdateEngineFlow::class)->local($first, 'cutover', new EngineRun($first->id, [], 0, null));
+    $retry = Operation::query()->forceCreate([...$first->only(['kind', 'target_type', 'target_id', 'node_id', 'input']), 'status' => OperationStatus::Queued, 'state' => []]);
+    $replacement = Route::query()->findOrFail($first->input['route_update']['result_route_id']);
+    // Unchanged, the retry's recheck passes: the change below is what makes it stale.
+    expect(RouteUpdateEngineFlow::assertCurrent($retry))->toBe('current')
+        ->and($replacement->status)->toBe(RouteStatus::Active);
+
+    $change === 'replacement' ? $replacement->update(['web_root' => 'apps/docs/public']) : ($this->site)('blog', 'blog.fixture.test');
+    $routes = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
+
+    app(StartSwampRun::class)->start($retry);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $retry->id]);
+
+    expect(array_column(OperationEngineStep::query()->where('operation_id', $retry->id)->where('status', 'failed')->get(['name'])->toArray(), 'name'))->toBe(['current']);
+    ($this->refused)($retry, $routes);
+    if ($change === 'replacement') {
+        expect($replacement->refresh()->web_root)->toBe('apps/docs/public');
+    }
+})->with(['an edited replacement Route' => 'replacement', 'only a sibling Route' => 'sibling']);
 
 it('keeps the Node hold exclusive from the bind on: a Route write admitted while the check runs is refused', function (): void {
     $operation = ($this->admit)();

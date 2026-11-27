@@ -12,6 +12,7 @@ use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\EngineWait;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RouteWriteNodes;
 use App\Domain\Shared\ResourceOperationException;
@@ -174,6 +175,15 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
     public function finish(Operation $operation, EngineRun $run): void
     {
         $failed = $run->failed();
+        if ($failed?->name === 'current') {
+            // A refused recheck sent no order and changed no Route: the Operation ends with the refusal's code, and no Route
+            // projection runs, so neither Route nor any field it stores is written from this attempt's stale plan.
+            app(DirectOperation::class)->project($operation, [...$run->times(), 'status' => 'failed', 'error_code' => $failed->error_code,
+                'failure' => ['failed_step' => self::Labels['current'], 'stderr_recorded' => false]],
+                ['error_code' => $failed->error_code, 'failed_step' => self::Labels['current']]);
+
+            return;
+        }
         if ($failed !== null && $operation->cancel_requested_at !== null && str_starts_with($failed->name, 'sign-')) {
             $failed = null;
         }
