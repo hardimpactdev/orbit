@@ -358,7 +358,8 @@ final readonly class Engine
                 $sends = $locals = $waits = [];
             }
             $state['native_progress'] = self::progress($operationId, $steps);
-            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (array_key_last($sends) ?? (end($locals) ?: $operation->current_step)) : null]);
+            // A started wait is the current step until it ends; an early event keeps it.
+            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (array_key_last($sends) ?? (end($locals) ?: (array_key_last($waits) ?? $operation->current_step))) : null]);
 
             return $operation;
         });

@@ -27,6 +27,8 @@ GRACE_MS = 31_000
 RECORDS = '/etc/dnsmasq.d/orbit-records.conf'
 CADDYFILE = '/etc/caddy/Caddyfile'
 LEAVES = '/etc/caddy/orbit-certificates'
+# Names no Route withdrawal may change: the Gateway's `.orbit` services and a name under each Instance suffix the VPN Node answers.
+UNAFFECTED_NAMES = ('gateway.orbit', 'reverb.orbit', 'swamp.orbit', 'review-check.nested-prod', 'review-check.nested-dev')
 DNS_QUERY = '''import json, socket, struct, sys
 name, server = sys.argv[1], sys.argv[2]
 query = struct.pack('>HHHHHH', 0x5a5a, 0x0100, 1, 0, 0, 0) + b''.join(bytes([len(part)]) + part.encode() for part in name.split('.')) + b'\\0' + struct.pack('>HH', 1, 1)
@@ -238,7 +240,7 @@ class RouteLane(CloneLane):
         names_before = self.served_names(domain)
         path, key = f'routes/{route}', name + '-route-destroy'
         failed = self.partial_withdrawal(name, path, key, sibling) if fault == 'partial' else None
-        cancelled = self.cancelled_in_grace(path, key, domain, scope, route) if fault == 'cancel' else None
+        cancelled = self.cancelled_in_grace(path, key, domain, scope, route, sibling) if fault == 'cancel' else None
         started = time.monotonic()
         cli = report = None
         if fault == 'receipt':
@@ -328,18 +330,19 @@ class RouteLane(CloneLane):
         return admitted, None, report
 
     def served_names(self, withdrawn):
-        """Each name the VPN Node's records name, but the Route's, with `dig +short` against the VPN Node: the engine rewrites the whole
-        records and catalog files, so every other name must answer the same before and after."""
+        """`dig +short` against the VPN Node for the fixed unaffected names and every other Route's name in its records: the engine
+        rewrites the whole records and catalog files, so each must answer, and answer the same before and after."""
         code = '''import re, sys
 names = set()
 for line in open(sys.argv[1]):
-    found = re.match(r"host-record=([^,]+),", line) or re.match(r"address=/([^/.][^/]*)/", line)
+    found = re.match(r"address=/([^/.][^/]*)/", line)
     if found and found.group(1) != sys.argv[2]:
         names.add(found.group(1))
 print("\\n".join(sorted(names)))'''
-        names = self.guest('gateway', 'python3', '-c', code, RECORDS, withdrawn).split()
-        require(names, 'the VPN Node serves no other name to look up')
-        return {name: self.guest('gateway', 'dig', '+short', '+time=3', '+tries=1', f'@{self.gateway_address}', name).split() for name in names}
+        names = [*UNAFFECTED_NAMES, *self.guest('gateway', 'python3', '-c', code, RECORDS, withdrawn).split()]
+        answers = {name: self.guest('gateway', 'dig', '+short', '+time=3', '+tries=1', f'@{self.gateway_address}', name).split() for name in names}
+        require(all(answers.values()), f'a name the VPN Node serves did not answer: {answers}')
+        return answers
 
     def restart_in_grace(self, operation):
         """Restarts orbit-gateway-engine 12 s into the grace: the step's time and deadline must survive it."""
@@ -351,13 +354,17 @@ print("\\n".join(sorted(names)))'''
         require(withdraw['first_sent_ms'] is None and self.systemctl('gateway', 'is-active', 'orbit-gateway-engine.service') == 'active',
                 f'route.destroy {operation} withdrew before the grace ended, or the engine did not come back')
         grace = next(row for row in self.steps(operation) if row['name'] == 'grace')
-        return {'dns_done_ms': done, 'restart_ms': restart_ms, 'restart_after_dns_ms': restart_ms - done, 'grace_row_after_restart': grace}
+        current = self.db(f'SELECT current_step FROM operations WHERE id={operation}')[0]['current_step']
+        require(current == 'grace', f'route.destroy {operation} reports {current} as its current step during the grace')
+        return {'dns_done_ms': done, 'restart_ms': restart_ms, 'restart_after_dns_ms': restart_ms - done, 'grace_row_after_restart': grace,
+                'current_step_after_restart': current}
 
-    def cancelled_in_grace(self, path, key, domain, scope, route):
+    def cancelled_in_grace(self, path, key, domain, scope, route, sibling):
         """A cancel 10 s into the grace: the Operation ends cancelled, nothing is withdrawn from the Route Node, and nothing is
         later either. The DNS answers stay withdrawn and the Route is kept; the case then destroys it again."""
         operation = int(self.admitted('DELETE', path, {}, key + '-cancel')['id'])
         done = self.dns_done(operation)['dns-0']['done_ms']
+        sibling_in_grace = self.healthy(sibling)
         time.sleep(max(0.0, (done + 10_000) / 1000 - time.time()))
         code, row, error = self.api('POST', f'operations/{operation}/cancel', {}, key + '-cancel-request')
         require(code in (200, 202), f'cancel of {operation}: HTTP {code} {error}')
@@ -371,7 +378,7 @@ print("\\n".join(sorted(names)))'''
                 and self.db(f'SELECT id FROM routes WHERE id={route}') and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'route.destroy {operation} withdrew after its cancel, or kept the Route Nodes held: {left}')
         return {'operation': operation, 'status': terminal['status'], 'error_code': terminal.get('error_code'), 'dns_done_ms': done,
-                'cancel_after_dns_ms': cancelled_ms - done, 'steps': steps, 'left_after_grace': left}
+                'cancel_after_dns_ms': cancelled_ms - done, 'steps': steps, 'left_after_grace': left, 'sibling_in_grace': sibling_in_grace}
 
     def dns_done(self, operation):
         def done():

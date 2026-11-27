@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Operations\OperationData;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
@@ -132,6 +133,13 @@ beforeEach(function (): void {
         'operation' => $this->operation->id.':dns-0', 'action' => 'dns.publish_records', 'target' => (string) $this->node, 'status' => 'applied', 'changes' => 1,
     ]]);
     $this->deadline = fn () => app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+    // What `operation:show` reads: the public summary's current step and the step list's running rows.
+    $this->summary = function (): array {
+        $summary = OperationData::summary($this->operation->refresh())->toArray();
+        $running = array_keys(array_filter($this->operation->state['native_progress']['steps'] ?? [], static fn (array $row): bool => $row['status'] === 'running'));
+
+        return [$summary['current_step'] ?? null, $running];
+    };
     $this->step = fn (string $name): OperationEngineStep => OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', $name)->firstOrFail();
 });
 
@@ -141,19 +149,22 @@ it('waits 31 s after the DNS receipt on a scheduled deadline, then withdraws onc
 
     expect($this->bus->sent)->toBe(['dns-0'])
         ->and($this->bus->deadlines)->toContain(['grace', $done + 31_000])
-        ->and(($this->step)('grace')->status)->toBe('sent');
+        ->and(($this->step)('grace')->status)->toBe('sent')
+        ->and(($this->summary)())->toBe(['grace', ['grace']]);
 
-    // A deadline before the grace ends, such as another step's, runs nothing.
+    // A deadline before the grace ends, such as another step's, runs nothing; the grace stays the current step.
     $this->travel(30_999)->milliseconds();
     ($this->deadline)();
-    expect($this->bus->sent)->toBe(['dns-0']);
+    expect($this->bus->sent)->toBe(['dns-0'])
+        ->and(($this->summary)())->toBe(['grace', ['grace']]);
 
     $this->travel(1)->milliseconds();
     ($this->deadline)();
     ($this->deadline)();
     expect($this->bus->sent)->toBe(['dns-0', 'withdraw-3'])
         ->and(($this->step)('grace')->output)->toBe('waited 31000 ms after the DNS receipt')
-        ->and(($this->step)('withdraw-3')->first_sent_ms - $done)->toBe(31_000);
+        ->and(($this->step)('withdraw-3')->first_sent_ms - $done)->toBe(31_000)
+        ->and(($this->summary)())->toBe(['withdraw-3', ['withdraw-3']]);
 });
 
 it('resumes what is left of the grace after a restart lost its deadline, and a redelivered DNS receipt does not move it', function (): void {
@@ -168,7 +179,8 @@ it('resumes what is left of the grace after a restart lost its deadline, and a r
     expect(($this->step)('dns-0')->done_ms)->toBe($done)
         ->and(($this->step)('dns-0')->late)->toBe(1)
         ->and(($this->step)('grace')->resend_at_ms)->toBe($done + 31_000)
-        ->and($this->bus->sent)->toBe(['dns-0']);
+        ->and($this->bus->sent)->toBe(['dns-0'])
+        ->and(($this->summary)())->toBe(['grace', ['grace']]);
 
     // The next nudge after the remaining 11 s runs the step; it does not wait 31 s again.
     $this->travel(11)->seconds();
