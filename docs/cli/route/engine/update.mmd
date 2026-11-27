@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% route.update on the Gateway engine: a `--domain` change of a private Route in route/update.mmd (workflow operation-route-update), built from route.create's primitives and route/engine/destroy.mmd's withdrawal and sibling check. Design for ADR 0267 and ADR 0271; RouteUpdateEngineFlow implements it; a DNS move stays on Swamp until its admission captures the guarded input's rendered-from digests. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% route.update on the Gateway engine: a `--domain` change of a private Route in route/update.mmd (workflow operation-route-update), built from route.create's primitives and route/engine/destroy.mmd's withdrawal and sibling check. Design for ADR 0267 and ADR 0271; RouteUpdateEngineFlow implements it; its admission captures the guarded DNS input's rendered-from digests (`route_update.dns_guards`). Step names describe effects; the implementation settles action names unless an existing action is named.
   %% Existing actions: `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (docs/reference/gateway-engine.md#routecreate). From route/engine/destroy.mmd: `route.withdraw_site`, sent over the lasting Caddyfile, and the guarded input of `dns.publish_records` (`dns.guarded_records`).
   %% status: draft
   %% command: route:update

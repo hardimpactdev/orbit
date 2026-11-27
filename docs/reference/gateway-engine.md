@@ -104,7 +104,7 @@ A timed-out write whose run is not proven stopped counts as writing until it set
 
 The Operation lock names the old Route, so `route:destroy` of the replacement refuses with `operation.target_busy` while the update is open.
 
-A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. An update that moves private DNS still stays on Swamp: its guarded `dns.publish_records` input needs the rendered-from digests that only route.destroy's admission captures yet. A Node that does not report `route.withdraw_site` keeps an update that withdraws a leaf there on Swamp.
+A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. An update that moves private DNS records the VPN Node's records and catalog digests at admission and needs `dns.guarded_records` there; a VPN Node without that feature, or a Node that does not report `route.withdraw_site`, keeps the whole update on Swamp.
 
 ### instance.create
 

@@ -102,9 +102,10 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
                 $before[] = "probe-{$index}";
             }
             foreach (RouteExecutionProof::objects($plan['dns']) as $index => $row) {
-                self::guardedDnsInput($row);
+                RouteEngineFlow::fits(self::guardedDnsInput($operation, $row));
                 $vpn = ValidatedData::integer($row['node_id']);
-                $steps[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, $before, budgetMs: 120_000, resendMs: 20_000);
+                $steps[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, $before, budgetMs: 120_000, resendMs: 20_000,
+                    features: [RouteDestroyEngineFlow::GuardedDns]);
                 $before[] = "dns-{$index}";
             }
             $steps[] = new StepSpec('cutover', 0, 'route.cutover', 'gateway', $before, budgetMs: 30_000, resendMs: self::LocalResendMs);
@@ -145,7 +146,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
             'csr' => $this->create->csrInput(RouteExecutionProof::objects($plan['leaves'])[(int) $index]),
             'site' => $this->phaseInput($plan, 'publish', (int) $index, $signed),
             'final' => $this->phaseInput($plan, 'retire', (int) $index, $signed),
-            'dns' => self::guardedDnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $index]),
+            'dns' => self::guardedDnsInput($source['operation'], RouteExecutionProof::objects($plan['dns'])[(int) $index]),
             'withdraw' => self::removalInput($operation, $plan, (int) $index),
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
@@ -335,15 +336,21 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     }
 
     /**
-     * The guarded input of `dns.publish_records`: per file, the digest of the bytes the Gateway rendered from. Only route.destroy's
-     * admission captures those digests (`route_guards`), so an update with private DNS starts on Swamp.
+     * route.destroy's guarded input of `dns.publish_records`: the VPN Node's records and catalog side by side, each with the digest
+     * of the bytes the Gateway rendered from at admission (`route_update.dns_guards`, RouteFileGuards). A VPN Node whose file
+     * changed since refuses `owned_revision_conflict` before it writes; one without captured digests starts on Swamp.
      *
      * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
+     * @return array{records: array<string, mixed>, catalog: array<string, mixed>}
      */
-    private static function guardedDnsInput(array $row): array
+    private static function guardedDnsInput(Operation $operation, array $row): array
     {
-        throw new EngineUnsupported('A Route update with private DNS has no captured rendered-from digests; it runs on Swamp.');
+        $guards = ValidatedData::object($operation->input['route_update'] ?? [])['dns_guards'] ?? [];
+        $guard = is_array($guards) && is_array($guards[ValidatedData::integer($row['node_id'])] ?? null)
+            ? ValidatedData::object($guards[ValidatedData::integer($row['node_id'])]) : throw new EngineUnsupported("VPN Node {$row['node_id']} has no captured DNS digests.");
+
+        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])], 'from_sha256' => RouteDestroyEngineFlow::digest($guard, 'records')],
+            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])], 'from_sha256' => RouteDestroyEngineFlow::digest($guard, 'catalog')]];
     }
 
     /**

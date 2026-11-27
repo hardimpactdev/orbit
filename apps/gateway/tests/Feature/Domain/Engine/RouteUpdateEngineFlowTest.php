@@ -13,6 +13,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteUpdateInput;
 use App\Domain\Routes\NativeRouteUpdateProjection;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
@@ -114,7 +115,7 @@ it('leaves every URL write, public Route, edge, LAN rule and unguarded DNS move 
     'a publication change' => [[], ['mode' => 'publication']],
     'the Ingress edge' => [['ingress' => [['node_id' => 6]]], []],
     'a LAN rule' => [['lan_absent' => [['node_id' => 3]]], []],
-    'private DNS before the guarded input lands' => [['dns' => [['node_id' => 1, 'records' => "address=/new.orbit/10.44.0.2\n", 'catalog' => "{}\n"]]], []],
+    'private DNS without captured digests' => [['dns' => [['node_id' => 1, 'records' => "address=/new.orbit/10.44.0.2\n", 'catalog' => "{}\n"]]], []],
     'a leaf outside the account' => [['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'other', 'scope' => 'app-instance-7-hostname-change']]]], []],
 ]);
 
@@ -379,4 +380,20 @@ it('runs a real domain change of a Route without URL writes on the engine, withd
     expect($input)->toBe(['account' => 'orbit', 'domains' => ['shop.fixture.test'], 'leaves' => [$cleanup[0]['leaf']['scope']],
         'caddy' => ['from_sha256' => hash('sha256', $lasting), 'content' => ['blob' => ['content' => $lasting]]]])
         ->and($lasting)->not->toContain('shop.fixture.test');
+});
+
+it('moves private DNS with route.destroy\'s guarded publication, from the digests captured at admission', function (): void {
+    $dns = [['node_id' => 1, 'records' => "address=/new.orbit/10.44.0.2\n", 'catalog' => "{}\n"]];
+    $intent = [...updateIntent(['dns' => $dns, 'grace' => [['seconds' => 31]]]), 'dns_guards' => [1 => ['records' => str_repeat('a', 64), 'catalog' => str_repeat('b', 64)]]];
+    $operation = updateOperation($intent);
+
+    $steps = app(RouteUpdateEngineFlow::class)->steps($operation);
+    $dnsStep = collect($steps)->firstWhere('name', 'dns-0');
+    expect($dnsStep->action)->toBe('dns.publish_records')->and($dnsStep->node)->toBe(1)
+        ->and($dnsStep->features)->toBe([RouteDestroyEngineFlow::GuardedDns])
+        ->and(collect($steps)->firstWhere('name', 'cutover')->after)->toContain('dns-0')
+        ->and(collect($steps)->firstWhere('name', 'grace')->after)->toBe(['cutover'])
+        ->and(app(RouteUpdateEngineFlow::class)->input($operation, 'dns-0', new EngineRun($operation->id, [], 0, null)))->toBe([
+            'records' => ['blob' => ['content' => "address=/new.orbit/10.44.0.2\n"], 'from_sha256' => str_repeat('a', 64)],
+            'catalog' => ['blob' => ['content' => "{}\n"], 'from_sha256' => str_repeat('b', 64)]]);
 });
