@@ -112,10 +112,12 @@ The executor implements these action families:
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile; `route.update` sends it twice, the side-by-side and then the lasting Caddyfile, never with `APP_URL` |
-| `route.withdraw_site` | `route` | Withdraws a Route from the Node: guarded Caddyfile and pools without it, leaf folders removed, Caddy reloaded, admin API read back; `route.update` sends it over the lasting Caddyfile for the old name and its staging leaves |
+| `route.withdraw_site` | `route` | Withdraws a Route from the Node: guarded Caddyfile and pools without it, leaf folders removed, Caddy reloaded, admin API read back |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
 | `process.ensure_state` | `process` | Converges one Process to running or stopped and its boot policy, then reads it back (see [the process family](#the-process-family)) |
 | `schedule.ensure_timer` | `process` | Enables and starts a Schedule's own Node timer, then reads back `UnitFileState`, `ActiveState` and the next elapse |
+
+`route.update` sends `route.withdraw_site` over the lasting Caddyfile, for the old name and its staging leaves.
 
 `route.withdraw_site` holds Swamp's publication lock, `/etc/caddy/.orbit-publish.lock`. It replaces the live Caddyfile only when it still holds the bytes whose digest the Gateway rendered from, or already holds the desired bytes.
 

@@ -94,6 +94,16 @@ raise SystemExit(1)'''
             return rows[0] if rows and rows[0]['first_sent_ms'] else None
         return wait_for(found, f'route.update {operation} did not publish {step}', 120, interval=0.25)
 
+    def engine_receipts(self, summary, operation):
+        """Each Node step opened once and journaled its one result; `tls.ensure_csr` answers `output`, the site steps `applied`."""
+        journal = self.route_journal(operation, self.node_id)
+        for step in (step for step in summary['steps'] if step['target'] != 'gateway'):
+            mine = [entry for entry in journal if entry['operation'] == f'{operation}:{step["name"]}']
+            require(sum(entry['record'] == 'open' for entry in mine) == 1
+                    and [entry['outcome']['status'] for entry in mine if entry['record'] == 'done'] in (['applied'], ['output']),
+                    f'step {step["name"]} of {operation} did not execute once in the Node journal: {mine}')
+        return journal
+
     def admit_update(self, route, domain, key):
         return self.admitted('PATCH', f'routes/{route}', {'domain': domain}, key)
 

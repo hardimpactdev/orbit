@@ -84,8 +84,10 @@ A failed step records the Swamp chart's step name, such as `Withdraw site, remov
 | `cutover` | A Gateway transaction that marks the replacement `active` and the old Route `retiring`; its `done` row is the acknowledgement |
 | `grace` | A timed Gateway step that ends 31 s after the latest stored DNS receipt; a resend or retry never shortens it |
 | `final-<node>` | `route.publish_site` with the lasting Caddyfile and the late leaves, validated and read back |
-| `withdraw-<node>` | `route.withdraw_site` for the old name and its staging leaves, over the lasting Caddyfile: that file is both the rendered-from and the desired one, so a sibling change since refuses `owned_revision_conflict`; it reloads Caddy and reads back that the old name is gone |
+| `withdraw-<node>` | `route.withdraw_site` for the old name and its staging leaves, over the lasting Caddyfile |
 | `sibling-<node>` | Another site the Node serves, of any Route kind, still answers over TLS; a Node that serves none passes, one without an address fails |
+
+The lasting Caddyfile is both the rendered-from and the desired file of `withdraw-<node>`, so a sibling change since then refuses `owned_revision_conflict`. The action reloads Caddy and reads back that the old name is gone.
 
 A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times.
 
