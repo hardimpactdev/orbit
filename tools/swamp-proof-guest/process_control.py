@@ -396,6 +396,11 @@ class ProcessLane(CloneLane):
                 require(answer['rc'] == 0, f'cleanup of Schedule {fixture["id"]}: exit {answer["rc"]}')
         absent = {}
         for name, fixture in self.schedules.items():
+            if fixture.get('files'):
+                # The fixture's own timer was enabled: stop and disable it (its boot link) before its files go, so nothing is left
+                # that points at a removed unit.
+                self.guest(self.node, 'systemctl', 'disable', '--now', fixture['unit'], timeout=75)
+                self.guest(self.node, 'systemctl', 'stop', fixture['unit'][:-len('.timer')] + '.service', timeout=75)
             for path in fixture.get('files', []):
                 self.guest(self.node, 'rm', '-f', path)
             if fixture.get('trigger_state_created'):
@@ -404,6 +409,20 @@ class ProcessLane(CloneLane):
             require(not any(left.values()), f'Schedule {name} left native artifacts: {left}')
             absent[name] = left
         self.systemctl(self.node, 'daemon-reload')
+        timers = {}
+        for name, fixture in self.schedules.items():
+            if not fixture.get('files'):
+                continue
+            unit = fixture['unit']
+            # A failed record of a unit that is gone would stay listed; clear it, then require no boot link and a unit that is
+            # neither active nor failed.
+            self.guest(self.node, 'sh', '-c', 'systemctl reset-failed -- "$1" 2>/dev/null || :', 'sh', unit)
+            link = self.guest(self.node, 'sh', '-c', 'if test -e "$1" || test -L "$1"; then echo 1; fi', 'sh', '/etc/systemd/system/timers.target.wants/' + unit)
+            shown = self.guest(self.node, 'systemctl', 'show', '-p', 'LoadState,ActiveState', unit)
+            found = dict(line.split('=', 1) for line in shown.splitlines() if '=' in line) | {'boot_link': link == '1'}
+            require(not found['boot_link'] and found['ActiveState'] == 'inactive' and found['LoadState'] == 'not-found',
+                    f'Schedule {name} left its timer on the Node: {found}')
+            timers[name] = found
         for instance, label, path in getattr(self, 'host_paths', []):
             removed = self.helper('host-instance-remove', instance, label)
             self.guest(self.node, 'rm', '-rf', '--', path)
@@ -413,5 +432,5 @@ class ProcessLane(CloneLane):
             require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
-        self.record('cleanup', {'native_artifacts_after': absent, 'processes_removed': [f['id'] for f in self.processes.values()],
+        self.record('cleanup', {'native_artifacts_after': absent, 'node_timers_after': timers, 'processes_removed': [f['id'] for f in self.processes.values()],
                                 'schedules_removed': [f['id'] for f in self.schedules.values()], 'temporary_services_removed': True})
