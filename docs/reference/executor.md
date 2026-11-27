@@ -125,7 +125,7 @@ The executor implements these action families:
 
 It merges a shared pool by scope: a scope it changes must still hold its rendered-from or desired state, with the group as gid or name. It never creates an absent scope or pool. Any other content refuses `owned_revision_conflict` before a write. A failed pool test or reload, or Caddy reload, puts the previous files back. It reloads Caddy on every run, also on a repeat that changes nothing.
 
-`systemctl reload caddy` returns before Caddy loads the new configuration, so it then reads `127.0.0.1:2019/config/` every 250 ms, up to 20 times (about 5 s). It succeeds at the first read that names no withdrawn domain, and fails `route.withdraw_unverified` when the last read still names one or the admin API never answers.
+`systemctl reload caddy` returns before Caddy loads the new configuration, so it then reads `127.0.0.1:2019/config/` again within one 5 s budget that its reads and 250 ms waits share. Each read may take what is left of it, at least 0.5 s. It succeeds at the first answer that names no withdrawn domain, and fails `route.withdraw_unverified` at the bound when Caddy still names one or the admin API never answered.
 
 An executor with the `dns` family reports the `dns.guarded_records` feature. `dns.publish_records` holds the Node's DNS lock, `/run/lock/orbit-dnsmasq.lock`. With it, each `dns.publish_records` file may carry `from_sha256`, the digest of the bytes the Gateway rendered from. A file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict`, and neither file is written.
 

@@ -19,7 +19,7 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub use csr::ensure_csr;
 pub use site::publish_site;
@@ -98,6 +98,11 @@ pub trait System {
     ///
     /// A message when the blob is not in the local cache.
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String>;
+
+    /// The monotonic time a read-back's budget is measured on.
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 
     /// Waits before a read-back is tried again.
     fn sleep(&self, duration: Duration) {

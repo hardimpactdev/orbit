@@ -30,9 +30,12 @@ const POOL_FAILED: &str = "route.pool_failed";
 const ADMIN: &str = "http://127.0.0.1:2019/config/";
 
 /// `systemctl reload caddy` returns once Caddy has the signal, before it loads the new configuration, so the admin API is
-/// read up to this many times, this far apart: about 5 s for Caddy to load it before a name it still serves fails.
-const ADMIN_READS: u32 = 20;
+/// read again within this one budget, reads and waits together, before a name it still serves fails.
+const ADMIN_BUDGET: Duration = Duration::from_secs(5);
+/// The wait between two reads.
 const ADMIN_INTERVAL: Duration = Duration::from_millis(250);
+/// The shortest time a read gets, also when less of the budget is left.
+const ADMIN_FLOOR: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -263,7 +266,8 @@ fn rollback(system: &impl System, previous: &[(String, Option<Vec<u8>>)], pools:
 }
 
 /// The read-back: the desired Caddyfile is live, no leaf folder remains, and Caddy's admin API serves none of the names once
-/// it has loaded the reloaded configuration, read again every [`ADMIN_INTERVAL`] up to [`ADMIN_READS`] times.
+/// it has loaded the reloaded configuration. Each read may take what is left of [`ADMIN_BUDGET`], at least [`ADMIN_FLOOR`], and
+/// the next follows [`ADMIN_INTERVAL`] later while the budget lasts.
 fn verify(system: &impl System, input: &Input, desired: &[u8], home: &str) -> Result<(), Failure> {
     let unverified = |detail: &str| Failure::new("route.withdraw_unverified", detail.to_owned());
     if fs::read(system.path(CADDYFILE)).map_err(|_| unverified("Caddyfile unreadable"))? != desired {
@@ -276,19 +280,26 @@ fn verify(system: &impl System, input: &Input, desired: &[u8], home: &str) -> Re
             return Err(unverified("a leaf folder remains"));
         }
     }
-    let mut last = unverified("Caddy admin API");
-    for read in 0..ADMIN_READS {
-        if read > 0 {
-            system.sleep(ADMIN_INTERVAL);
-        }
+    let deadline = system.now() + ADMIN_BUDGET;
+    loop {
+        let limit = deadline.saturating_duration_since(system.now()).max(ADMIN_FLOOR);
+        let seconds = format!("{:.3}", limit.as_secs_f64());
+        let outer = u32::try_from(limit.as_secs()).unwrap_or(u32::MAX).saturating_add(2);
         // An admin API that does not answer while Caddy loads the configuration is read again too.
-        match system.run(5, &strings(&["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", "2", ADMIN])) {
-            Ok(config) if input.domains.iter().any(|domain| config.contains(&format!("\"{domain}\""))) => last = unverified("Caddy still serves a withdrawn name"),
+        let last = match system.run(outer, &strings(&["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", &seconds, ADMIN])) {
+            Ok(config) if input.domains.iter().any(|domain| config.contains(&format!("\"{domain}\""))) => unverified("Caddy still serves a withdrawn name"),
             Ok(_) => return Ok(()),
-            Err(_) => last = unverified("Caddy admin API"),
+            Err(_) => unverified("Caddy admin API"),
+        };
+        let left = deadline.saturating_duration_since(system.now());
+        if left.is_zero() {
+            return Err(last);
+        }
+        system.sleep(ADMIN_INTERVAL.min(left));
+        if system.now() >= deadline {
+            return Err(last);
         }
     }
-    Err(last)
 }
 
 fn validate(input: &Input) -> Result<(), Failure> {
