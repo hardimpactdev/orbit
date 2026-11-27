@@ -1,0 +1,12 @@
+cases = [
+  "test_the_swap_file_installs_and_runs_while_tmp_is_replaced",
+  "test_the_same_file_is_not_written_again_and_a_new_one_is",
+  "test_a_failed_install_leaves_no_scratch_copy",
+]
+file = "swamp/tests/ansible_instance_app_account_boot_test.py"
+# The file ran 0.4 s locally (task copy 6320, 2026-11-27).
+cost = 5
+inputs = [
+  "swamp/ansible/tasks/instance-container-phase.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
