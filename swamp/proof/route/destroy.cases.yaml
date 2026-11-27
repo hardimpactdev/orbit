@@ -51,6 +51,33 @@ cases:
       - route_destroy: {name: cancelled, via: engine, sibling: neighbour, fault: cancel}
     expect:
       - clone_cleanup: {}
+  - id: active-app-secondary-route
+    batch: fresh-fleet
+    covers: ["path:admitted", "path:dns", "path:grace", "path:withdraw", "path:sibling", "path:failed"]
+    summary: >-
+      The live shape of ORB-6339. A laravel-app clone is active with its own Route, and a second Route of it with `--web-root=public`
+      is withdrawn on the engine. Its record goes without `routes_active_target_delete` refusing the delete, nothing is redelivered,
+      the clone's own Route still serves, a sibling's Route answers, and the VPN Node answers its other names unchanged. Then a
+      third such Route is withdrawn while a database trigger refuses its delete: the Operation fails once, after three projection
+      attempts, with `engine.projection_failed` at the step `projection`, its lock goes, and laravel.log stays quiet after.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1500
+    setup:
+      - route_fixture: {repository: "https://github.com/laravel/react-starter-kit.git", branch: main, project_type: laravel-app, root: public}
+    act:
+      - clone_create: {name: sibling, via: engine}
+      - clone_create: {name: target, via: engine}
+      - route_create: {name: neighbour, clone: sibling, web_root: public}
+      - route_create: {name: secondary, clone: target, web_root: public}
+      - route_create: {name: faulted, clone: target, web_root: public}
+      - route_main_serves: {clone: target}
+      - route_destroy: {name: secondary, via: engine, sibling: neighbour}
+      - route_main_serves: {clone: target}
+      - route_destroy: {name: faulted, via: engine, sibling: neighbour, fault: projection}
+      - route_main_serves: {clone: target}
+    expect:
+      - clone_cleanup: {}
 uncovered:
   "path:withdraw": "One Route Node. A Route served by two Nodes, a leaf-only Node, and a shared PHP-FPM pool kept for another Route are not covered."
   "path:dns": "One VPN Node, which is the Gateway in the nested fleet. Two VPN Nodes and a domain inside the TLD (no DNS step) are not covered."

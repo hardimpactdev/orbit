@@ -13,6 +13,7 @@ import traceback
 from clone_lifecycle import (
     EXECUTOR,
     EXECUTOR_UNIT,
+    GATEWAY_DB,
     POOL,
     TERMINAL,
     CloneLane,
@@ -173,6 +174,12 @@ class RouteLane(CloneLane):
         """The sibling keeps its site, leaf and DNS answer, and at the address its DNS answer names, trusting only the nested root,
         answers exactly the known page the fixture serves behind it."""
         route = self.routes_made[name]
+        if getattr(self, 'project_type', 'laravel-package') == 'laravel-app':
+            # The app's own server answers the site, so no known page stands behind it: the site, its leaf, its DNS answer and an
+            # HTTPS answer at the address that answer names show it serves.
+            state = self.state(route['domain'], route['scope'])
+            require(self.present(state), f'sibling Route {name} is not healthy: {state}')
+            return state
         if 'token' not in route:
             self.serve_known(route)
         state = self.state(route['domain'], route['scope'])
@@ -228,6 +235,10 @@ class RouteLane(CloneLane):
 
     @traced
     def route_destroy(self, name, via, sibling, fault=None):
+        if fault == 'projection':
+            require(via == 'engine', 'a projection fault runs on the engine')
+            self.set_dns(True)
+            return self.projection_fault(name, sibling)
         require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial', 'feature', 'restart', 'cancel')
                 and (fault is None or (fault == 'feature') == (via == 'swamp')), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
@@ -292,6 +303,70 @@ class RouteLane(CloneLane):
             require(not summary['steps'], f'fallback route.destroy {operation} ran engine steps')
         self.routes_made[name]['destroy_result'] = result
         self.record(name + '-route-destroy', result)
+
+    @traced
+    def route_main_serves(self, clone):
+        """The clone's own Route (the authoritative one, without a web root) is active, still its Instance's only target, and serves."""
+        instance = self.clones[clone]['instance']
+        rows = self.db(f"""SELECT r.id, r.domain, r.status FROM routes r JOIN route_targets t ON t.route_id=r.id
+            WHERE t.instance_id={instance} AND r.web_root IS NULL""")
+        require(len(rows) == 1 and rows[0]['status'] == 'active', f'clone {clone} has no one authoritative Route: {rows}')
+        state = self.state(rows[0]['domain'], f'app-instance-{instance}')
+        # A name inside the TLD has no record line of its own: its site, leaf and HTTPS answer show that it serves.
+        require(state['caddy_lines'] > 0 and state['caddy_admin'] and state['leaf_paths'] == 1 and state['https'] != '000',
+                f'the main Route {rows[0]["domain"]} of clone {clone} does not serve: {state}')
+        status = self.db(f'SELECT status FROM instances WHERE id={instance}')[0]['status']
+        require(status == 'active', f'clone {clone} is {status}, not active')
+        # ORB-6339: the refused delete threw in the projection and the receipt came back forever, each time logged.
+        refused = self.log_lines('An active Instance requires exactly one authoritative Route')
+        require(refused['lines'] == 0, f'laravel.log records a refused Route delete: {refused}')
+        self.record(clone + '-main-route', {'route': rows[0], 'instance_status': status, 'state': state, 'refused_delete_log_lines': refused['lines']})
+
+    def log_lines(self, needle):
+        """The nested Gateway's current log (the daily channel's newest `laravel*.log`): its size, and how many lines hold `needle`."""
+        out = self.guest('gateway', 'sh', '-c', '''log=$(ls -t "$1"/laravel*.log 2>/dev/null | head -1)
+            if [ -z "$log" ]; then echo "- 0 0"; exit; fi
+            printf '%s %s %s\n' "$log" "$(stat -c %s "$log")" "$(grep -cF -- "$2" "$log" || :)"''', 'sh', self.gateway_app + '/storage/logs', needle).split()
+        return {'file': out[0], 'bytes': int(out[1]), 'lines': int(out[2])}
+
+    def projection_fault(self, name, sibling):
+        """A completion that always throws: a database trigger refuses the delete of this one Route. The engine must try the
+        projection three times, fail the Operation with `engine.projection_failed` at the step `projection`, and then stay quiet."""
+        route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
+        message = f'orbit proof projection fault {route}'
+        self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', GATEWAY_DB,
+                   f"CREATE TRIGGER orbit_proof_projection_fault BEFORE DELETE ON routes WHEN OLD.id={route} BEGIN SELECT RAISE(ABORT, '{message}'); END;")
+        try:
+            before = self.log_lines(message)
+            admitted = self.admitted('DELETE', f'routes/{route}', {}, name + '-route-destroy-fault')
+            operation = int(admitted['id'])
+            row = self.terminal(operation, expect='failed', seconds=240)
+            ended = self.log_lines(message)
+            time.sleep(30)
+            quiet = self.log_lines(message)
+            summary = self.db(f"""SELECT status, error_code, failed_step, lock_key, json_extract(state,'$.swamp_run_id') AS run,
+                json_extract(state,'$.engine.finish_attempts') AS attempts FROM operations WHERE id={operation}""")[0]
+            steps = {step['name']: step['status'] for step in self.steps(operation)}
+            require(summary['run'] == f'engine-{operation}' and summary['status'] == 'failed' and summary['error_code'] == 'engine.projection_failed'
+                    and summary['failed_step'] == 'projection' and summary['lock_key'] is None and summary['attempts'] == 3,
+                    f'route.destroy {operation} did not fail once after three projection attempts: {summary}')
+            require(steps and all(status == 'done' for status in steps.values()), f'route.destroy {operation} Node steps did not all finish: {steps}')
+            # Each attempt reports its exception once: two log lines hold the message.
+            require(quiet['lines'] == ended['lines'] and 0 < ended['lines'] - before['lines'] <= 6,
+                    f'laravel.log kept growing after route.destroy {operation} failed: {before} {ended} {quiet}')
+            require(self.db(f'SELECT id FROM routes WHERE id={route}') != [], f'route.destroy {operation} deleted the Route despite the fault')
+        finally:
+            self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', GATEWAY_DB,
+                       'DROP TRIGGER IF EXISTS orbit_proof_projection_fault;')
+        # The documented recovery: the Route record stays, so the same command, once the projection can run, removes it.
+        rerun = int(self.admitted('DELETE', f'routes/{route}', {}, name + '-route-destroy-rerun')['id'])
+        self.terminal(rerun, seconds=240)
+        require(not self.db(f'SELECT id FROM routes WHERE id={route}'), f'route.destroy {rerun} did not remove the Route after the fault')
+        sibling_after = self.healthy(sibling)
+        result = {'route': route, 'domain': domain, 'operation': operation, 'row_status': row['status'], 'summary': summary, 'steps': steps,
+                  'log': {'before': before, 'at_end': ended, 'after_30s': quiet}, 'rerun': {'operation': rerun, 'steps': self.steps(rerun)}, 'sibling_after': sibling_after}
+        self.routes_made[name]['destroy_result'] = result
+        self.record(name + '-route-destroy-fault', result)
 
     def cli_destroy(self, words, kind, target):
         """Starts a destroy through the candidate CLI, which waits for the end: the run goes on beside it, and `cli_end` checks

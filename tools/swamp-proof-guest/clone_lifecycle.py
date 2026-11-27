@@ -214,10 +214,11 @@ class CloneLane:
     def put(self, node, path, content):
         self.guest(node, 'sh', '-eu', '-c', 'umask 022; cat > "$1"', 'sh', path, stdin=content)
 
-    def setup(self, repository, branch):
+    def setup(self, repository, branch, project_type='laravel-package', root=None):
         self.identify()
-        code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
-                                                             'repository_url': repository, 'default_branch': branch, 'root': self.ROOT})
+        self.project_type = project_type
+        code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': project_type,
+                                                             'repository_url': repository, 'default_branch': branch, 'root': root or self.ROOT})
         require(code == 201, f'disposable project admission: HTTP {code} {error}')
         self.project = int(project['id'])
         self.default = self.create('default', 'swamp', seed=True)['instance']
