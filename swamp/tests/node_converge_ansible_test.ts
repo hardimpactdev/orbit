@@ -608,6 +608,38 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("every Tools phase applies the Homebrew prefix rule from the Tool helper, and a second run changes nothing", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tools"))) as Array<Record<string, unknown>>;
+        const names = tasks.map((task) => task.name);
+        const rule = names.indexOf("Make the Homebrew prefix readable");
+        assertEquals(names.slice(rule - 2, rule + 1), ["Look for the Linux Homebrew prefix", "Compile the Homebrew prefix rule", "Make the Homebrew prefix readable"]);
+        assertEquals([tasks[rule - 2].when, tasks[rule - 1].when, tasks[rule].when, tasks[rule].become], [undefined, "brew_program.stat.exists", "brew_program.stat.exists", false]);
+        assertEquals(rule > names.indexOf("Record bounded Tool results"), true);
+        const helper = fileURLToPath(new URL("../extensions/behaviors/operations/ansible-input/converge_tool.ts", import.meta.url));
+        const compiled = await new Deno.Command(Deno.execPath(), { args: ["run", "--no-prompt", "--allow-read", helper, "readable"], stdout: "piped" }).output();
+        const argv = JSON.parse(new TextDecoder().decode(compiled.stdout)) as string[];
+        assertEquals(argv[1], "/home/linuxbrew/.linuxbrew");
+        const prefix = `${folder}/prefix`;
+        await Deno.mkdir(`${prefix}/Cellar/git/2.52.0`, { recursive: true });
+        for (const path of ["", "/Cellar/git"]) await Deno.chmod(prefix + path, 0o700);
+        await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{ hosts: "localhost", connection: "local", gather_facts: false,
+            vars: { brew_program: { stat: { exists: true } }, brew_readable: { stdout: JSON.stringify([argv[0], prefix, ...argv.slice(2)]) } },
+            tasks: [tasks[rule]] }]));
+        const apply = async () => {
+            const result = await new Deno.Command("ansible-playbook", { args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+                env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" } }).output();
+            const output = new TextDecoder().decode(result.stdout);
+            assertEquals(result.code, 0, output);
+            return output.match(/changed=(\d)/)![1];
+        };
+        assertEquals(await apply(), "1");
+        assertEquals([(await Deno.stat(prefix)).mode! & 0o777, (await Deno.stat(`${prefix}/Cellar/git`)).mode! & 0o777], [0o755, 0o755]);
+        assertEquals(await apply(), "0");
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("the Tools phase names every file of each removed repository, and only valid repository names", async () => {
     const folder = await Deno.makeTempDir();
     try {

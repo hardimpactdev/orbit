@@ -30,6 +30,7 @@ cases = [
   "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
   "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
+  "every Tools phase applies the Homebrew prefix rule from the Tool helper, and a second run changes nothing",
   "the Tools phase names every file of each removed repository, and only valid repository names",
   "the apt repair refreshes even default sources as root without elevating control helpers",
   "the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host",
@@ -42,7 +43,7 @@ cases = [
   "a hand converge selects the recorded CLI release",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 132 # ESTIMATE: previous 106s plus 17s for the privileged refresh case and the added literal round-trip and eligibility cases (about 8s locally x 2.1), plus 9s for the binary-key verification case (about 4s locally x 2.1).
+cost = 135 # ESTIMATE: 3s for the Homebrew prefix rule case (about 1s locally x 2.1), previous 132s: previous 106s plus 17s for the privileged refresh case and the added literal round-trip and eligibility cases (about 8s locally x 2.1), plus 9s for the binary-key verification case (about 4s locally x 2.1).
 inputs = [
   "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",

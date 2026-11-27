@@ -49,6 +49,18 @@ export function refreshed(step: Step): void {
         throw new ToolRefusal("tool.candidate_version_probe_failed");
     }
 }
+/**
+ * The Linux Homebrew prefix rule after a brew write (docs/reference/tools.md#readable-homebrew-prefix): each entry others cannot read becomes readable
+ * for group and others, and a directory also searchable, so the Node agent's observer reads it without privilege. It touches only entries
+ * that lack those bits, prints each one it changes, and keeps owner and write bits.
+ */
+export function homebrewReadable(prefix = "/home/linuxbrew/.linuxbrew"): string[] {
+    return [
+        "/usr/bin/find", prefix,
+        "(", "-type", "d", "!", "-perm", "-055", "-print", "-exec", "/usr/bin/chmod", "go+rx", "{}", "+", ")", "-o",
+        "(", "!", "-type", "d", "!", "-type", "l", "!", "-perm", "-044", "-print", "-exec", "/usr/bin/chmod", "go+r", "{}", "+", ")",
+    ];
+}
 /** Public argv only. Scope ownership is admission's concern, not a Node phase. */
 export function commands(input: Input) {
     const brew = input.manager.startsWith("brew"),
@@ -153,6 +165,7 @@ export function commands(input: Input) {
                 },
             },
         version: run("--version"),
+        readable: brew && input.platform === "linux" ? homebrewReadable(prefix) : null,
         os: ["/usr/bin/sw_vers", "-productVersion"],
         // Linux `brew info` reads the cached cask API; `outdated` is an auto-update command, so it refreshes that
         // API first (HOMEBREW_FORCE_API_AUTO_UPDATE) without `brew update`.
@@ -260,8 +273,12 @@ export function inventory(
             if (query?.outputs?.exitCode !== 0 || name !== input.package) {
                 throw new ToolRefusal("tool.version_probe_failed");
             }
+            // A package held with `apt-mark hold` is installed; apt will not change it.
             if (status === "install ok installed") versions = [value];
-            else if (
+            else if (status === "hold ok installed") {
+                versions = [value];
+                extra = { held: true };
+            } else if (
                 !/^(deinstall|purge|unknown) ok (config-files|not-installed)$/
                     .test(status)
             ) throw new ToolRefusal("tool.version_probe_failed");

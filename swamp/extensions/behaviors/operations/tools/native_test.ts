@@ -5,6 +5,7 @@ import {
     aptWrite,
     candidate,
     commands,
+    homebrewReadable,
     inventory,
     removalPlan,
 } from "./native.ts";
@@ -167,4 +168,44 @@ Deno.test("Homebrew write and remove commands retain the admitted package", () =
         assertEquals(c.remove.slice(-3), ["uninstall", "--formula", "hello"]);
         assertEquals(c.write.includes("-c") || c.remove.includes("-c"), false);
     }
+});
+
+Deno.test("the Homebrew prefix rule makes private entries readable once and keeps owner and write bits", async () => {
+    const prefix = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${prefix}/Cellar/git/2.52.0`, { recursive: true });
+        await Deno.writeTextFile(`${prefix}/Cellar/git/2.52.0/INSTALL_RECEIPT.json`, "{}");
+        await Deno.writeTextFile(`${prefix}/shared`, "");
+        await Deno.writeTextFile(`${prefix}/readable`, "");
+        await Deno.symlink("Cellar/git", `${prefix}/link`);
+        const modes = { "": 0o700, "/Cellar": 0o755, "/Cellar/git": 0o700, "/Cellar/git/2.52.0": 0o750,
+            "/Cellar/git/2.52.0/INSTALL_RECEIPT.json": 0o700, "/shared": 0o620, "/readable": 0o644 };
+        for (const [path, mode] of Object.entries(modes)) await Deno.chmod(prefix + path, mode);
+        const run = async () => {
+            const [program, ...args] = homebrewReadable(prefix);
+            const result = await new Deno.Command(program, { args, stdout: "piped" }).output();
+            assertEquals(result.code, 0);
+            return new TextDecoder().decode(result.stdout).split("\n").filter(Boolean).map((path) => path.slice(prefix.length)).sort();
+        };
+        assertEquals(await run(), ["", "/Cellar/git", "/Cellar/git/2.52.0", "/Cellar/git/2.52.0/INSTALL_RECEIPT.json", "/shared"]);
+        const after = Object.fromEntries(await Promise.all(Object.keys(modes).map(async (path) => [path, (await Deno.lstat(prefix + path)).mode! & 0o7777])));
+        assertEquals(after, { "": 0o755, "/Cellar": 0o755, "/Cellar/git": 0o755, "/Cellar/git/2.52.0": 0o755,
+            "/Cellar/git/2.52.0/INSTALL_RECEIPT.json": 0o744, "/shared": 0o664, "/readable": 0o644 });
+        assertEquals(await run(), []);
+    } finally { await Deno.remove(prefix, { recursive: true }); }
+});
+
+Deno.test("only a Linux Homebrew Tool carries the prefix rule", () => {
+    assertEquals(commands(input("brew")).readable, homebrewReadable());
+    assertEquals(commands(input("brew-cask")).readable?.[1], "/home/linuxbrew/.linuxbrew");
+    assertEquals(commands(input("apt")).readable, null);
+    assertEquals(commands({ ...input("brew"), platform: "macos", architecture: "arm64" }).readable, null);
+});
+
+Deno.test("an apt package held with apt-mark hold reads as installed and held", () => {
+    const step = (stdout: string) => ({ status: "succeeded", outputs: { exitCode: 0, stdout } });
+    const held = inventory(input("apt"), step("apt 3.1"), step("hello\thold ok installed\t2.3.1-1\n"));
+    assertEquals([held.versions, (held as Record<string, unknown>).held], [["2.3.1-1"], true]);
+    const normal = inventory(input("apt"), step("apt 3.1"), step("hello\tinstall ok installed\t2.3.1-1\n"));
+    assertEquals([normal.versions, "held" in normal], [["2.3.1-1"], false]);
 });

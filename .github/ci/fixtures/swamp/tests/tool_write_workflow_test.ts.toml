@@ -5,6 +5,7 @@ cases = [
   "an unchanged owned package still ends with its repository's own preference",
   "a refusal or an unverified write never prefers the acting package",
   "a failed write of the acquired package's preference fails the run after the acquisition",
+  "a Linux Homebrew write makes the prefix readable after its package step, and an apt write does not",
 ]
 file = "swamp/tests/tool_write_workflow_test.ts"
 cost = 1

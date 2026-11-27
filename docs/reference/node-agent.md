@@ -71,6 +71,8 @@ The observer reads each Tool Manager's local state files directly without invoki
 | `vp` | Vite+ home `bins/*.json` |
 | `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json` and `Caskroom/<cask>/<version>` |
 
+The `apt` fact lists each `install ok installed` package and each `hold ok installed` package, a held one marked `"held": true`. The observer has no capability to read past file modes, so a `brew` formula appears only when others can read its Cellar folder; Orbit keeps the Linux prefix [readable](/reference/tools#readable-homebrew-prefix).
+
 [`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node. The observer reports what is installed; the Gateway stores [Tool membership and desired versions](/reference/tools#tool-modes) separately.
 
 ### Environment key names

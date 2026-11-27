@@ -30,6 +30,8 @@ it('counts managed Tools and reports literal drift, absence and unusable facts',
     expect($read()['issues'][0])->toMatchArray(['code' => 'tool.version_mismatch', 'expected' => '1.10', 'observed' => '1.1']);
     $fact->update(['data' => ['scope' => '/usr/bin/apt', 'packages' => [['name' => 'tree', 'version' => '1.10']]]]);
     expect($read())->toMatchArray(['checked' => 1, 'status' => 'healthy', 'issues' => []]);
+    $fact->update(['data' => ['scope' => '/usr/bin/apt', 'packages' => [['name' => 'tree', 'version' => '1.10', 'held' => true]]]]);
+    expect($read())->toMatchArray(['checked' => 1, 'status' => 'healthy', 'issues' => []]);
     $fact->update(['data' => ['scope' => '/usr/bin/apt', 'packages' => []]]);
     expect($read()['issues'][0]['code'])->toBe('tool.not_installed');
     $fact->update(['observed_at' => now()->subMinutes(13)]);
@@ -39,5 +41,13 @@ it('counts managed Tools and reports literal drift, absence and unusable facts',
     expect($reporter->execute($node, NodeFactKind::Packages, 'apt', CarbonImmutable::now()->subMinutes(2), $matching))->toBeTrue()
         ->and($reporter->execute($node, NodeFactKind::Packages, 'apt', CarbonImmutable::now(), $matching))->toBeFalse()
         ->and($fact->refresh()->confirmed_at->greaterThan($fact->observed_at))->toBeTrue()
+        ->and($read())->toMatchArray(['checked' => 1, 'status' => 'healthy']);
+    // The agent reports a held apt package through its fact endpoint, which keeps the `held` mark.
+    $node->forceFill(['agent_secret_hash' => hash('sha256', 'agent-secret')])->save();
+    $held = ['scope' => '/usr/bin/apt', 'packages' => [['name' => 'tree', 'version' => '1.10', 'held' => true]]];
+    test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->withToken('agent-secret')
+        ->postJson('/api/v1/agent/facts', ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => now()->addSecond()->format('Y-m-d\\TH:i:s\\Z'), 'data' => $held])
+        ->assertNoContent();
+    expect($fact->refresh()->data['packages'][0])->toBe(['name' => 'tree', 'version' => '1.10', 'held' => true])
         ->and($read())->toMatchArray(['checked' => 1, 'status' => 'healthy']);
 });

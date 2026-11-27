@@ -139,6 +139,8 @@ enum NodeFactKind: string
                 'packages' => ['sometimes', 'array', 'list', 'max:20000'],
                 'packages.*.name' => ['required', 'string', 'max:255'],
                 'packages.*.version' => ['required', 'string', 'max:255'],
+                // An apt package held with `apt-mark hold`; earlier agents leave held packages out.
+                'packages.*.held' => ['sometimes', 'boolean', 'accepted'],
                 'roots' => ['sometimes', 'array', 'list', 'max:1000'],
                 'roots.*' => ['required', 'string', 'max:255'],
                 'sources' => ['sometimes', 'array', 'list', 'max:256'],

@@ -65,6 +65,8 @@ export const Facts = z.object({
     versions: z.array(z.string().nullable()).max(4096).optional(),
     complete: z.boolean().optional(),
     roots: z.array(z.string()).optional(),
+    /** An apt package held with `apt-mark hold`, which apt will not change. */
+    held: z.boolean().optional(),
 }).passthrough();
 export type Context = {
     extensionFile(name: string): string;
