@@ -1177,4 +1177,6 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'process_compare': clone_step('compare'), 'process_cleanup': clone_step('cleanup'),
                   'restart_fixture': lambda run, args: clone_fixture(run, args, 'RestartLane', 'process_restart'),
                   'process_restart': clone_step('restart'), 'restart_replay': clone_step('replay'), 'restart_retry': clone_step('retry'),
-                  'restart_refused': clone_step('refused')})
+                  'restart_refused': clone_step('refused'),
+                  'production_fixture': lambda run, args: clone_fixture(run, args, 'ProductionLane', 'process_control'),
+                  'prod_executor': clone_step('prod_executor'), 'prod_refused': clone_step('prod_refused')})

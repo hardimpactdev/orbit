@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Casts\NodeAgentSecretHash;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Collection;
@@ -118,6 +120,33 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
+    }
+
+    /**
+     * The environment the Node's app role places its work in: `production` for app-prod, `development` for app-dev or a CI-only
+     * Node, and null for a Node with both app roles or neither.
+     */
+    public function placementEnvironment(): ?string
+    {
+        $this->loadMissing('roles');
+
+        // The Node's app role decides the environment in every lifecycle state, so an
+        // app-dev role that is converging, failed, or being removed still places its Instances.
+        $roles = $this->roles->filter(
+            static fn (NodeRole $role): bool => in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
+        );
+
+        // A CI-only Node has no app role and hosts only proof copies, which are development Instances
+        // (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
+        if ($roles->isEmpty() && ProofCopyHosts::ciOnly($this)) {
+            return 'development';
+        }
+
+        if ($roles->count() !== 1) {
+            return null;
+        }
+
+        return $roles->sole()->role === RoleName::AppProd ? 'production' : 'development';
     }
 
     /** @return HasMany<NodeRole, $this> The assignments that hold host work: every role except a record-only one such as `agent`. */

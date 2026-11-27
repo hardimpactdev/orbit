@@ -40,9 +40,27 @@ cases:
     expect:
       - process_compare: {}
       - process_cleanup: {}
+  - id: production-process-stays-on-swamp
+    batch: fresh-fleet
+    covers: ["path:engine", "path:refused"]
+    summary: With the executor on app-dev and on app-prod, both reporting every process action, stop and start a Node Process on app-dev through the signed executor (one converge step each), and stop, start and restart a Node Process on app-prod through the public CLI; each app-prod Operation runs wholly on Swamp with no engine step, because the Gateway's roles place app-prod in production.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1500
+    setup:
+      - production_fixture: {}
+    act:
+      - prod_executor: {}
+      - process_create: {name: dev, start: true}
+      - process_create: {name: prod, start: true, node: app-prod}
+      - process_control: {name: dev, via: engine}
+      - prod_refused: {name: prod}
+    expect:
+      - process_compare: {}
+      - process_cleanup: {}
 uncovered:
   "path:engine": "Host systemd, host Docker and an on-demand host-Instance Process (boot policy disabled while running) on app-dev, and a retained Node timer of a host Instance. Fixture only: Orbit makes no new host (non-container) Instance, so its row comes from the guest helper, with its own Project from the API and its own Git checkout; the public schedule:create makes a native cron Schedule, so the lane sets trigger=node on its own new row and writes the disabled timer pair on the Node."
-  "path:refused": "A Horizon-shaped Node Process (`/usr/bin/php artisan horizon`, the shape GatewayHorizon::runs recognises, not a real Horizon) and a native cron Schedule stay on Swamp here. An Instance-container (Incus) Process has no fleet case: its Processes come only from Project definitions and a deploy (direct process:create is operation.kind_unavailable), and the nested default has no running container. A Gateway release container and a production_control timer need a production release layout the nested fleet does not have. Gateway tests cover those refusals."
+  "path:refused": "A Horizon-shaped Node Process (`/usr/bin/php artisan horizon`, the shape GatewayHorizon::runs recognises, not a real Horizon) and a native cron Schedule stay on Swamp here. An Instance-container (Incus) Process has no fleet case: its Processes come only from Project definitions and a deploy (direct process:create is operation.kind_unavailable), and the nested default has no running container. A Gateway release container and a production_control timer need a production release layout the nested fleet does not have. Gateway tests cover those refusals. The non-production limit has its own case: a Node Process on app-prod stays on Swamp for stop, start and restart while app-prod reports every process action. A production-placed Instance Process and a production_control Process have no fleet case: Orbit makes no host Instance on the nested app-prod, and the nested fleet has no production release; Gateway tests cover both (ProcessEngineFlowTest)."
   "path:parent-fence": "instance:destroy of the host Instance is refused with operation.target_busy while its Process's engine stop is outstanding, and is no longer fenced after the terminal receipt. The destroy itself does not run: the removal contract rejects the fixture host row (HTTP 500 gateway.unhandled from its member trigger), so the proof records that answer, not a removal."
   "path:receipt-lost": "The fault drops a stop receipt and an enable receipt; a lost start receipt is covered by Gateway and executor tests."
   "path:step-failed": "The failure is a start that applies the boot policy (enable) and then fails to start on a fixture drop-in whose ExecStartPre exits 1 (process.apply_failed). Read-back failures are covered by executor tests."

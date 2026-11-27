@@ -149,14 +149,20 @@ A terminal receipt, including the original result in a nonce replay, must match 
 
 ### process.start and process.stop
 
-The engine runs a start or stop of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
+The engine runs a start or stop of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process, on a non-production Node only. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
 
 Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across engines. These throw `EngineUnsupported` and run their whole Swamp workflow:
 
 - a dev-server Process (`vp-dev`, `vite`), whose start publishes a dev route, checks its listener and marks it awake;
 - a Process of an Instance not placed on app-dev, such as a production release layout;
 - any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
-- a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain.
+- a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain;
+- a Node Process whose intent names another Node;
+- any intent with `production_control`, a production release.
+
+The production limit reads only the Gateway's records, never the agent version or the Node's capability report. A Process runs on the engine only on a Node that the Gateway's own roles place in development (`Node::placementEnvironment`, the rule Instance placement reads). So an app-prod Node, a Node with both app roles or neither, and a Node with no row keep the Swamp workflow, even when the Node reports the process actions.
+
+A Node's own Process also needs its Node to have the app-dev role. A CI place puts only proof copies in development, so a CI-only Node keeps its own Processes on Swamp. Admitting app-prod is a separate change.
 
 [`process.restart`](#processrestart) takes the same admission. All three kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
 

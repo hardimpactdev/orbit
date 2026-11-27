@@ -21,6 +21,7 @@ sequenceDiagram
     %%> - a stop that waits for a drain, whatever its placement: a host systemd Process that runs Horizon (`GatewayHorizon::runs` with no Instance, whose unit carries the long-drain stop directives of SystemdProcessRenderer) and a Gateway release-container Process (Horizon, the scheduler)
     %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout
     %%> - decided from the Process and its placement, for both verbs, never from start-only intent fields: a `vp-dev` or `vite` Process, a Process of an Instance not placed on app-dev, any intent with a `container` (an Instance container, whose app-account move is a script, or a Gateway release container), and a Node's host systemd unit that runs Horizon (the renderer's own drain condition: `GatewayHorizon::runs` on a Node Process; a Process named like a Gateway one, an Instance's Horizon unit and a Docker Horizon Process carry no long-drain directives and stay eligible)
+    %%> - decided from the Gateway's own Node roles, never from the agent version or the Node's report: a Process on a Node not placed in development (an app-prod Node, both app roles or neither, no Node row) and an intent with `production_control` stay on Swamp
     %%> - decided at admission, before any order: the engine admits nothing, and the whole Operation takes the Swamp branch below
   end
   alt the engine admits the whole Operation
