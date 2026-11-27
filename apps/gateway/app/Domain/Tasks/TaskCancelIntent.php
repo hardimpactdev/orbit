@@ -51,13 +51,12 @@ final readonly class TaskCancelIntent
             if ($held !== null && $kind !== 'tasks.cancel') {
                 throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
             }
-            // A cancel that waits for its copy's destroy answers a new one with the destroy that still holds the copy.
-            if ($copy !== null) {
-                TaskEnd::assertFree($copy['instance']);
-            }
-            if (Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
-                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-                throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
+            $owner = Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->first();
+            if ($owner !== null) {
+                // A cancel that waits for its copy's destroy answers a repeat cancel with that destroy.
+                throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409,
+                    details: TaskEnd::waitsForDestroy($owner) ? ['operation_id' => $owner->result['destroy_operation_id'] ?? null] : []);
             }
             // Every refusal comes before the cancel changes anything. Approved work that origin does not have refuses it: task:publish
             // comes first.

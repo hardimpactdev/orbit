@@ -1442,6 +1442,16 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
     });
 
+    it('keeps a first cancel\'s own refusal before the busy copy while a destroy that no cancel admitted runs', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+        $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/app/pull/7']);
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('tasks.not_cancellable 409');
+    });
+
     it('holds no group admission while it waits: a pull request step reaches its own checks', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
