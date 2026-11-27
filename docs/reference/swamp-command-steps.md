@@ -266,7 +266,7 @@ The synthetic dev-worker runs `2ebfa2a6-bb7e-4ad2-8a5b-867095984e93` and `249120
 
 ## Kinds on the Gateway engine
 
-`StartSwampRun` admits every Operation the same way. It then starts a kind listed in `ORBIT_ENGINE_KINDS` on the [Gateway engine](/reference/gateway-engine) instead of Swamp, when every Node the kind touches supports its primitives. Such an Operation has no Swamp run. The reconciler nudges it each minute while a start or an order may have been lost. A [signed clone removal](/reference/gateway-engine#instancedestroy) keeps nudging past its budget until its Node returns the step's result.
+`StartSwampRun` admits every Operation the same way. It then starts a kind listed in `ORBIT_ENGINE_KINDS` on the [Gateway engine](/reference/gateway-engine) instead of Swamp, when every Node the kind touches supports its primitives. Such an Operation has no Swamp run. The reconciler nudges it each minute while a start or an order may have been lost. A [signed clone removal](/reference/gateway-engine#instancedestroy) and a [task copy's sync](/reference/gateway-engine#taskssync) keep nudging past their budget until their Node returns each step's result. `StartSwampRun` takes their target's Operation lock in the transaction that binds their steps.
 
 ## Node execution through official SSH
 

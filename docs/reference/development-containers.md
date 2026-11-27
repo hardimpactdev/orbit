@@ -397,7 +397,7 @@ The Gateway inspects container Git state (`ContainerWorkspaceRead`, `workspace-g
 
 ### Destroy
 
-`instance:destroy <id> --yes --force` deletes the container, its `instance-<id>` ACL, UFW `orbit:instance-<id>-` rules, repository mirror (`/var/lib/orbit/instance-repositories/<id>.git`), power helper files, and Route. Container removal currently requires `--force`; omitting it returns HTTP `409 instance.container_destroy_force_required`.
+`instance:destroy <id> --yes --force` deletes the container, its `instance-<id>` ACL, UFW `orbit:instance-<id>-` rules, repository mirror (`/var/lib/orbit/instance-repositories/<id>.git`) and its seed staging (`<id>.git.seeding`), power helper files, and Route. Container removal currently requires `--force`; omitting it returns HTTP `409 instance.container_destroy_force_required`.
 
 Destroying an active default container Instance requires the Project ID to be listed in `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` (`503 operation.kind_unavailable` otherwise) and zero clones copying that default (`409 instance.default_has_copies` otherwise). A retained failed or cancelled default (`reserved` or `source_resolved`) can be destroyed with `--force` without listing the Project once no `instance.create` still holds its lock, including a timed-out create whose run has not settled.
 

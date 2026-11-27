@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% tasks.sync of a task copy on the Gateway engine: the steps of task/sync.mmd (workflow operation-task-sync-copy, child task-copy-base) as executor primitives on the copy's Node. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% tasks.sync of a task copy on the Gateway engine: the steps of task/sync.mmd (workflow operation-task-sync-copy, child task-copy-base) as executor primitives on the copy's Node. ADR 0267 and ADR 0271, implemented by TaskSyncEngineFlow: steps `fetch` (`instance.fetch_branch`), `sync` (`instance.sync_base`), `clear` and the failure step `clear_after_failure` (`instance.clear_base`). Runtime proof on a nested fleet is outstanding.
   %% Same contract as the Swamp run (docs/reference/tasks.md#bring-main-into-a-copy): fetch the default branch into the copy's Node mirror, import only the missing objects, move only refs/remotes/origin/<default>. Nothing is merged or rebased; the credential never enters the copy.
   %% status: draft
   %% command: task:sync
@@ -24,35 +24,37 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `tasks.sync` is in `ORBIT_ENGINE_KINDS`
-    %%> - every Node a step touches reports its action in `$KV.NODES`: `instance.fetch_branch` (exists), the import and the scratch cleanup on the copy's Node
+    %%> - the copy's Node reports `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base` in `$KV.NODES`, and the feature `instance.fetch_seed`
+    %%> - the copy, its runtime, its branch, its mirrors and its published and approved commits match the flow's shape and the group's own copy on that Node; a Project that reads with the Gateway's GitHub CLI login runs on Swamp
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - eligible plan: a task copy (`copy` in the intent); a group without one keeps `tasks.no_workspace`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
-    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    %%> - the copy's Instance lock commits with the step rows; a Swamp sync takes none; while the kind is enabled, a confirmed removal of the group's copy (`removing`, or a removal not ended) refuses the sync (`operation.target_busy`) before routing, so neither the engine nor the Swamp fallback starts it; an intent naming no copy of the group falls back as before; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
+    %%> - the group stays fenced by its running Operation and the copy by the Instance lock: no removal or other writer of the copy starts until the sync ends
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Fetch the default branch<br/>instance.fetch_branch · mirror
-    %%> Reuses `instance.fetch_branch` with the default branch: the Gateway mints the one-hour read token (`contents: read`) per Operation and sends it as a blob to this Node only
-    %%> The credential is written root-only beside the mirror for the Git calls and removed after them, whatever they did; it never reaches argv, the copy or a receipt
-    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare on first use
+    %%> Reuses `instance.fetch_branch` with the default branch: routing mints the one-hour read token (`contents: read`), keeps it encrypted in the Gateway cache for the journal's replay window or until the Operation ends, and keeps its digest with the Operation. Once a `fetch` order is published, every resend names that same credential, from the cache or by its digest, and none mints again. Only when the cache lost it before the first publication, so no Node ever received it, the first order mints it once more with the admitted access mode and uploads it: unlike a resend, no order can repeat a credential that was never sent
+    %%> The credential is written root-only beside the mirror in a file of this fetch's own for the Git calls and removed after them, whatever they did; a sibling fetch keeps its own file. It never reaches argv, the copy or a receipt
+    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare from the default's mirror (`seed`) in the copy's staging repository `<mirror>.seeding`, which takes the mirror's name only when complete and which the copy's cleanup and destroy remove; a folder without `HEAD` is no mirror, the default's mirror is checked before anything changes, only an empty folder is replaced and any other is left as it is and refused, as the Swamp base phase makes it; with no default's mirror the fetch refuses
     N->>GH: Fetch the default head<br/>HTTPS · credential on the Node
     GH-->>N: Default head objects
     N-->>EN: Mirror head<br/>output: commit
     %%> `instance.fetch_branch` answers `commit: null` as success when origin lacks the branch (a create starts from the seed then); for a sync that is a failure: a null commit fails the Operation as `tasks.default_branch_missing`, and no old mirror head is ever imported
     EN->>C: Import missing objects<br/>bundle · remote ref only
     %%> Input: the non-null mirror head that the fetch receipt returned, pinned in the step input, so a resend imports the same commit even when origin moved
-    %%> On the Node: takes the copy's `origin/<default>` and `task-42` commits, keeps as prerequisites only those the mirror also holds (`cat-file -e`, as task-instance-workspace-phase.yml `Read which of the copy's commits the mirror holds`), and bundles `<head>` excluding them; an unpublished `task-42` commit the mirror lacks is never a prerequisite
-    %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into the object store
+    %%> On the Node: takes the copy's `origin/<default>` and `task-42` commits, keeps as prerequisites only those the mirror also holds (`cat-file -e`, as task-instance-workspace-phase.yml `Read which of the copy's commits the mirror holds`), pins `<head>` as `refs/orbit/task-base-<instance>` in the mirror, and bundles that ref excluding them; an unpublished `task-42` commit the mirror lacks is never a prerequisite
+    %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into the object store. The publish history reaches the step as a blob
     alt the copy already holds the head
       Note over C: No bundle to fetch<br/>the ref may still be stale
       %%> A copy can hold the pinned commit (an earlier interrupted sync, a merge into task-42) while `refs/remotes/origin/<default>` still names an older commit
     end
     C->>C: Set only the remote ref<br/>update-ref, old value checked
-    %%> As `agent`: `git update-ref refs/remotes/origin/<default> <head> <old>` with the value read before, with or without a bundle; no other ref, HEAD, the index, the working tree or stashes is written
-    %%> A retry finds the ref already at the head and changes nothing; a ref that moved since the read refuses rather than overwriting it
+    %%> As `agent`: `git update-ref --no-deref refs/remotes/origin/<default> <head> <old>` with the value read before, refused first when the ref is symbolic, with or without a bundle; no other ref, HEAD, the index, the working tree or stashes is written
+    %%> A retry finds the ref already at the head and changes nothing; a ref that moved since the read refuses as `tasks.base_ref_mismatch` rather than overwriting it; any other update failure keeps the ordinary code and its diagnostic
     C-->>EN: Refs and work state<br/>commits · behind_by · work
-    %%> Read-back in the same primitive: `refs/remotes/origin/<default>` equals the pinned head, else `tasks.base_ref_mismatch`; HEAD and every local branch equal their values before the step; the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
-    EN->>N: Clear the base scratch<br/>Node scratch · copy bundle folder
-    %%> Runs after the import, also after its failure (an on-failure step); removes `/var/tmp/orbit-task-base-<instance>` and the copy's bundle folder. A later sync or the copy's destroy removes what an interruption left
+    %%> The Gateway takes this receipt only when its evidence names the pinned head, the admitted branch and start, and a whole `work` read on that head. Read-back in the same primitive: `refs/remotes/origin/<default>` equals the pinned head, else `tasks.base_ref_mismatch`; HEAD and every local branch equal their values before the step; the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
+    EN->>N: Clear the base scratch<br/>scratch · pin · bundle folder
+    %%> Two steps of one action: `clear` after the import, and `clear_after_failure` after a failed or cancelled fetch or import, as the engine runs no ordinary step after a failure. Each removes `/var/tmp/orbit-task-base-<instance>`, the mirror pin and the copy's bundle folder, and answers only when all three are gone; the import also clears right after its bundle. A later sync or the copy's destroy removes what an interruption left
     N-->>EN: Scratch absent
     opt the receipt is lost
       EN->>C: Resend the same step<br/>fresh nonce · same step ID
@@ -61,7 +63,9 @@ sequenceDiagram
       %%> - the Operation keeps its lock, so group 42 and its copy stays fenced; no other Operation and no Swamp run acts on it meanwhile
       %%> On the Node:
       %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
-      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), is not journaled as a result, and the step is sent again
+      %%> - a result goes back only once its `done` record is durable; content the executor could not read never settles a step
+      %%> - the Gateway takes only each step's own evidence: the mirror head, the base evidence or the cleanup; anything else fails the step as `engine.receipt_invalid`
       C-->>EN: Stored result<br/>repeat: true
     end
     alt every step verified
@@ -71,6 +75,7 @@ sequenceDiagram
       EN--xGW: Failed step<br/>error_code · redacted detail
       %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
       Note over GW: Mark the sync failed<br/>workspace unchanged
+      %%> - a cancel sends no new step: it waits for the published order's receipt, clears the scratch and ends cancelled with no field and no error
       %%> - retry: the same command; a new Operation mints a new token, and an earlier fetch makes the next bundle smaller
       %%> - a failed fetch or import leaves the copy's branches and work as they were; only the remote ref may already be newer
     end
