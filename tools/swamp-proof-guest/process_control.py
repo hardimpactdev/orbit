@@ -310,7 +310,13 @@ class ProcessLane(CloneLane):
         require(len(started) == 1, f'{name}: {kind} started {len(started)} Operations (exit {answer["rc"]})')
         operation = int(started[0]['id'])
         terminal = self.terminal(operation)
-        summary = self.operation(operation, 'swamp')
+        # A native cron Schedule's enable updates its Swamp trigger in the Gateway and starts no workflow run; any other shape runs
+        # the Swamp workflow. Neither records an engine step.
+        native = kind == 'schedule.enable' and self.schedules[name]['trigger'] == 'swamp'
+        summary = self.db(f'''SELECT id,kind,status,error_code,json_extract(state,'$.swamp_run_id') AS run FROM operations WHERE id={operation}''')[0] \
+            if native else self.operation(operation, 'swamp')
+        summary['steps'] = self.steps(operation)
+        require(not summary['steps'] and summary['run'] != f'engine-{operation}', f'{name}: {kind} recorded engine work')
         self.record(f'refused-{name}', {'kind': kind, 'started_kind': started[0]['kind'], 'cli_rc': answer['rc'], 'operation': summary,
                                          'public': {k: terminal.get(k) for k in ('status', 'error_code')}})
 
