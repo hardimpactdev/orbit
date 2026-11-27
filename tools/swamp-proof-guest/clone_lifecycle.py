@@ -981,20 +981,6 @@ class SyncLane(CloneLane):
         volumes = [row['name'] for row in parsed('incus volumes', self.incus('storage', 'volume', 'list', POOL, '--project', POOL, '--format=json'))]
         return {'containers': sorted(containers), 'volumes': sorted(volumes), 'instances': self.db('SELECT count(*) AS total FROM instances')[0]['total']}
 
-    def create(self, name, via, seed=False, attempt=''):
-        try:
-            return super().create(name, via, seed, attempt)
-        except ProofFailure as error:
-            # The Swamp container phase can lose its mktemp file in the new container's /tmp while it boots
-            # (instance-container-phase.yml, "Move the app account to www-data"). Not this group's code: the fixture's default retries once.
-            failed = self.db("SELECT id, json_extract(state,'$.native_failure.detail') AS detail FROM operations WHERE kind='instance.create' "
-                             "AND status='failed' ORDER BY id DESC LIMIT 1")
-            if not seed or attempt or not failed or "cannot stat '/tmp/" not in (failed[0]['detail'] or ''):
-                raise
-            self.record('default-create-boot-race', {'operation': failed[0]['id'], 'error': str(error)})
-            wait_for(lambda: not self.db(f"SELECT id FROM instances WHERE project_id={self.project}"), 'the failed default was not removed', 180, 2)
-            return super().create(name, via, seed, '-retry')
-
     def setup(self, repository, branch):
         self.start_counts = None
         self.branch = branch
