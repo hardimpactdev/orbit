@@ -972,6 +972,9 @@
     - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
+    - name: Remove the copy's mirror seed staging
+      ansible.builtin.file: { path: "{{ base_seeding }}", state: absent }
+      changed_when: false
     - name: Remove the bundle folder in the copy as root
       ansible.builtin.command: { argv: "{{ base_root_exec + ['/bin/rm', '-rf', '--', base_guest] }}", stdin: '', stdin_add_newline: false }
       register: base_guest_cleanup
@@ -989,6 +992,9 @@
   block:
     - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
+      changed_when: false
+    - name: Remove the copy's mirror seed staging
+      ansible.builtin.file: { path: "{{ base_seeding }}", state: absent }
       changed_when: false
     - name: Remove the bundle folder in the copy as root
       ansible.builtin.command: { argv: "{{ base_root_exec + ['/bin/rm', '-rf', '--', base_guest] }}", stdin: '', stdin_add_newline: false }

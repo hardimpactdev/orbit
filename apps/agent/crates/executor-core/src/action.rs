@@ -67,6 +67,11 @@ pub enum Action {
     InstanceNames,
     /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
     InstanceDestroy,
+    /// Import the default head from the Node mirror into a task copy and move only its `refs/remotes/origin/<default>`
+    /// (docs/reference/tasks.md#bring-main-into-a-copy). Its target is the copy.
+    InstanceSyncBase,
+    /// Remove what a task copy's sync left on the Node and in the copy. Its target is the copy.
+    InstanceClearBase,
     /// Converge one host Process, a systemd unit or a Docker container, to running or stopped and
     /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
     ProcessEnsureState,
@@ -87,7 +92,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 25] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -109,6 +114,8 @@ impl Action {
         Self::InstanceFleetReady,
         Self::InstanceNames,
         Self::InstanceDestroy,
+        Self::InstanceSyncBase,
+        Self::InstanceClearBase,
         Self::ProcessEnsureState,
         Self::ScheduleEnsureTimer,
     ];
@@ -132,9 +139,10 @@ impl Action {
             | Self::InstanceStop
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady
-            | Self::InstanceNames | Self::InstanceDestroy => {
-                Family::Instance
-            }
+            | Self::InstanceNames
+            | Self::InstanceDestroy
+            | Self::InstanceSyncBase
+            | Self::InstanceClearBase => Family::Instance,
             Self::ProcessEnsureState | Self::ScheduleEnsureTimer => Family::Process,
         }
     }
@@ -163,10 +171,20 @@ impl Action {
             | Self::InstanceCheckout
             | Self::InstanceT3
             | Self::InstanceStop
-            | Self::InstanceNames | Self::InstanceDestroy => {
-                TargetKind::Instance
-            }
+            | Self::InstanceNames
+            | Self::InstanceDestroy
+            | Self::InstanceSyncBase
+            | Self::InstanceClearBase => TargetKind::Instance,
         }
+    }
+
+    /// Whether a lost receipt keeps the Gateway's target fenced (ADR 0271): only a terminal result settles the step, so an
+    /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
+    pub fn receipt_fenced(self) -> bool {
+        matches!(
+            self,
+            Self::InstanceDestroy | Self::InstanceFetchBranch | Self::InstanceSyncBase | Self::InstanceClearBase | Self::ProcessEnsureState | Self::ScheduleEnsureTimer
+        )
     }
 
     /// The action's name on the wire.
@@ -193,6 +211,8 @@ impl Action {
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
             Self::InstanceNames => "instance.names",
+            Self::InstanceSyncBase => "instance.sync_base",
+            Self::InstanceClearBase => "instance.clear_base",
             Self::ProcessEnsureState => "process.ensure_state",
             Self::ScheduleEnsureTimer => "schedule.ensure_timer",
         }
@@ -230,6 +250,8 @@ impl FromStr for Action {
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             "instance.names" => Ok(Self::InstanceNames),
+            "instance.sync_base" => Ok(Self::InstanceSyncBase),
+            "instance.clear_base" => Ok(Self::InstanceClearBase),
             "process.ensure_state" => Ok(Self::ProcessEnsureState),
             "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
             _ => Err(UnknownActionError),

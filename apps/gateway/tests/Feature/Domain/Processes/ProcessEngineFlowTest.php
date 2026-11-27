@@ -124,8 +124,12 @@ beforeEach(function (): void {
                 'variant' => $process->runtime->value, 'desired' => 'stopped', 'on_demand' => false, 'created' => false, 'preserve_record' => false,
                 'caller_node_id' => null, 'vite' => null], ...($process->runtime->value === 'docker' ? ['image' => 'redis:7'] : []), ...$input]]);
     };
-    $this->receipt = fn (Operation $operation, string $step, array $line) => app(Engine::class)->onReceipt([
-        'node' => $this->node->id, 'line' => ['operation' => "{$operation->id}:{$step}", ...$line]]);
+    // A receipt names the Node, the step, its action and its target, as the executor's receipts do; a fenced kind needs all four.
+    $this->receipt = function (Operation $operation, string $step, array $line): void {
+        $row = OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', $step)->firstOrFail();
+        app(Engine::class)->onReceipt(['node' => $row->node_id, 'line' => ['action' => $row->action, 'target' => $row->target,
+            'operation' => "{$operation->id}:{$step}", ...$line]]);
+    };
     $this->input = fn (Operation $operation): array => app(ProcessControlEngineFlow::class)->input($operation, 'converge', new EngineRun($operation->id, [], 0, null));
 });
 
@@ -146,8 +150,10 @@ it('starts a host unit on the engine with one ensure_state step and projects wha
         ->and($payload['input'])->toBe(['process_id' => $process->id, 'runtime' => 'systemd', 'name' => "orbit-process-{$process->id}-web.service",
             'state' => 'running', 'boot' => 'enabled']);
 
-    // A lost receipt: the step goes again with a fresh nonce and the same step ID; the executor's journal answers the stored result.
-    ($this->receipt)($operation, 'converge', ['status' => 'refused', 'reason' => 'expired']);
+    // A lost receipt: at its resend deadline the step goes again with a fresh nonce and the same step ID; the executor's journal
+    // answers the stored result.
+    $this->travel(16)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id, 'step' => 'converge']);
     expect($this->bus->orders)->toHaveCount(2)
         ->and($this->bus->payload(1)['operation'])->toBe($payload['operation'])
         ->and($this->bus->payload(1)['nonce'])->not->toBe($payload['nonce'])
@@ -233,7 +239,7 @@ it('takes the whole Swamp path when the Node does not report the action or the k
     expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
 });
 
-it('enables a host Node timer with one ensure_timer step and records the Schedule result Swamp records', function (): void {
+it('enables a host Node timer with one ensure_timer step and settles it only on its read-back', function (): void {
     $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
         'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
         'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node']);
@@ -248,8 +254,22 @@ it('enables a host Node timer with one ensure_timer step and records the Schedul
         ->and($payload['target'])->toBe("{$this->node->id}:schedule-{$schedule->id}")
         ->and($payload['input'])->toBe(['schedule_id' => $schedule->id, 'unit' => "orbit-schedule-{$schedule->id}.timer"]);
 
-    app(Engine::class)->onReceipt(['node' => $this->node->id, 'line' => ['operation' => "{$operation->id}:timer", 'status' => 'output',
-        'stdout' => '{"changes":0,"unit_file_state":"enabled","active_state":"active","next_elapse":"Thu 2026-11-26 03:00:00 UTC"}']]);
+    // A success that is not the timer's read-back settles nothing.
+    ($this->receipt)($operation, 'timer', ['status' => 'output', 'stdout' => '{"changes":0,"unit_file_state":"disabled","active_state":"active","next_elapse":""}']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->sole()->error_code)->toBe('engine.receipt_invalid');
+});
+
+it('records the Schedule result Swamp records from the timer read-back', function (): void {
+    $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
+        'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node']);
+    $operation = Operation::query()->create(['kind' => 'schedule.enable', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'status' => OperationStatus::Queued, 'input' => ['id' => $schedule->id, 'node_id' => $this->node->id]]);
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, 'timer', ['status' => 'output',
+        'stdout' => '{"changes":0,"unit_file_state":"enabled","active_state":"active","next_elapse":"Thu 2026-11-26 03:00:00 UTC"}']);
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($operation->result)->toBe(['ready' => true]);
 
@@ -311,7 +331,7 @@ it('keeps the run fenced and unsettled when the receipt is lost past the step bu
         ->and(count($this->bus->orders))->toBe(2);
     ($this->receipt)($operation, 'converge', ['status' => 'applied', 'changes' => 1, 'repeat' => true]);
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
-})->skip('Receipt-bound settlement for every ReceiptBoundDefinition arrives with the shared ORB-6301 engine patch (Engine::requiresReceipt).');
+});
 
 it('decides eligibility from the Process and its placement, on the intents admission builds', function (): void {
     $dev = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux',

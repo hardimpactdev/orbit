@@ -15,6 +15,9 @@
 //!   hostname and `/etc/hosts`.
 //! - [`club_key`] (`instance.club_key`): a nested-fleet copy's Club key in its `/run`, and the nested Gateway's serve told.
 //! - [`stop`] (`instance.stop`): a copy whose create failed stops, and stays for a retry or a destroy.
+//! - [`sync_base`] (`instance.sync_base`): `task:sync` of a task copy: what the copy lacks of the default head in its Node
+//!   mirror, imported as one bundle, and only `refs/remotes/origin/<default>` moved, compared with its old value.
+//! - [`clear_base`] (`instance.clear_base`): what a sync of the copy left, on the Node and in the copy, removed.
 //! - [`t3`] (`instance.t3`): the copy's T3 running, its two sessions issued, checked and sealed to the Gateway, and its
 //!   workspace a T3 project.
 //!
@@ -32,6 +35,7 @@ mod prepare;
 mod shift;
 mod start;
 mod stop;
+mod sync;
 mod t3;
 #[cfg(test)]
 mod tests;
@@ -45,6 +49,7 @@ pub use names::names;
 pub use prepare::prepare;
 pub use start::start;
 pub use stop::stop;
+pub use sync::{clear_base, sync_base};
 pub use t3::t3;
 
 use std::collections::BTreeMap;

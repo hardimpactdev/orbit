@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
+use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
-use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
-use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
-use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Instance;
 use App\Models\Node;
@@ -30,8 +28,11 @@ use LogicException;
  * app-account move is a script; a Gateway release container drains), and a Node's host systemd Horizon Process, whose stop
  * waits for its drain.
  */
-final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
+final readonly class ProcessControlEngineFlow implements EngineDefinition
 {
+    /** @var list<string> */
+    public const array Kinds = ['process.start', 'process.stop'];
+
     public const string Action = 'process.ensure_state';
 
     private const string Step = 'converge';
@@ -44,13 +45,6 @@ final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
 
         // The target is the Node's part for this Process: two orders for one Process run one after the other.
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:process-{$operation->target_id}", budgetMs: 120_000, resendMs: 15_000)];
-    }
-
-    public function lockKey(Operation $operation): string
-    {
-        EngineTargetFence::alone($operation);
-
-        return OperationStore::lockKey('process', $operation->target_id);
     }
 
     public function input(Operation $operation, string $step, EngineRun $run): array

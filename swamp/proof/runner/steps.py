@@ -1093,10 +1093,11 @@ def busy_node(run, args):
     return []
 
 
-def clone_fixture(run, args):
-    from clone_lifecycle import CloneLane, ProofFailure
+def clone_fixture(run, args, lane='CloneLane'):
+    import clone_lifecycle
+    from clone_lifecycle import ProofFailure
 
-    run.clone_lane = CloneLane(run, fleet_module)
+    run.clone_lane = getattr(clone_lifecycle, lane)(run, fleet_module)
     try:
         run.clone_lane.setup(**args)
     except ProofFailure as error:
@@ -1146,4 +1147,6 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'executor_publish': executor_publish, 'executor_round_trip': executor_round_trip,
                   'executor_lost_result': executor_lost_result, 'executor_power': executor_power,
                   'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'),
-                  'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup')})
+                  'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup'),
+                  'sync_fixture': lambda run, args: clone_fixture(run, args, 'SyncLane'), 'sync_copy': clone_step('copy'),
+                  'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare')})

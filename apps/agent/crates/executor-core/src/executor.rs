@@ -374,7 +374,7 @@ impl<R: Run> Executor<R> {
         // The action ran; a lost done record only means a repeat runs it again after a crash, which every
         // action allows, so the result still goes back.
         let written = self.finish(order.nonce(), &key, &outcome, now_ms);
-        if key.action == Action::InstanceDestroy {
+        if key.action.receipt_fenced() {
             written.map_err(|_| StateRefusal::JournalWrite)?;
         }
         Ok(reply(&key, outcome, Source::Ran))
@@ -402,7 +402,7 @@ impl<R: Run> Executor<R> {
             at_ms: now_ms,
         };
         let written = self.journal.append(&record);
-        if !outcome.ends_operation(key.action) || (key.action == Action::InstanceDestroy && written.is_err()) {
+        if !outcome.ends_operation(key.action) || (key.action.receipt_fenced() && written.is_err()) {
             return written;
         }
         let mut done = self.done.lock().expect("done map lock poisoned");
@@ -505,6 +505,82 @@ mod tests {
             |action, target| action == Action::InstanceDestroy && target.as_str() == "12",
         )
         .expect("valid destroy")
+    }
+
+    fn sync_order(action: &str, step: &str, nonce: &str, expiry: u64) -> VerifiedOrder {
+        let mut fields = payload();
+        fields["action"] = action.into();
+        fields["target"] = if action == "instance.fetch_branch" { "7:fetch-12" } else { "12" }.into();
+        fields["operation"] = format!("42:{step}").into();
+        fields["nonce"] = nonce.into();
+        fields["expires_ms"] = expiry.into();
+        fields["input"] = serde_json::json!({});
+        let keys = pinned(1);
+        let enabled = Enabled::parse("instance").expect("valid");
+        let node = "7".parse().expect("id");
+        crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, _| true)
+            .expect("valid sync order")
+    }
+
+    #[test]
+    fn a_copy_sync_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_after_restart() {
+        for (action, step) in [("instance.fetch_branch", "fetch"), ("instance.sync_base", "sync"), ("instance.clear_base", "clear"),
+            ("instance.clear_base", "clear_after_failure")] {
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = sync_order(action, step, N1, NOW + 5000);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            let fresh = executor.handle(&sync_order(action, step, N2, NOW + 5000), NOW).expect("fresh order acts");
+            assert!(!fresh.repeat, "{action} {step}");
+            let again = executor.handle(&sync_order(action, step, N3, NOW + 5000), NOW).expect("lost receipt");
+            assert!(again.repeat, "{action} {step}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action} {step}");
+        }
+    }
+
+    #[test]
+    fn a_process_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_and_repeats_after_a_lost_receipt() {
+        for (action, target, step) in [("process.ensure_state", "7:process-417", "converge"),
+            ("schedule.ensure_timer", "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab", "timer")] {
+            let order = |nonce: &str| {
+                let mut fields = payload();
+                fields["action"] = action.into();
+                fields["target"] = target.into();
+                fields["operation"] = format!("42:{step}").into();
+                fields["nonce"] = nonce.into();
+                fields["expires_ms"] = (NOW + 5000).into();
+                fields["input"] = serde_json::json!({});
+                let keys = pinned(1);
+                let enabled = Enabled::parse("process").expect("valid");
+                let node = "7".parse().expect("id");
+                crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, _| true)
+                    .expect("valid process order")
+            };
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = order(N1);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            assert!(!executor.handle(&order(N2), NOW).expect("fresh order acts").repeat, "{action}");
+            assert!(executor.handle(&order(N3), NOW).expect("lost receipt").repeat, "{action}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+    #[test]
+    fn only_fenced_actions_keep_an_expiry_out_of_the_journal() {
+        assert!(Action::InstanceDestroy.receipt_fenced() && Action::InstanceSyncBase.receipt_fenced() && Action::InstanceClearBase.receipt_fenced()
+            && Action::InstanceFetchBranch.receipt_fenced() && Action::ProcessEnsureState.receipt_fenced() && Action::ScheduleEnsureTimer.receipt_fenced());
+        assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
     }
 
     #[test]

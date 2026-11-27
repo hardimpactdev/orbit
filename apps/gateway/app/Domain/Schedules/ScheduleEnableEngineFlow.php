@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
+use App\Domain\Engine\EngineDefinition;
+use App\Domain\Engine\EngineEvidence;
 use App\Domain\Engine\EngineRun;
-use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
-use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Models\Operation;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
-use Illuminate\Database\Eloquent\Builder;
 use LogicException;
 
 /**
@@ -24,8 +23,10 @@ use LogicException;
  * production release (`production_control`) or one that requests a run inside an Instance container (`container`) stays on
  * Swamp (EngineUnsupported).
  */
-final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
+final readonly class ScheduleEnableEngineFlow implements EngineDefinition, EngineEvidence
 {
+    public const string Kind = 'schedule.enable';
+
     public const string Action = 'schedule.ensure_timer';
 
     private const string Step = 'timer';
@@ -41,15 +42,6 @@ final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:schedule-{$id}", budgetMs: 60_000, resendMs: 10_000)];
     }
 
-    /** The Schedule's own lock: its UUID, so the owner's other Schedules stay free. */
-    public function lockKey(Operation $operation): string
-    {
-        $id = ValidatedData::string($operation->input['id']);
-        EngineTargetFence::alone($operation, static fn (Builder $query) => $query->where('kind', 'like', 'schedule.%')->where('input->id', $id));
-
-        return EngineTargetFence::scheduleKey($id);
-    }
-
     public function input(Operation $operation, string $step, EngineRun $run): array
     {
         if ($step !== self::Step) {
@@ -59,6 +51,18 @@ final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
         $id = ValidatedData::string($operation->input['id']);
 
         return ['schedule_id' => $id, 'unit' => "orbit-schedule-{$id}.timer"];
+    }
+
+    /**
+     * The timer step's evidence is its read-back: the Schedule's timer enabled and active, with the next elapse systemd
+     * answered. Any other output settles nothing (`engine.receipt_invalid`).
+     */
+    public function evidence(Operation $operation, string $step, string $output): bool
+    {
+        $read = json_decode($output, true);
+
+        return $step === self::Step && is_array($read) && ($read['unit_file_state'] ?? null) === 'enabled' && ($read['active_state'] ?? null) === 'active'
+            && is_int($read['changes'] ?? null) && is_string($read['next_elapse'] ?? null);
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string
