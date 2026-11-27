@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Proof\ProofChildStarts;
+use App\Domain\Tasks\TaskEnd;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -96,7 +97,7 @@ final class OperationRunBudgets
     /** Held writes, Schedule fires and proof children start their clocks when released. */
     public static function deadline(Operation $operation): ?CarbonImmutable
     {
-        if (RoutePublicationHolds::waitsForNodes($operation) || DeferredMigrationScheduleRuns::waiting($operation) || ProofChildStarts::held($operation)) {
+        if (RoutePublicationHolds::waitsForNodes($operation) || DeferredMigrationScheduleRuns::waiting($operation) || ProofChildStarts::held($operation) || TaskEnd::waitsForDestroy($operation)) {
             return null;
         }
         $release = ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0 ? ProofChildStarts::releasedAt($operation) : null;

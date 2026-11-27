@@ -90,7 +90,7 @@ final readonly class RunTaskMergeRoundAction
     /** @return Result */
     private function round(Task $group, Operation $publish): array
     {
-        if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+        if (Operation::query()->exceptCancelWait()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             return self::result($group, $publish, null, 'busy', null);
         }

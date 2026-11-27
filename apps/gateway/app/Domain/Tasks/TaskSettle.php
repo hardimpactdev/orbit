@@ -109,7 +109,7 @@ final readonly class TaskSettle
     /** An open Operation of the group (a turn, a check or a publish), or one that holds the copy (a destroy that runs): the next tick retries. */
     private function busy(Task $group): bool
     {
-        $open = static fn (string $type, ?int $id): bool => Operation::query()->exceptFleetWait()->where('target_type', $type)->where('target_id', $id)
+        $open = static fn (string $type, ?int $id): bool => Operation::query()->exceptFleetWait()->exceptCancelWait()->where('target_type', $type)->where('target_id', $id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists();
 
         return $open(OperationKinds::TaskGroupTarget, $group->id) || $open('instance', $group->taskable_id);

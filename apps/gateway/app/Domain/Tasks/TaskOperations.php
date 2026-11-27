@@ -136,7 +136,7 @@ final readonly class TaskOperations
     /** @return Builder<Operation> */
     private function holders(Task $group): Builder
     {
-        return Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+        return Operation::query()->exceptCancelWait()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->whereIn('kind', array_keys(app(DirectOperation::class)->definitions()))
             ->whereNotIn('status', OperationStatus::terminalValues());
     }
