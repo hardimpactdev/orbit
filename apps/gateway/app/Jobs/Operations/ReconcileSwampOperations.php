@@ -18,6 +18,7 @@ use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofWarmPool;
+use App\Domain\Tasks\TaskEnd;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalOutputUnavailable;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -106,6 +107,12 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             app(ProofRunWatch::class)->sweep();
         } catch (Throwable $exception) {
             Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
+        // A task copy's cancel has no run either: this ends one whose destroy a worker without its follow-up recorded.
+        try {
+            app(TaskEnd::class)->sweep();
+        } catch (Throwable $exception) {
+            Log::warning('The task copy cancels could not be settled; the next pass tries again.', ['exception_type' => $exception::class]);
         }
         // After a warm copy is taken or dropped, and after a seed refresh, the pool replaces and refills its warm copies.
         try {

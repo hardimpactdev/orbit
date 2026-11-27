@@ -1328,5 +1328,274 @@ class SyncLane(CloneLane):
         self.record('sync-comparison', comparison)
 
 
+class CancelWatch:
+    """Judges one waiting task cancel from samples. Each sample is the CLI's exit, read first, then one atomic Gateway snapshot of the
+    cancel, its destroy and the copy's runtime row, which commit in one transaction. A sample never mixes reads from other times: the
+    Node's container is read only after a snapshot showed the cancel ended (CancelLane.held_receipt)."""
+
+    def __init__(self, cancel):
+        self.cancel = cancel
+        self.seen = {}
+        self.cli_order = None
+        # The CLI was seen running in a poll taken after a snapshot that already showed the cancel ended.
+        self.running_after_end = False
+
+    @property
+    def ended(self):
+        return 'cancel' in self.seen
+
+    @property
+    def done(self):
+        return self.ended and 'cli' in self.seen
+
+    def sample(self, exited, destroy, cancel, runtime, now):
+        events = []
+        # This sample's poll came after every earlier sample's snapshot, but before its own.
+        if not exited and self.ended:
+            self.running_after_end = True
+        if runtime == 0 and 'record_gone' not in self.seen:
+            self.seen['record_gone'] = now
+            events.append(('copy record gone', {'cancel': cancel, 'destroy': destroy}))
+        if destroy['status'] in TERMINAL and 'destroy' not in self.seen:
+            self.seen['destroy'] = now
+            events.append(('destroy ended', {'destroy': destroy, 'cancel': cancel}))
+        if cancel['status'] in TERMINAL and not self.ended:
+            require(destroy['status'] == 'succeeded' and runtime == 0,
+                    f'cancel {self.cancel} ended ({cancel["status"]}) while its destroy was {destroy["status"]} and the copy record was {"gone" if runtime == 0 else "present"}')
+            self.seen['cancel'] = now
+            events.append(('cancel ended', {'cancel': cancel, 'destroy': destroy}))
+        if exited and 'cli' not in self.seen:
+            # The exit was read before this snapshot: a snapshot that still shows the cancel unended means the CLI left early. Otherwise the
+            # exit may have come between the poll before the terminal snapshot and the end's commit: a strict order holds only when a poll
+            # after that snapshot still saw the CLI running. The CLI's own answer is the evidence either way.
+            require(self.ended, f'the CLI exited while cancel {self.cancel} was still {cancel["status"]}')
+            self.cli_order = 'after the cancel ended' if self.running_after_end else 'not distinguished from the cancel end'
+            self.seen['cli'] = now
+            events.append(('cli task:cancel exited', {'order': self.cli_order}))
+        return events
+
+
+class CancelLane(SyncLane):
+    """task:cancel of a group that owns a copy, through the CLI: the cancel runs while the copy's destroy runs and takes its end."""
+    KINDS = CloneLane.KINDS
+
+    def __init__(self, run, fleet_contract):
+        super().__init__(run, fleet_contract)
+        self.fleet_contract = fleet_contract
+        self.started_at = time.monotonic()
+
+    def at(self):
+        return round((time.monotonic() - self.started_at) * 1000)
+
+    def setup(self, repository, branch):
+        self.new_images = []
+        try:
+            super().setup(repository, branch)
+        finally:
+            # The seed's launch may unpack its image into the pool: that cache is this run's, and goes after the seed (uninstall).
+            if self.start_counts is not None:
+                images = self.image_volumes()
+                self.new_images = [name for name in self.counts()['volumes'] if name not in self.start_counts['volumes'] and f'image:{name}' in images]
+
+    def image_volumes(self):
+        return {f'{row["type"]}:{row["name"]}' for row in parsed('incus volumes', self.incus('storage', 'volume', 'list', POOL, '--project', POOL, '--format=json'))
+                if row['type'] == 'image'}
+
+    def uninstall(self):
+        super().uninstall()
+        for name in getattr(self, 'new_images', []):
+            self.incus('storage', 'volume', 'delete', POOL, 'image/' + name, '--project', POOL)
+
+    def cli(self, *args, form='json'):
+        result = self.run.fleet.cli(list(args), timeout=600, form=form)
+        return {'rc': result['rc'], 'json': result['json'], 'stdout': result['stdout'][-2000:], 'stderr': result['stderr'][-500:], 'secs': result['secs']}
+
+    def group_row(self, group):
+        return self.db(f'SELECT id, status, taskable_id FROM tasks WHERE id={group}')[0]
+
+    def operation_times(self, operation):
+        return self.db(f"""SELECT id, kind, status, error_code, lock_key, created_at, started_at, finished_at,
+            json_extract(result,'$.destroy_operation_id') AS destroy FROM operations WHERE id={operation}""")[0]
+
+    def snapshot(self, destroy, cancel, instance):
+        rows = self.db(f"""SELECT o.id, o.kind, o.status, o.error_code, o.lock_key, o.created_at, o.started_at, o.finished_at,
+            json_extract(o.result,'$.destroy_operation_id') AS destroy,
+            (SELECT count(*) FROM instance_runtimes WHERE instance_id={instance}) AS runtime FROM operations o WHERE o.id IN ({destroy},{cancel})""")
+        found = {row['id']: row for row in rows}
+        runtime = found[destroy].pop('runtime')
+        found[cancel].pop('runtime')
+        return found[destroy], found[cancel], runtime
+
+    def cancels(self, group):
+        return [row['id'] for row in self.db(f"SELECT id FROM operations WHERE kind='tasks.cancel' AND target_type='task_group' AND target_id={group} ORDER BY id")]
+
+    def start_copy(self, name):
+        self.set_capability(True)
+        code, group, error = self.api('POST', 'tasks', {'project_id': self.project, 'title': 'Cancel proof ' + name, 'brief': 'Task cancel proof.',
+                                                        'status': 'todo', 'orchestration': 'external',
+                                                        'deliverables': [{'id': 'cancel', 'type': 'file', 'description': 'Cancel proof.', 'path': 'proof-cancel.txt', 'change': 'created'}]})
+        require(code == 201, f'task group admission: HTTP {code} {error}')
+        group = int(group['id'])
+        self.groups[name] = group
+        operation = int(self.admitted('POST', f'tasks/{group}/start', {}, name + '-start')['id'])
+        self.terminal(operation, seconds=600)
+        found = self.db(f"""SELECT i.id, i.task_workspace_owner_id, r.clone_source_instance_id FROM tasks t
+            JOIN instances i ON i.id=t.taskable_id JOIN instance_runtimes r ON r.instance_id=i.id WHERE t.id={group}""")
+        require(found and found[0]['task_workspace_owner_id'] == group and found[0]['clone_source_instance_id'] == self.default,
+                f'task:start {operation} did not leave the group its own copy')
+        instance = int(found[0]['id'])
+        self.clones[name] = {'instance': instance, 'create': operation}
+        wait_for(lambda: self.api('GET', f'instances/{instance}')[1]['status'] == 'active', f'copy {instance} is not active', 120, 2)
+        before = self.resources(instance)
+        require(before['incus'] == ['Running'], f'copy {instance} is not running')
+        self.record(name + '-copy', {'group': group, 'instance': instance, 'start_operation': self.operation_row(operation),
+                                     'group_row': self.group_row(group), 'resources': before})
+
+    def refusal(self, label, result, code, operation):
+        document = result['json'] if isinstance(result['json'], dict) else {}
+        error = document.get('error') or {}
+        details = error.get('details') or {}
+        require(result['rc'] != 0 and error.get('code') == code and details.get('operation_id') == operation,
+                f'{label} --json: expected {code} naming Operation {operation}, got rc {result["rc"]} {error.get("code")} {details}')
+        return {'rc': result['rc'], 'code': error.get('code'), 'operation_id': details.get('operation_id')}
+
+    def human_refusal(self, label, result, message, operation):
+        # Human output prints the error's message and its details, not its code (the --json form names the code).
+        text = result['stdout'] + result['stderr']
+        require(result['rc'] != 0 and message in text and re.search(rf'\b{operation}\b', text),
+                f'{label}: the human output does not say "{message}" and name Operation {operation}')
+        return {'rc': result['rc'], 'text': text.strip()[-600:]}
+
+    def cancel(self, name, fault=None):
+        require(fault in ('held-receipt', 'removal'), 'invalid cancel case')
+        group, instance = self.groups[name], self.clones[name]['instance']
+        before = self.group_row(group)
+        require(before['taskable_id'] == instance and before['status'] not in ('cancelled', 'completed'), f'group {group} is not bound to its copy')
+        evidence = {'group': group, 'instance': instance, 'group_before': before, 'fault': fault, 'events': []}
+
+        def event(what, **data):
+            evidence['events'].append({'at_ms': self.at(), 'event': what, **data})
+
+        try:
+            if fault == 'removal':
+                self.removal_fault(group, instance, before, evidence, event)
+            else:
+                self.held_receipt(group, instance, evidence, event)
+        finally:
+            self.record(name + '-cancel', evidence)
+
+    def held_receipt(self, group, instance, evidence, event):
+        # The engine's receipt consumer stops, so the destroy cannot end while the checks run; the destroy itself still goes out.
+        self.systemctl('gateway', 'stop', ENGINE_UNIT)
+        process = None
+        try:
+            argv = [*self.fleet_contract.ORBIT, 'task:cancel', str(group), '--yes', '--json']
+            process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                       env=self.fleet_contract.cli_env(), cwd='/', start_new_session=True)
+            event('cli task:cancel started')
+            cancel = wait_for(lambda: self.cancels(group), f'no tasks.cancel of group {group} was recorded', 60)[0]
+            row = wait_for(lambda: (lambda r: r if r['destroy'] else None)(self.operation_times(cancel)), f'cancel {cancel} names no destroy', 30)
+            destroy = int(row['destroy'])
+            evidence.update(cancel=cancel, destroy=destroy)
+            waiting, destroy_row = self.operation_times(cancel), self.operation_times(destroy)
+            event('cancel recorded', cancel=waiting, destroy=destroy_row, copy_runtime=self.runtime(instance))
+            require(waiting['status'] == 'running' and waiting['lock_key'] is None and destroy_row['status'] not in TERMINAL
+                    and process.poll() is None and self.runtime(instance) is not None,
+                    f'cancel {cancel} is not running beside its unended destroy {destroy} with the copy recorded')
+            refused_json = self.cli('operation:cancel', str(cancel))
+            refused_human = self.cli('operation:cancel', str(cancel), form='human')
+            repeat_json = self.cli('task:cancel', str(group), '--yes')
+            repeat_human = self.cli('task:cancel', str(group), '--yes', form='human')
+            evidence['operation_cancel'] = {'json': self.refusal('operation:cancel', refused_json, 'tasks.cancel_waits_for_destroy', destroy),
+                                            'human': self.human_refusal('operation:cancel', refused_human, 'cannot be stopped', destroy)}
+            evidence['repeat_cancel'] = {'json': self.refusal('repeat task:cancel', repeat_json, 'operation.target_busy', destroy),
+                                         'human': self.human_refusal('repeat task:cancel', repeat_human, 'Task cancellation already owns this group', destroy)}
+            still = self.operation_times(cancel)
+            require(still['status'] == 'running' and self.cancels(group) == [cancel] and process.poll() is None,
+                    f'the refusals changed cancel {cancel} or admitted another cancel')
+            event('refusals checked', cancel=still, destroy=self.operation_times(destroy), copy_resources=self.resources(instance),
+                  copy_runtime=self.runtime(instance))
+        except BaseException:
+            if process is not None:
+                process.kill()
+                process.communicate()
+            self.systemctl('gateway', 'start', ENGINE_UNIT)
+            # The destroy goes on: cleanup meets the group only after its cancel ended.
+            if cancel := evidence.get('cancel'):
+                wait_for(lambda: self.operation_times(cancel)['status'] in TERMINAL, f'cancel {cancel} did not end', 300, 1)
+            raise
+        finally:
+            self.systemctl('gateway', 'start', ENGINE_UNIT)
+        event('receipt consumer started')
+        watch = CancelWatch(cancel)
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline and not watch.done:
+            exited = process.poll() is not None
+            destroy_row, cancel_row, runtime = self.snapshot(destroy, cancel, instance)
+            for what, data in watch.sample(exited, destroy_row, cancel_row, runtime, self.at()):
+                event(what, **data)
+            if watch.ended and 'container_absent' not in watch.seen:
+                # Only after the snapshot showed the cancel ended: the Node no longer has the copy's container.
+                require(not self.resources(instance)['incus'], f'cancel {cancel} ended while the Node still had the copy container')
+                watch.seen['container_absent'] = self.at()
+                event('copy container absent on the Node', after='cancel ended')
+            time.sleep(0.2)
+        if 'cli' not in watch.seen:
+            process.kill()
+        stdout, _stderr = process.communicate(timeout=30)
+        require(watch.done, f'cancel {cancel} or its CLI did not end')
+        answer = parsed('task:cancel --json', stdout)
+        ended = self.operation_times(cancel)
+        # The CLI's own answer shows it waited: it printed the cancel as ended, as the Gateway recorded it.
+        require(process.returncode == 0 and answer.get('id') == cancel and answer.get('status') == 'succeeded' and answer.get('finished_at')
+                and ended['status'] == 'succeeded' and ended['finished_at'] >= self.operation_times(destroy)['finished_at'],
+                f'cancel {cancel} did not end succeeded after its destroy and the copy removal')
+        after = self.group_row(group)
+        require(after['status'] == 'cancelled' and after['taskable_id'] is None, f'group {group} did not end cancelled without its copy')
+        evidence.update(group_after=after, cli_answer={key: answer.get(key) for key in ('id', 'kind', 'status', 'error_code', 'finished_at')},
+                        order_ms=watch.seen, cli_order=watch.cli_order, cancel_end=ended, destroy_end=self.operation_times(destroy))
+
+    def removal_fault(self, group, instance, before, evidence, event):
+        # The copy's destroy deletes the container, then fails on an owned volume a profile still holds (as clone_destroy's held-volume).
+        self.add_artifacts(instance)
+        profile, inner = self.prefix + '-hold', f'inner-{instance}'
+        self.incus('profile', 'create', profile, '--project', POOL)
+        try:
+            self.incus('profile', 'device', 'add', profile, 'hold', 'disk', 'pool=' + POOL, 'source=' + inner, 'path=/mnt/orbit-proof-hold', '--project', POOL)
+            event('volume held')
+            failed = self.cli('task:cancel', str(group), '--yes')
+            event('cli task:cancel exited', rc=failed['rc'])
+            cancel = self.cancels(group)[-1]
+            row = self.operation_times(cancel)
+            destroy = int(row['destroy'])
+            destroy_row = self.operation_times(destroy)
+            group_row, runtime, resources = self.group_row(group), self.runtime(instance), self.resources(instance)
+            answer = failed['json'] if isinstance(failed['json'], dict) else {}
+            evidence['failed'] = {'cancel': row, 'destroy': destroy_row, 'cli': {key: answer.get(key) for key in ('id', 'status', 'error_code')},
+                                  'cli_rc': failed['rc'], 'cli_stdout': failed['stdout'][-800:], 'group': group_row, 'runtime': runtime, 'resources': resources}
+            require(failed['rc'] != 0 and answer.get('id') == cancel and answer.get('status') == 'failed'
+                    and destroy_row['status'] == 'failed' and destroy_row['error_code'] == 'instance.removal_incomplete'
+                    and row['status'] == 'failed' and row['error_code'] == destroy_row['error_code'] and row['finished_at'] >= destroy_row['finished_at']
+                    and group_row == before and runtime and runtime['status'] == 'removing' and not resources['incus'],
+                    f'cancel {cancel} did not fail with its destroy {destroy} and leave the group running and bound')
+        finally:
+            self.incus('profile', 'delete', profile, '--project', POOL)
+        event('volume released')
+        second = self.cli('task:cancel', str(group), '--yes', '--discard')
+        event('second cli task:cancel exited', rc=second['rc'])
+        again = self.cancels(group)[-1]
+        row = self.operation_times(again)
+        destroy_row = self.operation_times(int(row['destroy']))
+        answer = second['json'] if isinstance(second['json'], dict) else {}
+        after = self.group_row(group)
+        evidence['second'] = {'cancel': row, 'destroy': destroy_row, 'cli': {key: answer.get(key) for key in ('id', 'status', 'error_code')},
+                              'cli_rc': second['rc'], 'group': after}
+        require(again != cancel and second['rc'] == 0 and answer.get('id') == again and answer.get('status') == 'succeeded'
+                and destroy_row['status'] == 'succeeded' and destroy_row['id'] != destroy and row['status'] == 'succeeded'
+                and row['finished_at'] >= destroy_row['finished_at'] and self.runtime(instance) is None and not any(self.resources(instance).values())
+                and after['status'] == 'cancelled' and after['taskable_id'] is None,
+                f'the second cancel {again} did not succeed with its destroy and remove the copy')
+
+
 if __name__ == '__main__':
     print(json.dumps(stage_executor(log=True)))

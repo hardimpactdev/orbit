@@ -33,7 +33,7 @@ final readonly class StartDependencyBatchMergeAction
             if (($existing = $this->idempotency->replay('tasks.dependency_merge')) !== null) {
                 return $existing;
             }
-            if (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
+            if (Operation::query()->exceptCancelWait()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
             }

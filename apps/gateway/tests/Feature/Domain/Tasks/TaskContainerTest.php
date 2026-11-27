@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\Tasks\StartTaskPullRequestStepAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\UpdateTaskAction;
@@ -49,6 +51,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -66,10 +69,12 @@ use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskEnd;
 use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskLifecycle;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskStart;
@@ -1310,7 +1315,8 @@ describe('a cancel of a group that owns a copy', function (): void {
 
         $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
         expect($cancel->kind)->toBe('tasks.cancel')
-            ->and($cancel->status)->toBe(OperationStatus::Succeeded)
+            ->and($cancel->status)->toBe(OperationStatus::Running)
+            ->and($cancel->lock_key)->toBeNull()
             ->and($cancel->result['destroy_operation_id'])->toBe($destroy->id)
             ->and($cancel->result['workspace'])->toMatchArray(['state' => 'dirty', 'head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3,
                 'modified' => 1, 'untracked' => 2, 'stashes' => 0])
@@ -1324,7 +1330,155 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(Instance::query()->find($copy->id))->toBeNull()
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
             ->and($group->taskable_id)->toBeNull()
-            ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled);
+            ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled)
+            // The cancel succeeds only now that the copy is gone.
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($cancel->finished_at)->not->toBeNull()->and($cancel->error_code)->toBeNull();
+    });
+
+    it('fails with the destroy\'s code when the copy\'s destroy fails, and leaves the group running and bound for the next cancel', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => Arr::except($destroy->input, 'container_destroy')])->save();
+
+        app(DevelopmentInstanceDestroyProjection::class)->apply($destroy->refresh(), ['status' => 'failed', 'run_id' => 'run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['summary' => ['failed_steps' => ['Delete the container']], 'steps' => ['Delete the container' => ['exit_code' => 1]]]]);
+
+        expect($destroy->refresh()->error_code)->toBe('instance.removal_incomplete')
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($cancel->error_code)->toBe('instance.removal_incomplete')
+            ->and($cancel->finished_at)->not->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and($group->taskable_id)->toBe($copy->id);
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
+        expect(app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true)->status)->toBe(OperationStatus::Running);
+    });
+
+    it('ends with the copy\'s destroy when that destroy\'s receipt is lost: the destroy\'s budget fails both, and the cancel has no budget of its own', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'attempts' => 1, 'started_at' => now()])->save();
+
+        $this->travel(OperationRunBudgets::seconds($destroy->refresh()) + 60)->seconds();
+        // The cancel waits on the destroy alone: its own expiry changes nothing while the destroy runs.
+        expect(OperationRunBudgets::deadline($cancel->refresh()))->toBeNull()
+            ->and(app(ExpireOperationAction::class)->execute($cancel)->status)->toBe(OperationStatus::Running);
+
+        app(ExpireOperationAction::class)->execute($destroy->refresh());
+
+        expect($destroy->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($cancel->error_code)->toBe('operation.timed_out')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('stays running while a complete of the group stops the group\'s open Operations', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        app(TaskOperations::class)->cancelOpen($group->refresh());
+
+        expect($cancel->refresh()->status)->toBe(OperationStatus::Running)->and($cancel->cancel_requested_at)->toBeNull();
+    });
+
+    it('takes the destroy\'s corrected outcome when a late receipt proves the expired destroy succeeded', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'attempts' => 1, 'started_at' => now(),
+            'input' => Arr::except($destroy->input, 'container_destroy')])->save();
+        $this->travel(OperationRunBudgets::seconds($destroy->refresh()) + 60)->seconds();
+        app(ExpireOperationAction::class)->execute($destroy->refresh());
+        expect($cancel->refresh()->error_code)->toBe('operation.timed_out');
+
+        app(ExpireOperationAction::class)->reopen($destroy->refresh(), 'run-1');
+        app(DevelopmentInstanceDestroyProjection::class)->apply($destroy->refresh(), ['status' => 'succeeded', 'run_id' => 'run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+        expect($destroy->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and(Instance::query()->find($copy->id))->toBeNull()
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Succeeded)->and($cancel->error_code)->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    });
+
+    it('ends a waiting cancel and its todo group when a worker without the follow-up recorded the destroy, and owes the failed copy no retry', function (): void {
+        $group = copyGroup(copySource()->project);
+        $first = startCopy($group);
+        failCopyCreate($first, 'instance.create_failed', 'clone');
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        // What an outgoing worker leaves: the destroy ended without its follow-up, and the group let go of the copy and queued a retry.
+        Operation::query()->whereKey($cancel->result['destroy_operation_id'])->update(['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        $group->refresh()->taskable()->dissociate();
+        $group->save();
+
+        $creates = Operation::query()->where('kind', 'instance.create')->count();
+
+        retryTaskCopy($group, $first);
+        app(TaskEnd::class)->sweep();
+
+        expect($cancel->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates);
+    });
+
+    it('answers a cancel with a new key while the copy\'s destroy runs with that destroy\'s id, and admits no second destroy', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        try {
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+            $this->fail('A second cancel was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('operation.target_busy')->and($error->details)->toBe(['operation_id' => $cancel->result['destroy_operation_id']]);
+        }
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+    });
+
+    it('keeps a first cancel\'s own refusal before the busy copy while a destroy that no cancel admitted runs', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+        $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/app/pull/7']);
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('tasks.not_cancellable 409');
+    });
+
+    it('holds no group admission while it waits: a pull request step reaches its own checks', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $ready = fn (): string => copyRefusal(fn () => app(StartTaskPullRequestStepAction::class)->ready($group->refresh(), str_repeat('a', 40), 'manual', 'test', 'request'));
+
+        expect($ready())->not->toBe('operation.target_busy 409');
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+        expect($ready())->toBe('operation.target_busy 409');
+    });
+
+    it('refuses a stop request on the waiting cancel and names the destroy, which runs on untouched', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->findOrFail($cancel->result['destroy_operation_id']);
+
+        try {
+            app(CancelOperationAction::class)->execute($cancel);
+            $this->fail('The stop request was acknowledged.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.cancel_waits_for_destroy')->and($error->status)->toBe(409)
+                ->and($error->details)->toBe(['operation_id' => $destroy->id]);
+        }
+        expect($cancel->refresh()->status)->toBe(OperationStatus::Running)->and($cancel->cancel_requested_at)->toBeNull()
+            ->and($destroy->refresh()->status->terminal())->toBeFalse()->and($destroy->cancel_requested_at)->toBeNull();
     });
 
     it('refuses a copy it cannot read unless the caller discards it, then records it as unknown and admits its destroy', function (): void {
