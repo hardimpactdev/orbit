@@ -114,7 +114,7 @@ fn link(system: &impl System, dest: &Path, target: &str, uid: u32, gid: u32) -> 
             stdfs::remove_dir(dest).map_err(|error| error.to_string())?;
         }
         let parent = dest.parent().ok_or_else(|| "no parent".to_owned())?;
-        let temporary = parent.join(format!(".orbit-host-link-{}", std::process::id()));
+        let temporary = parent.join(format!(".link.partial-{}", std::process::id()));
         let _ = stdfs::remove_file(&temporary);
         std::os::unix::fs::symlink(target, &temporary).map_err(|error| error.to_string())?;
         stdfs::rename(&temporary, dest).map_err(|error| error.to_string())?;

@@ -59,7 +59,7 @@ pub(crate) fn ensure(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<b
 pub(crate) fn replace(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<()> {
     let parent = dest.parent().unwrap_or_else(|| Path::new("/"));
     let name = dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    let temporary: PathBuf = parent.join(format!(".orbit-host-{}-{name}", std::process::id()));
+    let temporary: PathBuf = parent.join(format!(".{name}.partial-{}", std::process::id()));
     // A temporary file a stopped run left behind under the same name goes first.
     let _ = fs::remove_file(&temporary);
     let result = (|| {
