@@ -6,8 +6,8 @@ baseline: [operations]
 cases:
   - id: signed-route-domain-change
     batch: fresh-fleet
-    covers: ["path:engine", "path:cutover", "path:withdraw", "path:sibling", "path:lost-receipt", "path:failed-after-cutover", "path:retry", "path:swamp"]
-    summary: Move a clone's own private Route to another name inside the Node's TLD on the signed executor (side-by-side site, probe, cutover, lasting Caddyfile, staging leaf withdrawn), again after a dropped receipt of the old site's withdrawal, again after a withdrawal refused once the cutover committed and its forward retry, and through Swamp when the Route Node lacks the route family; a sibling Route on the same Node answers its known page throughout.
+    covers: ["path:engine", "path:cutover", "path:withdraw", "path:sibling", "path:lost-receipt", "path:failed-before-cutover", "path:failed-after-cutover", "path:retry", "path:dns", "path:grace", "path:swamp"]
+    summary: Move a clone's own private Route, which serves a known page, to other names on the signed executor (side-by-side site, probe, cutover, lasting Caddyfile, staging leaf withdrawn); again after a dropped receipt of the old site's withdrawal; again after a probe failure before the cutover and after a withdrawal refused once the cutover committed, each with its retry; to a name outside the TLD with the guarded DNS move and the DNS grace; and through Swamp when the VPN Node lacks the guarded DNS input and when the Route Node lacks the route family. Each name answers the known page while it is the Route's, and a sibling Route on the same Node answers its own throughout.
     exclusive: true
     fails_on_base: true
     timeout: 1800
@@ -20,12 +20,17 @@ cases:
       - route_create_tld: {name: own, clone: target}
       - route_update: {name: own, to: signed, via: engine, sibling: neighbour}
       - route_update: {name: own, to: dropped, via: engine, sibling: neighbour, fault: receipt}
+      - route_update: {name: own, to: unprobed, via: engine, sibling: neighbour, fault: probe}
       - route_update: {name: own, to: retried, via: engine, sibling: neighbour, fault: partial}
+      - route_update: {name: own, to: moved, via: engine, sibling: neighbour, dns: true}
+      - route_update: {name: own, to: unguarded, via: swamp, sibling: neighbour, fault: feature, dns: true}
       - route_update: {name: own, to: fallback, via: swamp, sibling: neighbour}
     expect:
       - update_compare: {engine: signed, swamp: fallback}
+      - update_compare: {engine: moved, swamp: unguarded}
       - clone_cleanup: {}
 uncovered:
-  "path:engine": "One Route Node, a name inside its TLD, and a clone that serves `src` (no composer.json), so no URL write. A DNS move (a name outside the TLD) still takes Swamp at admission: its guarded input needs rendered-from digests that only route.destroy's admission captures. Public Routes, publication and web root changes, LAN rules, the Ingress edge and URL writes take Swamp at admission; Gateway tests cover those refusals."
-  "path:failed-after-cutover": "The failure is a withdrawal refused (owned_revision_conflict) after the lasting Caddyfile was installed. A failure before the cutover (a failed probe or publication, with the replacement never authoritative) is covered by Gateway tests only."
-  "path:swamp": "Fallback runs with the Route Node's whole route family absent. The refusal of a Swamp start of an engine-started chain (route.update_engine_chain) and the refusal of an engine start beside a Swamp Route writer (route.publication_held) are covered by Gateway tests only."
+  "path:engine": "One Route Node and one VPN Node (the nested Gateway), and a clone that serves `src` (no composer.json), so no URL write. Public Routes, publication and web root changes, LAN rules, the Ingress edge and URL writes take Swamp at admission; Gateway tests cover those refusals."
+  "path:failed-before-cutover": "The failure is a probe that cannot reach the Route Node (its TLS port drops the Gateway's address). A failed publication or DNS move before the cutover is covered by Gateway tests only."
+  "path:failed-after-cutover": "The failure is a withdrawal refused (owned_revision_conflict) after the lasting Caddyfile was installed. A failed lasting Caddyfile or sibling check is covered by Gateway tests only."
+  "path:swamp": "Fallback runs with the Route Node's whole route family absent, and with the VPN Node reporting dns.publish_records without dns.guarded_records (its report rewritten as an older executor's, until its next report). The refusal of a Swamp start of an engine-started chain (route.update_engine_chain) and of an engine start beside a Swamp Route writer (route.publication_held) are covered by Gateway tests only."

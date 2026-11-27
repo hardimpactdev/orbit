@@ -59,7 +59,7 @@ STEPS = {
     'route_compare': (('expect',), {'engine', 'swamp'}, {'kind'}),
     'update_fixture': (('setup',), {'repository', 'branch'}, set()),
     'route_create_tld': (('act',), {'name', 'clone'}, set()),
-    'route_update': (('act',), {'name', 'to', 'via', 'sibling'}, {'fault'}),
+    'route_update': (('act',), {'name', 'to', 'via', 'sibling'}, {'fault', 'dns'}),
     'update_compare': (('expect',), {'engine', 'swamp'}, set()),
     'sync_fixture': (('setup',), {'repository', 'branch'}, set()),
     'sync_copy': (('act',), {'name', 'sibling'}, set()),
