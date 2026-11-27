@@ -6,8 +6,8 @@ baseline: [operations]
 cases:
   - id: signed-and-swamp-process-control
     batch: fresh-fleet
-    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp"]
-    summary: Stop and start a host systemd Process and a host Docker Process through the signed executor, replay a dropped stop receipt behind the Process fence, retry a start that failed on a missing unit, and run the same shape on Swamp with the family absent; a sibling Process stays as it was.
+    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp", "path:refused"]
+    summary: Stop and start a host systemd, a host Docker and an on-demand host-Instance Process, and enable two retained Node timers, through the signed executor; replay a dropped stop receipt (also with the parent Instance's destroy fenced) and a dropped enable receipt; retry a start that failed on a missing unit; run the same shapes on Swamp with the family absent; keep a Horizon-shaped stop and a native cron enable on Swamp; a sibling Process stays as it was.
     exclusive: true
     fails_on_base: true
     timeout: 1800
@@ -41,8 +41,8 @@ cases:
       - process_compare: {}
       - process_cleanup: {}
 uncovered:
-  "path:engine": "Host systemd and host Docker Processes on app-dev. An on-demand host Process (boot policy disabled while running) is covered by Gateway and executor tests only: the public process:create makes no on-demand host Process."
-  "schedule:enable": "Not proven on the fleet. The public schedule:enable admits only an Instance Schedule (schedule.target_invalid for a Node Schedule), and the engine admits only a retained host Node-timer row with no container, which the nested fleet has no public way to make: schedule:create makes a native cron Schedule. Gateway and executor tests cover the Node-timer branch and the native cron refusal."
-  "path:refused": "A host Horizon Process (drain-waiting stop), an Instance-container (Incus) Process, a Gateway release container and a production_control timer are refused at admission by Gateway tests only: the nested fleet has no Node Horizon Process row and no Instance container in this case."
-  "path:receipt-lost": "The fault drops the stop receipt; lost receipts of start and enable are covered by Gateway and executor tests."
+  "path:engine": "Host systemd, host Docker and an on-demand host-Instance Process (boot policy disabled while running) on app-dev, and a retained Node timer of a host Instance. Fixture only: Orbit makes no new host (non-container) Instance, so its row comes from the guest helper, with its own Project from the API and its own Git checkout; the public schedule:create makes a native cron Schedule, so the lane sets trigger=node on its own new row and writes the disabled timer pair on the Node."
+  "path:refused": "A Horizon-shaped Node Process (`/usr/bin/php artisan horizon`, the shape GatewayHorizon::runs recognises, not a real Horizon) and a native cron Schedule stay on Swamp here. An Instance-container (Incus) Process has no fleet case: its Processes come only from Project definitions and a deploy (direct process:create is operation.kind_unavailable), and the nested default has no running container. A Gateway release container and a production_control timer need a production release layout the nested fleet does not have. Gateway tests cover those refusals."
+  "path:parent-fence": "instance:destroy of the host Instance is refused with operation.target_busy while its Process's engine stop is outstanding, and is no longer fenced after the terminal receipt. The destroy itself does not run: the removal contract rejects the fixture host row (HTTP 500 gateway.unhandled from its member trigger), so the proof records that answer, not a removal."
+  "path:receipt-lost": "The fault drops a stop receipt and an enable receipt; a lost start receipt is covered by Gateway and executor tests."
   "path:step-failed": "The failure is a missing unit file (process.unit_missing); apply and read-back failures are covered by executor tests."
