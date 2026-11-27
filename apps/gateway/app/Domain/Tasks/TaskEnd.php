@@ -18,9 +18,9 @@ use Closure;
 
 /**
  * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, records
- * the cancel with that read and admits the normal `instance.destroy` of the copy with force. It does not wait for
- * the work: the group is cancelled when the destroy succeeds (TaskLifecycle::destroyed), and a failed destroy leaves the group
- * running and bound, so the next `task:cancel` admits a new destroy.
+ * the cancel with that read and admits the normal `instance.destroy` of the copy with force. The cancel runs until the destroy ends
+ * and takes its outcome (destroyEnded): the group is cancelled when the destroy succeeds (TaskLifecycle::destroyed), and a failed
+ * destroy fails the cancel with its code and leaves the group running and bound, so the next `task:cancel` admits a new destroy.
  */
 final readonly class TaskEnd
 {
@@ -101,7 +101,8 @@ final readonly class TaskEnd
     /**
      * Records the cancel and admits the destroy of the copy, in the destroy's one transaction after every read of its admission. The
      * record comes first and takes the group's lock key, so an Operation that holds or takes the group lock refuses the record and the
-     * transaction admits no destroy. Refused while an Operation holds the copy: its create still runs, or an earlier destroy has not ended.
+     * transaction admits no destroy. The cancel then runs without the lock until the destroy ends. Refused while an Operation holds
+     * the copy: its create still runs, or an earlier destroy has not ended.
      *
      * @param  array<string, mixed>  $workspace
      */
@@ -112,8 +113,30 @@ final readonly class TaskEnd
         $record = fn (Closure $destroy): Operation => $this->start->record('tasks.cancel', 'task_group', $group->id, $copy->node_id,
             ['group_id' => $group->id, 'instance_id' => $copy->id, 'task_vm_id' => null],
             ['group_id' => $group->id, 'instance_id' => $copy->id, 'workspace' => $workspace], $caller, $request,
-            OperationStore::lockKey('task_group', $group->id), fn (): array => ['destroy_operation_id' => $this->idempotency->suspended(static fn (): Operation => $destroy())->id]);
+            OperationStore::lockKey('task_group', $group->id), fn (): array => ['destroy_operation_id' => $this->idempotency->suspended(static fn (): Operation => $destroy())->id], open: true);
 
         return app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, $caller, $request, within: $record);
+    }
+
+    /**
+     * Every end of an `instance.destroy` reaches here (OperationStore::change): a run's report, a refused start, an expired budget. The
+     * cancel that admitted it ends with it: succeeded, or failed with the destroy's error code. The destroy's budget bounds the cancel.
+     */
+    public function destroyEnded(Operation $destroy): void
+    {
+        $cancel = Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('result->destroy_operation_id', $destroy->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->lockForUpdate()->first();
+        if ($cancel === null) {
+            return;
+        }
+        $succeeded = $destroy->status === OperationStatus::Succeeded;
+        app(OperationStore::class)->change($cancel, ['status' => $succeeded ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(),
+            'error_code' => $succeeded ? null : ($destroy->error_code ?? 'operation.'.$destroy->status->value)], onlyWhileOpen: true);
+    }
+
+    /** A cancel that waits for its copy's destroy has no deadline of its own: the destroy's budget ends both (OperationRunBudgets). */
+    public static function waitsForDestroy(Operation $operation): bool
+    {
+        return $operation->kind === 'tasks.cancel' && ! $operation->status->terminal() && is_int($operation->result['destroy_operation_id'] ?? null);
     }
 }

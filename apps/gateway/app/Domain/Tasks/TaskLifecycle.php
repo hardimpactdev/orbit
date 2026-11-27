@@ -192,13 +192,13 @@ final readonly class TaskLifecycle
     }
 
     /**
-     * Whether a `task:cancel` of the group admitted a destroy of this copy (TaskEnd::cancel). That cancel succeeds at its admission
-     * and leaves the group to the destroy, so any one that names the copy counts.
+     * Whether a `task:cancel` of the group admitted a destroy of this copy (TaskEnd::cancel). That cancel still runs while its destroy
+     * succeeds and leaves the group to the destroy, so any one that names the copy counts.
      */
     private static function cancelling(Task $group, int $instanceId): bool
     {
         return Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('target_id', $group->id)
-            ->where('input->instance_id', $instanceId)->where('status', OperationStatus::Succeeded)->exists();
+            ->where('input->instance_id', $instanceId)->exists();
     }
 
     /** @return array{0: Instance, 1: Task}|null The copy and the group that owns it and is bound to it. */

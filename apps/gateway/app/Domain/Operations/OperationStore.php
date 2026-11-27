@@ -12,6 +12,7 @@ use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskEnd;
 use App\Domain\Tasks\TaskLifecycle;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
@@ -202,6 +203,9 @@ final readonly class OperationStore
             // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskLifecycle::class)->createEnded($operation);
+            }
+            if ($operation->kind === 'instance.destroy' && ! $current->status->terminal() && $operation->status->terminal()) {
+                app(TaskEnd::class)->destroyEnded($operation);
             }
             if (is_int($operation->state['conn_launch_owner'] ?? null)) {
                 $settlement = app(NativeRunCancellation::class);

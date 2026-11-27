@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
@@ -49,6 +50,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -70,6 +72,7 @@ use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskLifecycle;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskStart;
@@ -1310,7 +1313,8 @@ describe('a cancel of a group that owns a copy', function (): void {
 
         $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
         expect($cancel->kind)->toBe('tasks.cancel')
-            ->and($cancel->status)->toBe(OperationStatus::Succeeded)
+            ->and($cancel->status)->toBe(OperationStatus::Running)
+            ->and($cancel->lock_key)->toBeNull()
             ->and($cancel->result['destroy_operation_id'])->toBe($destroy->id)
             ->and($cancel->result['workspace'])->toMatchArray(['state' => 'dirty', 'head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3,
                 'modified' => 1, 'untracked' => 2, 'stashes' => 0])
@@ -1324,7 +1328,61 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(Instance::query()->find($copy->id))->toBeNull()
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
             ->and($group->taskable_id)->toBeNull()
-            ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled);
+            ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled)
+            // The cancel succeeds only now that the copy is gone.
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($cancel->finished_at)->not->toBeNull()->and($cancel->error_code)->toBeNull();
+    });
+
+    it('fails with the destroy\'s code when the copy\'s destroy fails, and leaves the group running and bound for the next cancel', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => Arr::except($destroy->input, 'container_destroy')])->save();
+
+        app(DevelopmentInstanceDestroyProjection::class)->apply($destroy->refresh(), ['status' => 'failed', 'run_id' => 'run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['summary' => ['failed_steps' => ['Delete the container']], 'steps' => ['Delete the container' => ['exit_code' => 1]]]]);
+
+        expect($destroy->refresh()->error_code)->toBe('instance.removal_incomplete')
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($cancel->error_code)->toBe('instance.removal_incomplete')
+            ->and($cancel->finished_at)->not->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and($group->taskable_id)->toBe($copy->id);
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
+        expect(app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true)->status)->toBe(OperationStatus::Running);
+    });
+
+    it('ends with the copy\'s destroy when that destroy\'s receipt is lost: the destroy\'s budget fails both, and the cancel has no budget of its own', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'attempts' => 1, 'started_at' => now()])->save();
+
+        $this->travel(OperationRunBudgets::seconds($destroy->refresh()) + 60)->seconds();
+        // The cancel waits on the destroy alone: its own expiry changes nothing while the destroy runs.
+        expect(OperationRunBudgets::deadline($cancel->refresh()))->toBeNull()
+            ->and(app(ExpireOperationAction::class)->execute($cancel)->status)->toBe(OperationStatus::Running);
+
+        app(ExpireOperationAction::class)->execute($destroy->refresh());
+
+        expect($destroy->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($cancel->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($cancel->error_code)->toBe('operation.timed_out')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('stays running while a complete of the group stops the group\'s open Operations', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        app(TaskOperations::class)->cancelOpen($group->refresh());
+
+        expect($cancel->refresh()->status)->toBe(OperationStatus::Running)->and($cancel->cancel_requested_at)->toBeNull();
     });
 
     it('refuses a copy it cannot read unless the caller discards it, then records it as unknown and admits its destroy', function (): void {
