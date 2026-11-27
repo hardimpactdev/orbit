@@ -182,7 +182,7 @@ After commit, the Gateway pushes any required execution copies to Swamp's vault 
 
 ### One Route write per Node
 
-Route-writing Operations (`instance.create`, `instance.complete`, `instance.destroy`, `instance.unregister`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy`, `route.target_set`) serialize per serving Node via `route_publication_holds`. Competing writes enter `waiting` (never `409`) with `hold_wait_reason`:
+Route-writing Operations (`instance.create`, `instance.complete`, `instance.destroy`, `instance.unregister`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy`, `route.target_set`) serialize per serving Node via `route_publication_holds`. `route.create` and `route.update` also hold each VPN Node whose private DNS catalog they publish. Competing writes enter `waiting` (never `409`) with `hold_wait_reason`:
 
 | Reason | Meaning |
 | --- | --- |
