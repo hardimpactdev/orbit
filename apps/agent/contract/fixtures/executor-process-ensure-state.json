@@ -1,0 +1,20 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "zegz1qijBON6Pt6+M4XIgdOpkhFe7Ormnh4b1bl4fLc=",
+    "fields": {
+        "action": "process.ensure_state",
+        "node": "7",
+        "target": "7:process-417",
+        "operation": "42:converge",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "process_id": 417,
+            "runtime": "systemd",
+            "name": "orbit-process-417-web.service",
+            "state": "stopped",
+            "boot": "disabled"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJwcm9jZXNzLmVuc3VyZV9zdGF0ZSIsIm5vZGUiOiI3IiwidGFyZ2V0IjoiNzpwcm9jZXNzLTQxNyIsIm9wZXJhdGlvbiI6IjQyOmNvbnZlcmdlIiwibm9uY2UiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMSIsImV4cGlyZXNfbXMiOjE4MDAwMDAwMDgwMDAsImlucHV0Ijp7InByb2Nlc3NfaWQiOjQxNywicnVudGltZSI6InN5c3RlbWQiLCJuYW1lIjoib3JiaXQtcHJvY2Vzcy00MTctd2ViLnNlcnZpY2UiLCJzdGF0ZSI6InN0b3BwZWQiLCJib290IjoiZGlzYWJsZWQifX0=.Yi/vF1IDL47b9pIuD9CDnKEfK/C4gSVx30eQf9SsrYrWxC0j9rDYfXCxCxtz79CFIphODfy5k3FYvXJcdB/YAw=="
+}

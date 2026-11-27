@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
@@ -13,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 
 /** Admission records intent; the209 native root owns every effect and returns one terminal result. */
@@ -40,6 +42,8 @@ final readonly class AdmitNodeRemovalOperationAction
             $this->consent($node, $offline, $force);
             $this->policy->protected($node, $caller);
             $this->policy->resources($node, $offline);
+            // Its records step deletes every Process the Node owns (NodeRemovalRecords::remove).
+            EngineTargetFence::processesFree(Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('id')->all());
             $snapshot = $this->plan->build($node, $offline);
             $execution = app(NodeRemovalInput::class)->capture($snapshot);
 

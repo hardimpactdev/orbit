@@ -25,7 +25,11 @@ final readonly class ProcessOperationCompletion
 
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
-        $process = Process::query()->whereKey($operation->input['process_id'])->firstOrFail();
+        $process = Process::query()->whereKey($operation->input['process_id'])->first();
+        if ($process === null) {
+            // A removal took the row: the Operation still ends with its own outcome and frees its fence; there is nothing to record.
+            return;
+        }
         $this->completeIntent($process, $operation->kind, $operation->input, $outcome, $operation);
     }
 

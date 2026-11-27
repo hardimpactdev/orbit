@@ -372,6 +372,8 @@ The `vpn` Node holds the WireGuard hub configuration (`ORBIT_HOME/generated/wire
 
 `orbit node:remove <node> [--offline] [--force]` admits one `node.remove` Operation on the Swamp Node. Remove all Instances, Database servers, Schedules, Routes, and user firewall rules first. The caller, `gateway`, `vpn`, and `swamp` Nodes are protected from removal.
 
+While a [Gateway engine run](/reference/gateway-engine#processstart-and-processstop) holds a Process the Node owns, `node:remove` refuses `operation.target_busy`, and so does removing the `analytics` role while one holds its Plausible Process.
+
 Pass `--force` to shed mutable roles; pass `--offline --force` to remove an unreachable Node's Gateway records and hub peer while leaving the machine untouched (listing retained artifacts in `retained_on_node`). Online removal sheds roles via `node-role-remove`, restores public SSH, removes `orbit-agent` and management SSH keys, withdraws the WireGuard hub peer, and deletes the Gateway record only after native completion confirms `removed: true`.
 
 ## Why it works this way
