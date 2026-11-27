@@ -101,7 +101,7 @@ Eligibility comes from the Process and its placement, for both verbs, so one Pro
 
 `process.restart` stays on Swamp.
 
-Both kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`.
+Both kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
 
 No budget fails a sent step and no expiry ends the Operation. A lost receipt is resent under the same step ID with a fresh nonce, and the Node's journal answers the stored result. The Process stays fenced until a terminal receipt. The step settles only on an `applied` receipt from its own Node, action and target.
 

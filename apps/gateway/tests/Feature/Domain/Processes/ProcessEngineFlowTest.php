@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Processes\DestroyProcessAction;
+use App\Actions\Processes\StartProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Engine\Engine;
@@ -466,3 +468,25 @@ it('refuses a create of a fenced Schedule before its reservation changes the row
     expect($schedule->refresh()->getAttributes())->toBe($before)
         ->and(Operation::query()->where('kind', 'schedule.create')->exists())->toBeFalse();
 });
+
+it('refuses synchronous Process writers while an engine stop is outstanding, and the stop then ends as admitted', function (string $writer): void {
+    $process = ($this->process)();
+    $operation = ($this->operation)($process, 'process.stop');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    expect($this->bus->orders)->toHaveCount(1);
+
+    $direct = match ($writer) {
+        'removal' => fn () => app(DestroyProcessAction::class)->execute($process),
+        'start' => fn () => app(StartProcessAction::class)->execute($process),
+    };
+    expect($direct)->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect(Process::query()->whereKey($process->id)->exists())->toBeTrue()
+        ->and($process->refresh()->desired_state->value)->toBe('stopped');
+
+    ($this->receipt)($operation, 'converge', ['status' => 'applied', 'changes' => 1]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->result)->toBe(['ready' => true, 'state' => 'inactive'])
+        ->and($process->refresh()->desired_state->value)->toBe('stopped');
+})->with(['removal', 'start']);
