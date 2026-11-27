@@ -268,7 +268,9 @@ The synthetic dev-worker runs `2ebfa2a6-bb7e-4ad2-8a5b-867095984e93` and `249120
 
 ## Kinds on the Gateway engine
 
-`StartSwampRun` admits every Operation the same way. It then starts a kind listed in `ORBIT_ENGINE_KINDS` on the [Gateway engine](/reference/gateway-engine) instead of Swamp, when every Node the kind touches supports its primitives. Such an Operation has no Swamp run. The reconciler nudges it each minute while a start or an order may have been lost. A [signed clone removal](/reference/gateway-engine#instancedestroy), a [task copy's sync](/reference/gateway-engine#taskssync), a [Process start or stop or a Node-timer enable](/reference/gateway-engine#processstart-and-processstop) and an engine-run [Route update](/reference/gateway-engine#routeupdate) keep nudging past their budget until their Node returns each step's result. `StartSwampRun` takes their target's Operation lock in the transaction that binds their steps. That transaction does only cheap checks: the Route update's Caddyfile recheck is its first engine step, outside it.
+`StartSwampRun` admits every Operation the same way. It then starts a kind listed in `ORBIT_ENGINE_KINDS` on the [Gateway engine](/reference/gateway-engine) instead of Swamp, when every Node the kind touches supports its primitives. Such an Operation has no Swamp run. The reconciler nudges it each minute while a start or an order may have been lost. A [signed clone removal](/reference/gateway-engine#instancedestroy), a [task copy's sync](/reference/gateway-engine#taskssync), a [Process start or stop or a Node-timer enable](/reference/gateway-engine#processstart-and-processstop) and an engine-run [Route update](/reference/gateway-engine#routeupdate) keep nudging past their budget until their Node returns each step's result. `StartSwampRun` takes their target's Operation lock in the transaction that binds their steps.
+
+That transaction does only cheap checks: the Route update's Caddyfile recheck is its first engine step, outside it.
 
 A retry of an engine-run Route update never starts on Swamp: `StartSwampRun` fails it with `route.update_engine_chain`.
 
