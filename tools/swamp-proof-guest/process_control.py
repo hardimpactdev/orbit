@@ -19,6 +19,8 @@ class ProcessLane(CloneLane):
         self.prefix = 'proof-proc-' + self.prefix.rsplit('-', 1)[1]
         self.processes = {}
         self.schedules = {}
+        self.instances = {}
+        self.project = None
         self.timings = {}
 
     def setup(self):
@@ -65,12 +67,35 @@ class ProcessLane(CloneLane):
 
     # Fixtures ----------------------------------------------------------------------------------------------------------------
 
-    def process(self, name, runtime='systemd', start=False):
+    def host_instance(self, name):
+        """A host (non-container) app-dev Instance with its own Git checkout: the owner a retained Node timer has. Its Project comes
+        from the public API; its row is a fixture (see the guest helper), as Orbit makes no new host Instance."""
+        code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
+                                                             'repository_url': 'https://github.com/laravel/prompts.git', 'default_branch': 'main', 'root': '.'})
+        require(code == 201, f'disposable project admission: HTTP {code} {error}')
+        self.project = int(project['id'])
+        label = f'{self.prefix}-{name}'
+        path = '/home/orbit/' + label
+        self.guest(self.node, 'sh', '-c', 'test ! -e "$1"', 'sh', path)
+        self.guest(self.node, 'runuser', '-u', 'orbit', '--', 'sh', '-eu', '-c',
+                   'mkdir "$1"; cd "$1"; git init -q -b main; git -c user.email=proof@example.invalid -c user.name=proof commit -q --allow-empty -m proof', 'sh', path)
+        instance = int(self.helper('host-instance', self.project, self.node_id, label, path)['instance'])
+        self.instances[name] = instance
+        self.host_paths = getattr(self, 'host_paths', []) + [(instance, label, path)]
+        self.record(f'fixture-{name}', {'project': self.project, 'instance': instance, 'checkout': path})
+
+    def process(self, name, runtime='systemd', start=False, instance=None):
         """A host Process on app-dev, created through Swamp's process:create. Its Node unit or container is read back before use."""
         require(name not in self.processes, 'one fixture per name')
-        args = ['process:create', f'{self.prefix}-{name}', '--node=' + str(self.node_id), '--runtime=' + runtime,
-                '--idempotency-key=' + self.prefix + '-create-' + name]
-        args += ['--image=' + IMAGE, '--command=sleep', '--command=infinity'] if runtime == 'docker' else ['--command=/bin/sleep', '--command=infinity']
+        owner = '--node=' + str(self.node_id) if instance is None else '--instance=' + str(self.instances.get(instance, instance))
+        args = ['process:create', f'{self.prefix}-{name}', owner, '--runtime=' + runtime, '--idempotency-key=' + self.prefix + '-create-' + name]
+        if runtime == 'docker':
+            args += ['--image=' + IMAGE, '--command=sleep', '--command=infinity']
+        elif name == 'horizon':
+            # The shape GatewayHorizon::runs recognises: a Node host unit running `artisan horizon`, whose stop waits for its drain.
+            args += ['--command=php', '--command=artisan', '--command=horizon']
+        else:
+            args += ['--command=/bin/sleep', '--command=infinity']
         if start:
             args.append('--start')
         created = self.cli(*args, timeout=300)
@@ -82,12 +107,14 @@ class ProcessLane(CloneLane):
         unit = self.db(f"SELECT json_extract(input,'$.name') AS name FROM operations WHERE id={operation}")[0]['name'] if operation else None
         if not unit:
             unit = f'orbit-process-{process}-{self.prefix}-{name}' + ('' if runtime == 'docker' else '.service')
-        self.processes[name] = {'id': process, 'runtime': runtime, 'unit': unit}
-        self.record(f'fixture-{name}', {'process': process, 'unit': unit, 'create_operation': operation, **self.state(name)})
+        self.processes[name] = {'id': process, 'runtime': runtime, 'unit': unit, 'container': isinstance(instance, int)}
+        state = {'row': self.process_row(process)} if isinstance(instance, int) else self.state(name)
+        self.record(f'fixture-{name}', {'process': process, 'unit': unit, 'create_operation': operation, **state})
         return process
 
-    def schedule(self, name, calendar, retained=False):
-        args = ['schedule:create', f'{self.prefix}-{name}', '--node=' + str(self.node_id), '--calendar=' + calendar,
+    def schedule(self, name, calendar, retained=False, instance=None):
+        owner = '--node=' + str(self.node_id) if instance is None else '--instance=' + str(self.instances[instance])
+        args = ['schedule:create', f'{self.prefix}-{name}', owner, '--calendar=' + calendar,
                 '--command=/bin/true', '--no-start', '--idempotency-key=' + self.prefix + '-create-' + name]
         created = self.cli(*args, timeout=300)
         require(created['rc'] == 0, f'schedule:create {name}: exit {created["rc"]}')
@@ -95,9 +122,9 @@ class ProcessLane(CloneLane):
         require(len(rows) == 1, f'schedule:create {name} did not record one Schedule')
         self.schedules[name] = {'id': rows[0]['id'], 'trigger': rows[0]['trigger'], 'unit': f'orbit-schedule-{rows[0]["id"]}.timer'}
         if retained:
-            # Fixture only: the public schedule:create makes a native cron Schedule; a host Node timer is a retained row from before
-            # ADR 0244. The lane turns its own new row into one and writes its disabled timer pair on the Node, after checking both
-            # names are free there.
+            # Fixture only: the public schedule:create makes a native cron Schedule; a host Node timer is a retained row (a systemd
+            # calendar instantiated from a Project definition before ADR 0244). The lane turns its own new row into one and writes its
+            # disabled timer pair on the Node, after checking both names are free there.
             unit = self.schedules[name]['unit']
             base = '/etc/systemd/system/' + unit[:-len('.timer')]
             self.guest(self.node, 'sh', '-c', 'test ! -e "$1.timer" && test ! -e "$1.service"', 'sh', base)
@@ -105,7 +132,7 @@ class ProcessLane(CloneLane):
             self.put(self.node, base + '.timer', f'[Timer]\nOnCalendar={calendar}\n\n[Install]\nWantedBy=timers.target\n')
             self.systemctl(self.node, 'daemon-reload')
             self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '/home/orbit/.orbit/gateway.sqlite',
-                       f"UPDATE schedules SET trigger='node', status='disabled', desired_timer_state='disabled' WHERE id='{rows[0]['id']}'")
+                       f"UPDATE schedules SET trigger='node' WHERE id='{rows[0]['id']}'")
             self.schedules[name].update(trigger='node', files=[base + '.timer', base + '.service'])
         self.record(f'fixture-{name}', {**self.schedules[name], 'row': self.schedule_row(rows[0]['id'])})
         return rows[0]['id']
@@ -157,35 +184,27 @@ class ProcessLane(CloneLane):
             require(self.state(sibling)['node'] == watched, f'sibling {sibling} changed while {name} was controlled')
         return results
 
-    def replay(self, name):
-        """process:stop with its receipt dropped: the fence holds a removal and a second start of the Process, a new signed send
-        replays the journal, and the stop ends once with one Node execution."""
-        fixture = self.processes[name]
+    def dropped(self, path, key, step, action, target, probe):
+        """Admit one engine Operation with its receipt dropped: the Node runs the order, the receipt never reaches the Gateway, and
+        `probe` runs while the Operation is outstanding. The engine then resends; the journal answers the second send."""
         self.set_capability(True)
-        path, key = f'processes/{fixture["id"]}', 'replay-stop'
-        target = f'{self.node_id}:process-{fixture["id"]}'
         self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
         try:
             started = time.monotonic()
-            admitted = self.admitted('POST', path + '/stop', {}, key)
+            admitted = self.admitted('POST', path, {}, key)
             operation = int(admitted['id'])
             # The order expires seconds after its send: the engine stops and the Node resumes at once, and the fence is probed after.
-            wait_for(lambda: (rows := self.steps(operation)) and rows[0]['first_order_expires_ms'] and rows, f'Stop {operation} did not publish', 10, 0.1)
+            wait_for(lambda: (rows := self.steps(operation)) and rows[0]['first_order_expires_ms'] and rows, f'{operation} did not publish', 10, 0.1)
             self.systemctl('gateway', 'stop', ENGINE_UNIT)
-            queued = self.helper('pending-order', self.node_id, operation, target, 'converge', self.PRESENT)
+            queued = self.helper('pending-order', self.node_id, operation, target, step, action)
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
-            dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, target, 'converge', self.PRESENT),
-                               f'Stop {operation} left no receipt to drop', 20)
-            require(not dropped.get('kept'), f'Stop {operation}: the Node answered {dropped.get("status")} {dropped.get("code")}, not a success to drop')
-            removal = self.api('DELETE', path, {}, key + '-remove')
-            second = self.api('POST', path + '/start', {}, key + '-start')
-            node_stopped = self.unit(fixture['unit'])
-            fenced = self.admitted('POST', path + '/stop', {}, key)
-            busy_after_node = self.api('DELETE', path, {}, key + '-remove-after')
-            require(removal[2] == 'operation.target_busy' and second[2] == 'operation.target_busy' and busy_after_node[2] == 'operation.target_busy'
-                    and fenced['id'] == operation and fenced['status'] not in TERMINAL and self.steps(operation)[0]['status'] != 'done'
-                    and node_stopped['ActiveState'] == 'inactive',
-                    f'Stop {operation}: fence or Node state wrong without a receipt ({removal[2]}, {second[2]}, {busy_after_node[2]})')
+            dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, target, step, action),
+                               f'{operation} left no receipt to drop', 20)
+            require(not dropped.get('kept'), f'{operation}: the Node answered {dropped.get("status")} {dropped.get("code")}, not a success to drop')
+            replayed = self.admitted('POST', path, {}, key)
+            require(replayed['id'] == operation and replayed['status'] not in TERMINAL and self.steps(operation)[0]['status'] != 'done',
+                    f'{operation} ended or moved without its receipt')
+            probed = probe()
         finally:
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
             self.systemctl('gateway', 'start', ENGINE_UNIT)
@@ -195,14 +214,37 @@ class ProcessLane(CloneLane):
         journal = summary['journal']
         require(summary['steps'][0]['sends'] >= 2 and sum(item['record'] == 'open' for item in journal) == 1
                 and [item['outcome']['status'] for item in journal if item['record'] == 'done'] == ['applied'],
-                f'Stop {operation} did not replay one execution on a second send')
-        self.record('replay', {'operation': summary, 'queued_signed_order': queued, 'dropped': dropped,
-                               'fenced_while_outstanding': {'process_destroy': removal[2], 'process_start': second[2],
-                                                            'process_destroy_after_node_done': busy_after_node[2]},
-                               'http_replay': {'id': fenced['id'], 'status': fenced['status']}, 'node_before_receipt': node_stopped,
-                               'public': {k: terminal.get(k) for k in ('status', 'error_code')}, 'state': self.state(name),
-                               'request_through_terminal_ms': elapsed})
-        self.timings['replay-stop'] = elapsed
+                f'{operation} did not replay one execution on a second send')
+        return operation, {'operation': summary, 'queued_signed_order': queued, 'dropped': dropped, 'probed_while_outstanding': probed,
+                           'http_replay': {'id': replayed['id'], 'status': replayed['status']},
+                           'public': {k: terminal.get(k) for k in ('status', 'error_code')}, 'request_through_terminal_ms': elapsed}
+
+    def replay(self, name, parent=None):
+        """process:stop with its receipt dropped: removal and start of the Process, and destroy of its parent Instance, are refused
+        with operation.target_busy until the replayed send ends the stop once."""
+        fixture = self.processes[name]
+        path = f'processes/{fixture["id"]}'
+        instance = self.instances[parent] if parent else None
+
+        def probe():
+            found = {'process_destroy': self.api('DELETE', path, {}, f'replay-remove-{name}')[2],
+                     'process_start': self.api('POST', path + '/start', {}, f'replay-start-{name}')[2], 'node': self.unit(fixture['unit'])}
+            if instance:
+                found['instance_destroy'] = self.api('DELETE', f'instances/{instance}', {'force': True}, f'replay-parent-{name}')[2]
+            require(found['process_destroy'] == found['process_start'] == 'operation.target_busy' and found['node']['ActiveState'] == 'inactive'
+                    and found.get('instance_destroy', 'operation.target_busy') == 'operation.target_busy', f'{name}: fence while outstanding {found}')
+            return found
+
+        operation, result = self.dropped(path + '/stop', f'replay-stop-{name}', 'converge', self.PRESENT, f'{self.node_id}:process-{fixture["id"]}', probe)
+        if instance:
+            # After the terminal receipt the parent's destroy is no longer fenced by the Process. The proof's host Instance is a
+            # fixture row, so the removal contract refuses it after the fence; the answer is recorded, not a removal.
+            after = self.api('DELETE', f'instances/{instance}', {'force': True}, f'replay-parent-after-{name}')
+            require(after[2] != 'operation.target_busy', f'{name}: the parent stayed fenced after the stop ended')
+            result['instance_destroy_after_terminal'] = {'status': after[0], 'code': after[2]}
+        result['state'] = self.state(name)
+        self.record(f'replay-{name}', result)
+        self.timings[f'replay-stop-{name}'] = result['request_through_terminal_ms']
 
     def retry(self, name):
         """A start whose unit file is missing on the Node fails on the engine with the Swamp step's public error; once the unit is
@@ -224,43 +266,52 @@ class ProcessLane(CloneLane):
                 f'{name}: retry did not converge {state}')
         self.record('retry', {'failed': operation, 'retried': again, 'state': state})
 
-    def enable(self, name, via):
+    def enable(self, name, via, fault=None):
+        """schedule:enable of a retained Node timer, read back on the Node: enabled, active, a next elapse."""
         fixture = self.schedules[name]
-        self.set_capability(via == 'engine')
         before = self.timer(fixture['unit'])
-        started = time.monotonic()
-        answer = self.cli('schedule:enable', fixture['id'], '--idempotency-key=' + self.prefix + '-enable-' + name + '-' + via)
-        elapsed = round((time.monotonic() - started) * 1000)
-        operation = self.latest('schedule.enable', fixture['id'])
-        terminal = self.terminal(operation)
-        summary = self.operation(operation, via)
+        if fault == 'receipt':
+            def probe():
+                found = {'schedule_destroy': self.api('DELETE', f'schedules/{fixture["id"]}', {}, f'replay-schedule-remove-{name}')[2]}
+                require(found['schedule_destroy'] == 'operation.target_busy', f'{name}: fence while outstanding {found}')
+                return found
+
+            operation, result = self.dropped(f'schedules/{fixture["id"]}/activate', f'replay-enable-{name}', 'timer', self.ABSENT,
+                                             f'{self.node_id}:schedule-{fixture["id"]}', probe)
+            summary, answer_rc, elapsed = result['operation'], 0, result['request_through_terminal_ms']
+        else:
+            self.set_capability(via == 'engine')
+            started = time.monotonic()
+            answer = self.cli('schedule:enable', fixture['id'], '--idempotency-key=' + self.prefix + '-enable-' + name + '-' + via)
+            elapsed = round((time.monotonic() - started) * 1000)
+            operation = self.latest('schedule.enable', fixture['id'])
+            terminal = self.terminal(operation)
+            summary, answer_rc = self.operation(operation, via), answer['rc']
+            result = {'cli': {'rc': answer['rc'], 'secs': answer['secs']}, 'operation': summary,
+                      'public': {k: terminal.get(k) for k in ('status', 'error_code')}, 'request_through_terminal_ms': elapsed}
         after = self.timer(fixture['unit'])
         row = self.schedule_row(fixture['id'])
-        require(answer['rc'] == 0 and (after['ActiveState'], after['UnitFileState'], after['LoadState']) == ('active', 'enabled', 'loaded')
-                and after['NextElapseUSecRealtime'] not in ('', '0', 'n/a') and row['status'] == 'active',
+        require(answer_rc == 0 and (after['ActiveState'], after['UnitFileState'], after['LoadState']) == ('active', 'enabled', 'loaded')
+                and after['NextElapseUSecRealtime'] not in ('', '0', 'n/a') and row['status'] == 'active' and row['desired_timer_state'] == 'enabled',
                 f'{name}: timer read back {after} {row}')
         if via == 'engine':
-            require(len(summary['steps']) == 1 and summary['steps'][0]['action'] == self.ABSENT and summary['steps'][0]['status'] == 'done',
-                    f'{name}: engine step {summary["steps"]}')
-        self.record(f'enable-{name}-{via}', {'cli': {'rc': answer['rc'], 'secs': answer['secs']}, 'before': before, 'after': after,
-                                              'row': row, 'operation': summary, 'public': {k: terminal.get(k) for k in ('status', 'error_code')},
-                                              'request_through_terminal_ms': elapsed})
-        self.timings[f'enable-{via}'] = elapsed
+            require(len(summary['steps']) == 1 and summary['steps'][0]['action'] == self.ABSENT and summary['steps'][0]['status'] == 'done'
+                    and sum(item['record'] == 'open' for item in summary['journal']) == 1, f'{name}: engine step {summary["steps"]}')
+        self.record(f'enable-{name}-{via}' + (f'-{fault}' if fault else ''), {**result, 'before': before, 'after': after, 'row': row})
+        self.timings[f'enable-{name}-{via}' + (f'-{fault}' if fault else '')] = elapsed
 
     def refused(self, name, kind):
         """With the family advertised, a shape outside the signed contract runs wholly on Swamp: no engine step."""
         self.set_capability(True)
-        if kind == 'schedule.enable':
-            fixture = self.schedules[name]
-            answer = self.cli('schedule:enable', fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name)
-            operation = self.latest(kind, fixture['id'])
-        else:
-            fixture = self.processes[name]
-            answer = self.cli(kind.replace('.', ':'), fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name)
-            operation = self.latest(kind, fixture['id'])
+        mark = self.db('SELECT coalesce(max(id), 0) AS id FROM operations')[0]['id']
+        fixture = self.schedules[name] if kind == 'schedule.enable' else self.processes[name]
+        answer = self.cli(kind.replace('.', ':'), fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name)
+        started = self.db(f'SELECT id, kind FROM operations WHERE id > {mark} ORDER BY id')
+        require(len(started) == 1, f'{name}: {kind} started {len(started)} Operations (exit {answer["rc"]})')
+        operation = int(started[0]['id'])
         terminal = self.terminal(operation)
         summary = self.operation(operation, 'swamp')
-        self.record(f'refused-{name}', {'kind': kind, 'cli_rc': answer['rc'], 'operation': summary,
+        self.record(f'refused-{name}', {'kind': kind, 'started_kind': started[0]['kind'], 'cli_rc': answer['rc'], 'operation': summary,
                                          'public': {k: terminal.get(k) for k in ('status', 'error_code')}})
 
     def compare(self):
@@ -283,6 +334,13 @@ class ProcessLane(CloneLane):
             for path in fixture.get('files', []):
                 self.guest(self.node, 'rm', '-f', path)
         self.systemctl(self.node, 'daemon-reload')
+        for instance, label, path in getattr(self, 'host_paths', []):
+            removed = self.helper('host-instance-remove', instance, label)
+            self.guest(self.node, 'rm', '-rf', '--', path)
+            require(removed['removed'] == 1, f'host Instance fixture {instance} was not removed')
+        if self.project is not None:
+            code, _data, error = self.api('DELETE', f'projects/{self.project}')
+            require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'processes_removed': [f['id'] for f in self.processes.values()],

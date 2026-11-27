@@ -91,6 +91,17 @@ if ($mode === 'configuration') {
         $result = ['sequence' => $message['seq'], 'subject' => $subject,
             'line' => array_intersect_key($line, array_flip(['operation', 'target', 'action', 'status', 'expires_ms']))];
     }
+} elseif ($mode === 'host-instance' && count($argv) === 6 && ctype_digit($argv[2]) && ctype_digit($argv[3])
+    && preg_match('/\Aproof-proc-[0-9a-f]{8}-[a-z]+\z/', $argv[4]) === 1 && $argv[5] === '/home/orbit/'.$argv[4]) {
+    // Fixture only: Orbit makes no new host (non-container) app-dev Instance, and a retained one is what a host Node timer belongs
+    // to. The row is the proof's own, named for it, with its own Git checkout on the Node.
+    $instance = new App\Models\Instance;
+    $instance->forceFill(['project_id' => (int) $argv[2], 'node_id' => (int) $argv[3], 'name' => $argv[4], 'checkout_path' => $argv[5],
+        'branch' => 'main', 'status' => 'active', 'provisioning_step' => 'active', 'development_projection_pending' => false,
+        'source_is_laravel' => false])->save();
+    $result = ['instance' => $instance->id];
+} elseif ($mode === 'host-instance-remove' && count($argv) === 4 && ctype_digit($argv[2]) && preg_match('/\Aproof-proc-[0-9a-f]{8}-[a-z]+\z/', $argv[3]) === 1) {
+    $result = ['removed' => App\Models\Instance::query()->whereKey((int) $argv[2])->where('name', $argv[3])->delete()];
 } else {
     throw new RuntimeException('Unknown clone proof guest action.');
 }

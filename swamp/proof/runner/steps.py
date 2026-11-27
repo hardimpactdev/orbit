@@ -1152,7 +1152,7 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'sync_fixture': lambda run, args: clone_fixture(run, args, 'SyncLane'), 'sync_copy': clone_step('copy'),
                   'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare'),
                   'process_fixture': lambda run, args: clone_fixture(run, args, 'ProcessLane', 'process_control'),
-                  'process_create': clone_step('process'), 'schedule_create': clone_step('schedule'),
+                  'host_instance': clone_step('host_instance'), 'process_create': clone_step('process'), 'schedule_create': clone_step('schedule'),
                   'process_control': clone_step('start_stop'), 'process_replay': clone_step('replay'), 'process_retry': clone_step('retry'),
                   'schedule_enable': clone_step('enable'), 'process_refused': clone_step('refused'),
                   'process_compare': clone_step('compare'), 'process_cleanup': clone_step('cleanup')})

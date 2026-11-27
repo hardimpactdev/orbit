@@ -14,15 +14,31 @@ cases:
     setup:
       - process_fixture: {}
     act:
+      - host_instance: {name: host}
       - process_create: {name: sibling, start: true}
       - process_create: {name: unit, start: true}
       - process_create: {name: box, runtime: docker, start: true}
+      - process_create: {name: hosted, start: true, instance: host}
       - process_create: {name: legacy, start: true}
+      - process_create: {name: horizon}
+      - process_create: {name: incus, start: true, instance: 2}
+      - schedule_create: {name: timer, calendar: "*-*-* 03:00:00", retained: true, instance: host}
+      - schedule_create: {name: dropped, calendar: "*-*-* 05:00:00", retained: true, instance: host}
+      - schedule_create: {name: legacytimer, calendar: "*-*-* 04:00:00", retained: true, instance: host}
+      - schedule_create: {name: cron, calendar: "0 3 * * *"}
       - process_control: {name: unit, via: engine, sibling: sibling}
       - process_control: {name: box, via: engine, sibling: sibling}
+      - process_control: {name: hosted, via: engine, sibling: sibling, on_demand: true}
+      - schedule_enable: {name: timer, via: engine}
+      - schedule_enable: {name: dropped, via: engine, fault: receipt}
       - process_replay: {name: unit}
+      - process_replay: {name: hosted, parent: host}
       - process_retry: {name: unit}
       - process_control: {name: legacy, via: swamp, sibling: sibling}
+      - schedule_enable: {name: legacytimer, via: swamp}
+      - process_refused: {name: horizon, kind: process.stop}
+      - process_refused: {name: incus, kind: process.stop}
+      - process_refused: {name: cron, kind: schedule.enable}
     expect:
       - process_compare: {}
       - process_cleanup: {}
