@@ -55,6 +55,17 @@ class ProcessLane(CloneLane):
         rows = self.db(f"SELECT id,name,trigger,desired_timer_state,status,failed_step,error_code FROM schedules WHERE id='{schedule}'")
         return rows[0] if rows else None
 
+    def native_artifacts(self, schedule, workflow):
+        """Whether a native Schedule's own artifacts exist: its Swamp workflow file and command copy, and serve's trigger state."""
+        swamp = self.node_checkout + '/swamp'
+        paths = {'workflow_file': f'{swamp}/workflows/workflow-schedule-{schedule}.yaml',
+                 'command_copy': f'{swamp}/.swamp/secrets/local_encryption/orbit-control-inputs/schedule-command-{schedule}.enc'}
+        found = {key: self.guest('gateway', 'sh', '-c', 'if test -e "$1"; then echo 1; fi', 'sh', path) == '1' for key, path in paths.items()}
+        state = f'{swamp}/.swamp/_control/schedule-states/{workflow}' if workflow else None
+        text = self.guest('gateway', 'sh', '-c', 'if test -e "$1"; then cat "$1"; fi', 'sh', state) if state else ''
+        found['trigger'] = {key: value for key, value in json.loads(text).items() if key in ('workflowName', 'cronExpression')} if text else None
+        return found
+
     def state(self, name):
         fixture = self.processes[name]
         live = self.container(fixture['unit']) if fixture['runtime'] == 'docker' else self.unit(fixture['unit'])
@@ -98,15 +109,16 @@ class ProcessLane(CloneLane):
             args += ['--command=/bin/sleep', '--command=infinity']
         if start:
             args.append('--start')
+        # The name must be free before the create, and the create must say it made a new Process: a reconcile of an existing row
+        # also succeeds, and the lane never adopts (and so never removes) a Process it did not make.
+        require(not self.db(f"SELECT id FROM processes WHERE name='{self.prefix}-{name}'"), f'Process name {self.prefix}-{name} is already taken')
         created = self.cli(*args, timeout=300)
-        require(created['rc'] == 0, f'process:create {name}: exit {created["rc"]}')
+        reply = created['json'] or {}
+        require(created['rc'] == 0 and reply.get('kind') == 'process.create' and reply.get('status') == 'succeeded'
+                and (reply.get('input') or {}).get('created') is True, f'process:create {name}: exit {created["rc"]}, not a new Process')
+        process, operation, unit = int(reply['target_id']), int(reply['id']), reply['input']['name']
         rows = self.db(f"SELECT id FROM processes WHERE name='{self.prefix}-{name}'")
-        require(len(rows) == 1, f'process:create {name} did not record one Process')
-        process = int(rows[0]['id'])
-        operation = self.latest('process.create', process)
-        unit = self.db(f"SELECT json_extract(input,'$.name') AS name FROM operations WHERE id={operation}")[0]['name'] if operation else None
-        if not unit:
-            unit = f'orbit-process-{process}-{self.prefix}-{name}' + ('' if runtime == 'docker' else '.service')
+        require([int(row['id']) for row in rows] == [process], f'process:create {name} did not record exactly its own Process')
         self.processes[name] = {'id': process, 'runtime': runtime, 'unit': unit, 'container': isinstance(instance, int)}
         state = {'row': self.process_row(process)} if isinstance(instance, int) else self.state(name)
         self.record(f'fixture-{name}', {'process': process, 'unit': unit, 'create_operation': operation, **state})
@@ -116,11 +128,17 @@ class ProcessLane(CloneLane):
         owner = '--node=' + str(self.node_id) if instance is None else '--instance=' + str(self.instances[instance])
         args = ['schedule:create', f'{self.prefix}-{name}', owner, '--calendar=' + calendar,
                 '--command=/bin/true', '--no-start', '--idempotency-key=' + self.prefix + '-create-' + name]
+        require(not self.db(f"SELECT id FROM schedules WHERE name='{self.prefix}-{name}'"), f'Schedule name {self.prefix}-{name} is already taken')
         created = self.cli(*args, timeout=300)
-        require(created['rc'] == 0, f'schedule:create {name}: exit {created["rc"]}')
-        rows = self.db(f"SELECT id,trigger FROM schedules WHERE name='{self.prefix}-{name}'")
-        require(len(rows) == 1, f'schedule:create {name} did not record one Schedule')
-        self.schedules[name] = {'id': rows[0]['id'], 'trigger': rows[0]['trigger'], 'unit': f'orbit-schedule-{rows[0]["id"]}.timer'}
+        reply = created['json'] or {}
+        require(created['rc'] == 0 and reply.get('kind') == 'schedule.create' and (reply.get('input') or {}).get('created') is True,
+                f'schedule:create {name}: exit {created["rc"]}, not a new Schedule')
+        rows = self.db(f"SELECT id,trigger,swamp_workflow_id FROM schedules WHERE name='{self.prefix}-{name}'")
+        require([row['id'] for row in rows] == [reply['input']['id']], f'schedule:create {name} did not record exactly its own Schedule')
+        self.schedules[name] = {'id': rows[0]['id'], 'trigger': rows[0]['trigger'], 'unit': f'orbit-schedule-{rows[0]["id"]}.timer',
+                                'workflow': rows[0]['swamp_workflow_id'], 'calendar': calendar, 'native': self.native_artifacts(rows[0]['id'], rows[0]['swamp_workflow_id'])}
+        require(all(self.schedules[name]['native'][key] for key in ('workflow_file', 'command_copy')),
+                f'schedule:create {name} did not publish its own native workflow and command copy')
         if retained:
             # Fixture only: the public schedule:create makes a native cron Schedule; a host Node timer is a retained row (a systemd
             # calendar instantiated from a Project definition before ADR 0244). The lane turns its own new row into one and writes its
@@ -154,35 +172,48 @@ class ProcessLane(CloneLane):
                                'operation': summary, 'public': {k: terminal.get(k) for k in ('status', 'error_code', 'result')},
                                'state': state, 'request_through_terminal_ms': elapsed})
         self.timings[key] = elapsed
-        return operation, summary, state, answer
+        return operation, summary, state, answer, {k: terminal.get(k) for k in ('status', 'error_code', 'result')}
 
     def start_stop(self, name, via, sibling=None, on_demand=False):
         """Stop then start one Process and read the exact Node state back after each; a sibling stays as it was."""
         fixture = self.processes[name]
-        watched = self.state(sibling)['node'] if sibling else None
+        watched = self.sibling(sibling) if sibling else None
         results = {}
         for verb in ('stop', 'start'):
-            operation, summary, state, answer = self.control(name, verb, via, f'{name}-{verb}-{via}')
+            operation, summary, state, answer, public = self.control(name, verb, via, f'{name}-{verb}-{via}')
             require(answer['rc'] == 0, f'process:{verb} {name}: exit {answer["rc"]}')
-            node = state['node']
+            node, row = state['node'], state['row']
             if fixture['runtime'] == 'docker':
-                require(node['status'] == ('exited' if verb == 'stop' else 'running') and node['image'] == IMAGE
-                        and node['name'] == fixture['unit'], f'{name}: container did not read back {verb}')
+                live = 'exited' if verb == 'stop' else 'running'
+                require(node['status'] == live and node['image'] == IMAGE and node['name'] == fixture['unit'], f'{name}: container did not read back {verb}')
             else:
+                live = 'inactive' if verb == 'stop' else 'active'
                 boot = 'disabled' if verb == 'stop' or on_demand else 'enabled'
-                require((node['ActiveState'], node['UnitFileState'], node['LoadState']) == (('inactive' if verb == 'stop' else 'active'), boot, 'loaded'),
-                        f'{name}: unit read back {node} after {verb}')
-            require(state['row']['status'] == ('stopped' if verb == 'stop' else 'running') or state['row']['desired_state'] == ('stopped' if verb == 'stop' else 'running'),
-                    f'{name}: Process projection after {verb}: {state["row"]}')
+                require((node['ActiveState'], node['SubState'], node['UnitFileState'], node['LoadState'])
+                        == (live, 'dead' if verb == 'stop' else 'running', boot, 'loaded'), f'{name}: unit read back {node} after {verb}')
+            # The projection Swamp's end writes: the lifecycle stays active, the desired state follows the verb, no failure is left,
+            # and the public result names the state the Node read back.
+            require((row['status'], row['desired_state'], row['failed_step'], row['error_code']) == ('active', 'stopped' if verb == 'stop' else 'running', None, None)
+                    and public['status'] == 'succeeded' and public['error_code'] is None and public['result'] == {'ready': True, 'state': live},
+                    f'{name}: Process projection or result after {verb}: {row} {public}')
             if via == 'engine':
                 steps = summary['steps']
                 require(len(steps) == 1 and steps[0]['action'] == self.PRESENT and steps[0]['status'] == 'done'
                         and steps[0]['target'] == f'{self.node_id}:process-{fixture["id"]}', f'{name}: engine step {steps}')
                 require(sum(item['record'] == 'open' for item in summary['journal']) == 1, f'{name}: executor did not run once')
             results[verb] = operation
-        if sibling:
-            require(self.state(sibling)['node'] == watched, f'sibling {sibling} changed while {name} was controlled')
+            if sibling:
+                seen = self.sibling(sibling)
+                require(seen == watched, f'sibling {sibling} changed after {name} {verb}: {watched} -> {seen}')
+                self.record(f'{name}-{verb}-{via}-sibling', seen)
         return results
+
+    def sibling(self, name):
+        """A running sibling unit's identity: the same main PID and activation time mean it ran on without a restart."""
+        shown = self.guest(self.node, 'systemctl', 'show', '-p', 'ActiveState,SubState,MainPID,ActiveEnterTimestampMonotonic,NRestarts', self.processes[name]['unit'])
+        found = dict(line.split('=', 1) for line in shown.splitlines() if '=' in line)
+        require(found['ActiveState'] == 'active' and found['SubState'] == 'running' and int(found['MainPID']) > 0, f'sibling {name} is not running: {found}')
+        return found
 
     def dropped(self, path, key, step, action, target, probe):
         """Admit one engine Operation with its receipt dropped: the Node runs the order, the receipt never reaches the Gateway, and
@@ -247,24 +278,34 @@ class ProcessLane(CloneLane):
         self.timings[f'replay-stop-{name}'] = result['request_through_terminal_ms']
 
     def retry(self, name):
-        """A start whose unit file is missing on the Node fails on the engine with the Swamp step's public error; once the unit is
-        back, a new start converges it."""
+        """A start that fails half-applied: the boot policy is enabled, then the start fails on a drop-in whose ExecStartPre exits 1.
+        The Node keeps the enabled unit, not running; the Process records the Swamp step's failure. With the drop-in gone, a public
+        retry converges."""
         fixture = self.processes[name]
-        unit_path = f'/etc/systemd/system/{fixture["unit"]}'
-        held = f'/run/{self.prefix}-held.service'
-        self.guest(self.node, 'mv', unit_path, held)
-        self.systemctl(self.node, 'daemon-reload')
+        before = self.unit(fixture['unit'])
+        require((before['ActiveState'], before['UnitFileState']) == ('inactive', 'disabled'), f'{name}: retry needs a stopped, disabled unit: {before}')
+        directory = f'/etc/systemd/system/{fixture["unit"]}.d'
+        # `mkdir` without -p refuses an existing directory, so the fault never touches a drop-in it did not make.
+        self.guest(self.node, 'mkdir', directory)
         try:
-            operation, summary, state, answer = self.control(name, 'start', 'engine', f'{name}-start-failed', expect='failed')
-            require(answer['rc'] != 0 and summary['error_code'] == 'operation.native_failed' and summary['steps'][0]['status'] == 'failed'
-                    and summary['steps'][0]['error_code'] == 'process.unit_missing', f'{name}: failed start {summary}')
-        finally:
-            self.guest(self.node, 'mv', held, unit_path)
+            self.put(self.node, directory + '/proof-fail.conf', '[Service]\nExecStartPre=/bin/false\n')
             self.systemctl(self.node, 'daemon-reload')
-        again, summary, state, answer = self.control(name, 'start', 'engine', f'{name}-start-retried')
-        require(answer['rc'] == 0 and state['node']['ActiveState'] == 'active' and state['node']['UnitFileState'] == 'enabled',
-                f'{name}: retry did not converge {state}')
-        self.record('retry', {'failed': operation, 'retried': again, 'state': state})
+            operation, summary, half, answer, public = self.control(name, 'start', 'engine', f'{name}-start-failed', expect='failed')
+            step = summary['steps'][0]
+            require(answer['rc'] != 0 and public['error_code'] == 'operation.native_failed' and step['status'] == 'failed'
+                    and step['error_code'] == 'process.apply_failed' and half['node']['UnitFileState'] == 'enabled'
+                    and half['node']['ActiveState'] in ('failed', 'inactive') and half['row']['error_code'] == 'operation.native_failed',
+                    f'{name}: half-applied start {step} {half}')
+        finally:
+            self.guest(self.node, 'rm', '-f', directory + '/proof-fail.conf')
+            self.guest(self.node, 'rmdir', directory)
+            self.systemctl(self.node, 'daemon-reload')
+        again, summary, state, answer, public = self.control(name, 'start', 'engine', f'{name}-start-retried')
+        row = state['row']
+        require(answer['rc'] == 0 and (state['node']['ActiveState'], state['node']['SubState'], state['node']['UnitFileState']) == ('active', 'running', 'enabled')
+                and (row['status'], row['desired_state'], row['failed_step'], row['error_code']) == ('active', 'running', None, None)
+                and public['result'] == {'ready': True, 'state': 'active'}, f'{name}: retry did not converge {state} {public}')
+        self.record('retry', {'failed': operation, 'node_and_process_after_failure': half, 'retried': again, 'state': state})
 
     def enable(self, name, via, fault=None):
         """schedule:enable of a retained Node timer, read back on the Node: enabled, active, a next elapse."""
@@ -305,6 +346,9 @@ class ProcessLane(CloneLane):
         self.set_capability(True)
         mark = self.db('SELECT coalesce(max(id), 0) AS id FROM operations')[0]['id']
         fixture = self.schedules[name] if kind == 'schedule.enable' else self.processes[name]
+        before_trigger = self.native_artifacts(fixture['id'], fixture['workflow'])['trigger'] if kind == 'schedule.enable' else None
+        if kind == 'schedule.enable':
+            require(self.schedule_row(fixture['id'])['desired_timer_state'] == 'disabled', f'{name}: the cron Schedule is already enabled')
         answer = self.cli(kind.replace('.', ':'), fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name)
         started = self.db(f'SELECT id, kind FROM operations WHERE id > {mark} ORDER BY id')
         require(len(started) == 1, f'{name}: {kind} started {len(started)} Operations (exit {answer["rc"]})')
@@ -313,11 +357,20 @@ class ProcessLane(CloneLane):
         # A native cron Schedule's enable updates its Swamp trigger in the Gateway and starts no workflow run; any other shape runs
         # the Swamp workflow. Neither records an engine step.
         native = kind == 'schedule.enable' and self.schedules[name]['trigger'] == 'swamp'
+        if native:
+            fixture = self.schedules[name]
+            row = self.schedule_row(fixture['id'])
+            after = self.native_artifacts(fixture['id'], fixture['workflow'])
+            # The enable must set the native trigger: no serve trigger before, one with the Schedule's own cron after.
+            require(before_trigger is None and after['trigger'] == {'workflowName': f'schedule-{fixture["id"]}', 'cronExpression': fixture['calendar']}
+                    and row['desired_timer_state'] == 'enabled', f'{name}: the native trigger did not change ({before_trigger} -> {after["trigger"]}, {row})')
+            fixture['trigger_state_created'] = True
         summary = self.db(f'''SELECT id,kind,status,error_code,json_extract(state,'$.swamp_run_id') AS run FROM operations WHERE id={operation}''')[0] \
             if native else self.operation(operation, 'swamp')
         summary['steps'] = self.steps(operation)
         require(not summary['steps'] and summary['run'] != f'engine-{operation}', f'{name}: {kind} recorded engine work')
-        self.record(f'refused-{name}', {'kind': kind, 'started_kind': started[0]['kind'], 'cli_rc': answer['rc'], 'operation': summary,
+        self.record(f'refused-{name}', {'trigger_before': before_trigger,
+                                         'trigger_after': self.native_artifacts(fixture['id'], fixture['workflow'])['trigger'] if kind == 'schedule.enable' else None, 'kind': kind, 'started_kind': started[0]['kind'], 'cli_rc': answer['rc'], 'operation': summary,
                                          'public': {k: terminal.get(k) for k in ('status', 'error_code')}})
 
     def compare(self):
@@ -333,12 +386,23 @@ class ProcessLane(CloneLane):
                 answer = self.cli('process:destroy', fixture['id'], '--yes', '--idempotency-key=' + self.prefix + '-cleanup-' + name, timeout=300)
                 require(answer['rc'] == 0, f'cleanup of Process {fixture["id"]}: exit {answer["rc"]}')
         for name, fixture in self.schedules.items():
+            if fixture.get('files') and self.schedule_row(fixture['id']) is not None:
+                # The retained timer was published as a native Schedule before the fixture turned it into a Node timer: back to its
+                # native trigger, so its destroy removes its own Swamp workflow and command copy.
+                self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '/home/orbit/.orbit/gateway.sqlite',
+                           f"UPDATE schedules SET trigger='swamp' WHERE id='{fixture['id']}' AND trigger='node'")
             if self.schedule_row(fixture['id']) is not None:
                 answer = self.cli('schedule:destroy', fixture['id'], '--yes', '--idempotency-key=' + self.prefix + '-cleanup-' + name, timeout=300)
                 require(answer['rc'] == 0, f'cleanup of Schedule {fixture["id"]}: exit {answer["rc"]}')
-        for fixture in self.schedules.values():
+        absent = {}
+        for name, fixture in self.schedules.items():
             for path in fixture.get('files', []):
                 self.guest(self.node, 'rm', '-f', path)
+            if fixture.get('trigger_state_created'):
+                self.guest('gateway', 'rm', '-f', f'{self.node_checkout}/swamp/.swamp/_control/schedule-states/{fixture["workflow"]}')
+            left = self.native_artifacts(fixture['id'], fixture['workflow'] if fixture.get('trigger_state_created') else None)
+            require(not any(left.values()), f'Schedule {name} left native artifacts: {left}')
+            absent[name] = left
         self.systemctl(self.node, 'daemon-reload')
         for instance, label, path in getattr(self, 'host_paths', []):
             removed = self.helper('host-instance-remove', instance, label)
@@ -349,5 +413,5 @@ class ProcessLane(CloneLane):
             require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
-        self.record('cleanup', {'processes_removed': [f['id'] for f in self.processes.values()],
+        self.record('cleanup', {'native_artifacts_after': absent, 'processes_removed': [f['id'] for f in self.processes.values()],
                                 'schedules_removed': [f['id'] for f in self.schedules.values()], 'temporary_services_removed': True})

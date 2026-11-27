@@ -1,4 +1,5 @@
 """Disposable clone fixtures and the bounded receipts read by the shared runner."""
+import contextlib
 import hashlib
 import json
 import os
@@ -74,12 +75,36 @@ def cargo_env(directory):
     return environment
 
 
+def installed_packages():
+    return set(subprocess.check_output(['dpkg-query', '-W', '-f', '${Package}\\n'], text=True, timeout=30).split())
+
+
+@contextlib.contextmanager
+def build_linker():
+    """Cargo links build scripts and the executor with the system C linker. A task copy has none: install gcc for the build only,
+    then purge exactly the packages the install added, so the copy ends as it began."""
+    if shutil.which('cc'):
+        yield {'linker': 'present'}
+        return
+    before = installed_packages()
+    environment = {**os.environ, 'DEBIAN_FRONTEND': 'noninteractive'}
+    result = subprocess.run(['sudo', '-n', '-E', 'apt-get', 'install', '-y', '-q', '--no-install-recommends', 'gcc', 'libc6-dev'],
+                            env=environment, capture_output=True, timeout=300)
+    require(result.returncode == 0 and shutil.which('cc'), 'could not install the C linker the executor build needs')
+    added = sorted(installed_packages() - before)
+    try:
+        yield {'linker': 'installed for the build', 'packages': added}
+    finally:
+        removed = subprocess.run(['sudo', '-n', '-E', 'apt-get', 'purge', '-y', '-q', *added], env=environment, capture_output=True, timeout=300)
+        require(removed.returncode == 0 and not (installed_packages() & set(added)), 'could not remove the build-only C linker')
+
+
 def stage_executor(log=False):
     require(not git('status', '--porcelain', '--', 'apps/agent'), 'stage from a clean apps/agent tree')
     head = git('rev-parse', 'HEAD')
     source = git('rev-parse', 'HEAD:apps/agent')
     STAGED.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='orbit-proof-build-') as build:
+    with tempfile.TemporaryDirectory(prefix='orbit-proof-build-') as build, build_linker() as linker:
         environment = {**cargo_env(Path(build)), 'CARGO_TARGET_DIR': str(Path(build) / 'target')}
         result = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'orbit-executor'], cwd=CHECKOUT / 'apps/agent',
                                 env=environment, capture_output=not log, timeout=180)
@@ -92,7 +117,7 @@ def stage_executor(log=False):
     version = tomllib.loads((CHECKOUT / 'apps/agent/crates/executor/Cargo.toml').read_text())['package']['version']
     delivery = tomllib.loads((CHECKOUT / 'apps/agent/Cargo.toml').read_text())['package']['version']
     manifest = {'build_head': head, 'agent_tree': source, 'executor_sha256': digest(staged), 'executor_version': version,
-                'agent_delivery_version': delivery, 'rustc': compiler}
+                'agent_delivery_version': delivery, 'rustc': compiler, 'build_linker': linker}
     (STAGED / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
