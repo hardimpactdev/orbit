@@ -8,6 +8,7 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Operations\OperationStatus;
@@ -263,7 +264,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         });
     }
 
-    /** The grace remainder from the stored DNS receipts: a resend or a retry never shortens it. */
+    /** The grace from the stored DNS receipts: until it ends the step waits without a worker; a resend or a retry never shortens it. */
     private static function grace(EngineRun $chain): string
     {
         $received = max(array_map(static fn (OperationEngineStep $step): int => (int) $step->done_ms,
@@ -271,9 +272,8 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         if ($received === 0) {
             throw new RuntimeException('route.dns_grace_failed: no stored DNS receipt');
         }
-        $remaining = $received + self::GraceMs - Engine::nowMs();
-        if ($remaining > 0) {
-            usleep($remaining * 1000);
+        if (Engine::nowMs() < $received + self::GraceMs) {
+            throw new EngineStepNotYet($received + self::GraceMs);
         }
 
         return 'grace ended '.($received + self::GraceMs);

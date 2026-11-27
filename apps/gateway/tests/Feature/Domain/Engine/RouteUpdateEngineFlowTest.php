@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteUpdateEngineFlow;
@@ -11,6 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -155,4 +157,19 @@ it('keeps an engine-owned update fenced until each sent step has a terminal rece
     $operation->forceFill(['state' => ['swamp_run_id' => 'engine-'.$operation->id]]);
 
     expect(Engine::requiresReceipt($operation))->toBeTrue();
+});
+
+it('waits the DNS grace from the stored DNS receipt, without a worker, and never shortens it on a retry', function (): void {
+    Carbon::setTestNow('2026-11-27 04:00:00');
+    $operation = updateOperation(updateIntent());
+    $received = Engine::nowMs() - 10_000;
+    $run = new EngineRun($operation->id, ['cutover' => (new OperationEngineStep)->forceFill(['name' => 'cutover', 'status' => 'done']),
+        'dns-0' => (new OperationEngineStep)->forceFill(['name' => 'dns-0', 'status' => 'done', 'done_ms' => $received])], 0, null);
+
+    expect(fn () => app(RouteUpdateEngineFlow::class)->local($operation, 'grace', $run))
+        ->toThrow(fn (EngineStepNotYet $wait) => expect($wait->atMs)->toBe($received + 31_000));
+
+    Carbon::setTestNow(Carbon::createFromTimestampMs($received + 31_000));
+    expect(app(RouteUpdateEngineFlow::class)->local($operation, 'grace', $run))->toBe('grace ended '.($received + 31_000));
+    Carbon::setTestNow();
 });

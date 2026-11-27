@@ -66,14 +66,14 @@ Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`,
 | `probe-<i>` | The TLS handshake with each serving Node under the new name |
 | `dns-<i>` | The guarded `dns.publish_records` on each VPN Node |
 | `cutover` | A Gateway transaction that marks the replacement `active` and the old Route `retiring`; its `done` row is the acknowledgement |
-| `grace` | 31 s from the latest stored DNS receipt, so a resend or retry never shortens it |
+| `grace` | A timed Gateway step that ends 31 s after the latest stored DNS receipt; a resend or retry never shortens it |
 | `final-<node>` | `route.publish_site` with the lasting Caddyfile and the late leaves, validated and read back |
 | `withdraw-<node>` | route.destroy's site withdrawal for the old domain's leaves |
 | `sibling-<node>` | Another active Route on the Node still answers over TLS; a Node without one passes |
 
 A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times. One chain never mixes engines: a retry of a Swamp-started update stays on Swamp, and `StartSwampRun` refuses a Swamp start of an engine-started chain with `route.update_engine_chain`.
 
-The update is receipt-bound, as `instance.destroy` is: the Gateway binds the steps and takes the Route's Operation lock in one transaction, and the Route, its replacement and the held Nodes stay fenced until each sent step has a terminal receipt. Admission still takes the exclusive Route publication holds of the serving Nodes.
+The update is receipt-bound, as `instance.destroy` is: the Gateway binds the steps and takes the Route's Operation lock in one transaction, and the Route, its replacement and the held Nodes stay fenced until each sent step has a terminal receipt. Admission takes the exclusive Route publication holds of the serving Nodes and of each VPN Node whose DNS catalog the update publishes.
 
 A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. Until route.destroy releases the guarded DNS input and the site withdrawal, an update that moves private DNS or withdraws an old leaf also stays on Swamp: no Node reports `route.withdraw_site`.
 
@@ -134,6 +134,7 @@ If the Gateway cannot read the bucket (for example during a `nats-server` restar
 
 - A pending step whose dependencies are done is dispatched.
 - A sent step past its resend deadline is dispatched again with a fresh order.
+- A waiting Gateway step whose time has come runs again.
 - A sent step past its budget fails with `engine.step_budget_exceeded`.
 - The Operation fails as soon as any step fails, and succeeds once all steps finish.
 - A cancel request ends the Operation at the next transition, except after all steps finish.
@@ -156,7 +157,7 @@ Orders are capped at 4 KB. Larger or sensitive payloads, such as Caddyfiles, cer
 
 ### Deadlines
 
-Deadlines use NATS message schedules rather than polling. After sending a step, the engine publishes to `orbit.engine.schedule.<id>.<step>.<sends>` with `Nats-Schedule: @at <time>` and `Nats-Schedule-Target: orbit.engine.deadline`. Stale deadlines for steps that already moved on are ignored.
+Deadlines use NATS message schedules rather than polling. After sending a step, the engine publishes to `orbit.engine.schedule.<id>.<step>.<sends>` with `Nats-Schedule: @at <time>` and `Nats-Schedule-Target: orbit.engine.deadline`. Stale deadlines for steps that already moved on are ignored. A Gateway step that may run only from a set time on throws `EngineStepNotYet`: the engine parks it as `waiting`, frees the worker, and schedules its deadline at that time. The deadline, or the reconciler's nudge, runs it again; `route.update`'s `grace` uses it.
 
 Each flow sets its own resend interval and step budget:
 
@@ -166,7 +167,7 @@ Each flow sets its own resend interval and step budget:
 | Route (`csr`, `site`, `dns`) | 15–30 seconds | 60–180 seconds |
 | Instance create (`clone`, `fetch`, `prepare`, `start`, `checkout`, `t3`) | 30–120 seconds | 120–600 seconds |
 
-Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step or a sent step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
+Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step, or a sent or waiting step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
 
 ### Cancel
 

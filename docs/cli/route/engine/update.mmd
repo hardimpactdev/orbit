@@ -25,6 +25,7 @@ sequenceDiagram
     %%> The engine admits nothing here; no run, no Node order
   else Node work needed
     Note over GW: Hold the Route Nodes
+    %%> The exclusive publication holds of the serving Nodes and of each VPN Node whose DNS catalog the update publishes; a route.create on that catalog holds it too, so the two wait for each other
     alt the engine admits the whole Operation
       %%> Admission, one decision per Operation (EngineKinds::routes):
       %%> - `route.update` is in `ORBIT_ENGINE_KINDS`
@@ -54,7 +55,7 @@ sequenceDiagram
       %%> A Gateway step after the probe and, when present, the DNS move: from here the replacement is authoritative and the old Route `retiring`
       opt domain outside the TLD
         Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-        %%> A Gateway step timed from the stored DNS receipt (`done_ms`); a resend or a retry never shortens it; the old site serves until it ends
+        %%> A timed Gateway step from the stored DNS receipt (`done_ms`): until it ends the step waits as `waiting` without a worker, and a NATS schedule at its end runs it again; a resend or a retry never shortens it; the old site serves until it ends
       end
       EN->>N: Write the lasting site<br/>route.publish_site · final-node
       %%> The Caddyfile without the old name and the late leaves, validated before the move and read back; no `APP_URL`

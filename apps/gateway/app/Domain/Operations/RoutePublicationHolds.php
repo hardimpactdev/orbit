@@ -22,6 +22,7 @@ use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -30,7 +31,7 @@ use Throwable;
  * The hold of the Nodes that serve a Route write (docs/reference/routes.md#coordinate-publication). Admission takes every Node
  * of the write at once or none; a write that finds one held waits with status `waiting` and starts, oldest first, when the
  * Nodes are free. The terminal state releases them, except for a timed-out write whose run Swamp has not confirmed stopped.
- * The DNS Node is not held: its records are keyed.
+ * A create or update also holds the VPN Nodes whose private DNS catalog it publishes, alone, as it holds its serving Nodes.
  *
  * A removal, and a clone's create whose publication is Caddy only, share their Nodes (`route_withdrawal_holds`): each merges or
  * withdraws its own sections in one Node-local transaction under the Node lock, so several of them on one Node all land. Any other
@@ -189,10 +190,33 @@ final class RoutePublicationHolds
         if (self::releasesAfterWithdraw($operation->kind) && ($operation->input['route_withdrawn'] ?? false) === true) {
             return [];
         }
-        $nodes = [];
+        $nodes = self::dnsNodes($operation);
         self::collect($operation->input, $nodes);
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
+
+        return $nodes;
+    }
+
+    /**
+     * The VPN Nodes whose private DNS catalog a Route create or update publishes. Their hold is exclusive like a serving Node's,
+     * so two such writes never interleave on one catalog, whichever engine runs them.
+     *
+     * @return list<int>
+     */
+    private static function dnsNodes(Operation $operation): array
+    {
+        $rows = match ($operation->kind) {
+            'route.create' => Arr::get($operation->input, 'route_create.dns', []),
+            'route.update' => Arr::get($operation->input, 'route_update.plan.dns', []),
+            default => [],
+        };
+        $nodes = [];
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            if (is_array($row) && is_int($row['node_id'] ?? null)) {
+                $nodes[] = $row['node_id'];
+            }
+        }
 
         return $nodes;
     }
