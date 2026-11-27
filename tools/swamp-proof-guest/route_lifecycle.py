@@ -335,11 +335,11 @@ class RouteLane(CloneLane):
         code = '''import re, sys
 names = set()
 for line in open(sys.argv[1]):
-    found = re.match(r"address=/([^/.][^/]*)/", line)
+    found = re.match(r"host-record=([^,]+),", line) or re.match(r"address=/([^/.][^/]*)/", line)
     if found and found.group(1) != sys.argv[2]:
         names.add(found.group(1))
 print("\\n".join(sorted(names)))'''
-        names = [*UNAFFECTED_NAMES, *self.guest('gateway', 'python3', '-c', code, RECORDS, withdrawn).split()]
+        names = sorted({*UNAFFECTED_NAMES, *self.guest('gateway', 'python3', '-c', code, RECORDS, withdrawn).split()})
         answers = {name: self.guest('gateway', 'dig', '+short', '+time=3', '+tries=1', f'@{self.gateway_address}', name).split() for name in names}
         require(all(answers.values()), f'a name the VPN Node serves did not answer: {answers}')
         return answers
