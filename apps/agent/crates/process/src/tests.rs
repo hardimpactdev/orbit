@@ -12,6 +12,7 @@ type Script = Vec<(String, VecDeque<Result<String, String>>)>;
 struct Fake {
     answers: RefCell<Script>,
     calls: RefCell<Vec<String>>,
+    attempts: RefCell<std::collections::BTreeSet<String>>,
 }
 
 impl Fake {
@@ -54,6 +55,20 @@ impl System for Fake {
         } else {
             queue.front().cloned().expect("an answer")
         }
+    }
+
+    fn begin_attempt(&self, key: &str) -> Result<(), String> {
+        self.calls.borrow_mut().push(format!("attempt {key}"));
+        self.attempts.borrow_mut().insert(key.to_owned());
+        Ok(())
+    }
+
+    fn attempted(&self, key: &str) -> bool {
+        self.attempts.borrow().contains(key)
+    }
+
+    fn end_attempt(&self, key: &str) {
+        self.attempts.borrow_mut().remove(key);
     }
 }
 
@@ -431,5 +446,300 @@ fn each_failure_names_its_phase() {
     assert_eq!(
         ensure_state(&missing, &docker("running")).map_err(|failure| failure.code),
         Err("process.container_missing")
+    );
+}
+
+const INVOCATION: &str = "/usr/bin/systemctl show --property=InvocationID";
+
+fn restart_input(boot: &str) -> serde_json::Value {
+    json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "instance": "aaa", "boot": boot})
+}
+
+fn restarts(fake: &Fake) -> usize {
+    fake.calls()
+        .iter()
+        .filter(|call| call.contains(" restart "))
+        .count()
+}
+
+#[test]
+fn a_read_pins_the_units_invocation_and_the_containers_run() {
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("aaa\n")]);
+    let input = json!({"process_id": 417, "runtime": "systemd", "name": UNIT});
+    assert_eq!(
+        read_instance(&fake, &input).map(|read| read.instance),
+        Ok("aaa".to_owned())
+    );
+    assert_eq!(fake.changed(), Vec::<String>::new());
+    let fake = Fake::default().on(
+        "/usr/bin/docker container inspect",
+        &[Ok(
+            "/orbit-process-417-web c1 2026-11-27T10:00:00Z running nginx:1\n",
+        )],
+    );
+    let input = json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web"});
+    assert_eq!(
+        read_instance(&fake, &input).map(|read| read.instance),
+        Ok("c1@2026-11-27T10:00:00Z".to_owned())
+    );
+    let missing = Fake::default().on(
+        "/usr/bin/systemctl show --property=LoadState",
+        &[Ok(&show("not-found", "inactive", ""))],
+    );
+    let input = json!({"process_id": 417, "runtime": "systemd", "name": UNIT});
+    assert_eq!(
+        read_instance(&missing, &input).map_err(|failure| failure.code),
+        Err("process.unit_missing")
+    );
+    let foreign =
+        json!({"process_id": 417, "runtime": "systemd", "name": "orbit-process-418-web.service"});
+    assert_eq!(
+        read_instance(&Fake::default(), &foreign).map_err(|failure| failure.code),
+        Err("process.input_invalid")
+    );
+}
+
+#[test]
+fn a_unit_restart_sets_its_boot_policy_records_its_attempt_then_restarts_once_and_reads_a_new_run_back(
+) {
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "active", "disabled")),
+                Ok(&show("loaded", "active", "enabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok("aaa"), Ok("aaa"), Ok("bbb")]);
+    let restart = restart(&fake, "42-restart", &restart_input("enabled")).expect("restarts");
+    assert_eq!(
+        (restart.restarted, restart.instance.as_str()),
+        ("now", "bbb")
+    );
+    assert_eq!(
+        fake.changed(),
+        vec![
+            format!("/usr/bin/systemctl enable -- {UNIT}"),
+            "attempt 42-restart".to_owned(),
+            format!("/usr/bin/systemctl restart -- {UNIT}"),
+        ]
+    );
+    assert!(
+        !fake.attempted("42-restart"),
+        "the attempt ends with its result"
+    );
+}
+
+#[test]
+fn an_on_demand_unit_keeps_its_boot_policy_disabled() {
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "disabled"))],
+        )
+        .on(INVOCATION, &[Ok("aaa"), Ok("aaa"), Ok("bbb")]);
+    assert!(restart(&fake, "42-restart", &restart_input("disabled")).is_ok());
+    assert!(!fake
+        .changed()
+        .iter()
+        .any(|call| call.contains("enable") || call.contains("disable")));
+    assert_eq!(restarts(&fake), 1);
+}
+
+#[test]
+fn a_replay_after_the_restart_ran_never_restarts_again() {
+    // The executor died after the restart: its attempt is on disk, the unit runs a new invocation.
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("bbb")]);
+    fake.begin_attempt("42-restart").expect("attempt");
+    let recovered = restart(&fake, "42-restart", &restart_input("enabled")).expect("recovers");
+    assert_eq!(recovered.restarted, "recovered");
+    assert_eq!(restarts(&fake), 0);
+    // It died after the attempt ended, before its journal record: the run differs from the pinned one, so nothing acts.
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("bbb")]);
+    assert_eq!(
+        restart(&fake, "42-restart", &restart_input("enabled")).map(|done| done.restarted),
+        Ok("already")
+    );
+    assert_eq!(restarts(&fake), 0);
+}
+
+#[test]
+fn a_replay_whose_attempt_never_showed_a_new_run_fails_unresolved_without_restarting() {
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("aaa")]);
+    fake.begin_attempt("42-restart").expect("attempt");
+    assert_eq!(
+        restart(&fake, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.restart_unresolved")
+    );
+    assert_eq!(restarts(&fake), 0);
+}
+
+#[test]
+fn a_fresh_order_restarts_again_exactly_once() {
+    for key in ["42-restart", "43-restart"] {
+        let fake = Fake::default()
+            .on(
+                "/usr/bin/systemctl show --property=LoadState",
+                &[Ok(&show("loaded", "active", "enabled"))],
+            )
+            .on(INVOCATION, &[Ok("aaa"), Ok("aaa"), Ok("bbb")]);
+        assert_eq!(
+            restart(&fake, key, &restart_input("enabled")).map(|done| done.restarted),
+            Ok("now")
+        );
+        assert_eq!(restarts(&fake), 1, "{key}");
+    }
+}
+
+#[test]
+fn a_restart_whose_read_back_is_not_a_new_active_run_fails() {
+    let same = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("aaa")]);
+    assert_eq!(
+        restart(&same, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.restart_unverified")
+    );
+    let failed = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "active", "enabled")),
+                Ok(&show("loaded", "failed", "enabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok("aaa"), Ok("aaa"), Ok("bbb")]);
+    assert_eq!(
+        restart(&failed, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.state_mismatch")
+    );
+    let refused = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("aaa")])
+        .on("/usr/bin/systemctl restart", &[Err("Job failed")]);
+    assert_eq!(
+        restart(&refused, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.apply_failed")
+    );
+    assert!(!refused.attempted("42-restart"));
+}
+
+#[test]
+fn a_restart_refuses_a_foreign_name_a_bad_key_and_a_mixed_shape_before_any_change() {
+    let fake = Fake::default();
+    let foreign = json!({"process_id": 417, "runtime": "systemd", "name": "orbit-process-418-web.service", "instance": "aaa", "boot": "enabled"});
+    assert_eq!(
+        restart(&fake, "42-restart", &foreign).map_err(|failure| failure.code),
+        Err("process.input_invalid")
+    );
+    assert_eq!(
+        restart(&fake, "../x", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.input_invalid")
+    );
+    let mixed = json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "instance": "aaa", "boot": "enabled"});
+    assert_eq!(
+        restart(&fake, "42-restart", &mixed).map_err(|failure| failure.code),
+        Err("process.input_invalid")
+    );
+    assert_eq!(fake.calls(), Vec::<String>::new());
+}
+
+#[test]
+fn a_container_restart_runs_once_and_reads_a_new_start_back() {
+    let input = json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "instance": "c1@T1", "image": "nginx:1"});
+    let fake = Fake::default().on(
+        "/usr/bin/docker container inspect",
+        &[
+            Ok("/orbit-process-417-web c1 T1 running nginx:1"),
+            Ok("/orbit-process-417-web c1 T1 running nginx:1"),
+            Ok("/orbit-process-417-web c1 T2 running nginx:1"),
+        ],
+    );
+    let restart = restart(&fake, "42-restart", &input).expect("restarts");
+    assert_eq!(
+        (restart.restarted, restart.instance.as_str()),
+        ("now", "c1@T2")
+    );
+    assert_eq!(
+        fake.changed(),
+        vec![
+            "attempt 42-restart".to_owned(),
+            "/usr/bin/docker container restart orbit-process-417-web".to_owned()
+        ]
+    );
+    let replay = Fake::default().on(
+        "/usr/bin/docker container inspect",
+        &[Ok("/orbit-process-417-web c1 T2 running nginx:1")],
+    );
+    replay.begin_attempt("42-restart").expect("attempt");
+    assert_eq!(
+        super::restart(&replay, "42-restart", &input).map(|done| done.restarted),
+        Ok("recovered")
+    );
+    assert_eq!(restarts(&replay), 0);
+}
+
+#[test]
+fn the_gateway_signed_restart_inputs_parse_and_run() {
+    let read: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../contract/fixtures/executor-process-read-instance.json"
+    ))
+    .expect("fixture");
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("0f6e2bd1c3a54e7f9b8d2c1a0e9f8d7c")]);
+    assert_eq!(
+        read_instance(&fake, &read["fields"]["input"]).map(|read| read.instance),
+        Ok("0f6e2bd1c3a54e7f9b8d2c1a0e9f8d7c".to_owned())
+    );
+    let order: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../contract/fixtures/executor-process-restart.json"
+    ))
+    .expect("fixture");
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "active", "enabled"))],
+        )
+        .on(
+            INVOCATION,
+            &[
+                Ok("0f6e2bd1c3a54e7f9b8d2c1a0e9f8d7c"),
+                Ok("0f6e2bd1c3a54e7f9b8d2c1a0e9f8d7c"),
+                Ok("1a"),
+            ],
+        );
+    assert_eq!(
+        restart(&fake, "42-restart", &order["fields"]["input"]).map(|done| done.restarted),
+        Ok("now")
     );
 }

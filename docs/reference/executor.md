@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-schedule-ensure-timer}.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -114,6 +114,8 @@ The executor implements these action families:
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
 | `process.ensure_state` | `process` | Converges one Process to running or stopped and its boot policy, then reads it back (see [the process family](#the-process-family)) |
+| `process.read_instance` | `process` | Reads the run a restart replaces: a unit's `InvocationID` or a container's ID and `State.StartedAt`; changes nothing |
+| `process.restart` | `process` | Restarts one Process at most once per order, only while it still runs the pinned run, then reads a new run back (see [the process family](#the-process-family)) |
 | `schedule.ensure_timer` | `process` | Enables and starts a Schedule's own Node timer, then reads back `UnitFileState`, `ActiveState` and the next elapse |
 
 ### The instance family
@@ -139,13 +141,23 @@ When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor adverti
 
 ### The process family
 
-The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0, the version this tree builds (`NodeExecutorInput::FamilySince`); app-prod does not enable it yet. Both actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
+The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop), [`process.restart`](/reference/gateway-engine#processrestart) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0 (`NodeExecutorInput::FamilySince`); its restart actions come with agent 0.32.0, and the Gateway routes a restart only to a Node that reports them. App-prod does not enable the family yet. Its actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
 
 | Shape | Change | Read-back |
 | --- | --- | --- |
 | Host systemd unit | `systemctl enable` or `disable`, then `start` or `stop` | `LoadState=loaded`, `ActiveState` `active` or `inactive` exactly, and the admitted `UnitFileState` (`disabled` for a stop and for an on-demand start) |
 | Host Docker container | `docker container start` or `stop`, by the exact saved name | `State.Status` `running` or `exited` exactly (`created` fails) and the admitted image; an inspect answer for another name fails |
 | Schedule Node timer | `systemctl enable`, then `start`, of `orbit-schedule-<uuid>.timer` only | `LoadState=loaded`, `UnitFileState=enabled`, `ActiveState=active`; the receipt's `output` carries them with `NextElapseUSecRealtime` |
+
+A restart is not a desired state, so the family binds it to its order. `process.read_instance` answers the run in place as `{"instance": …}`: a unit's `InvocationID`, a random ID systemd gives each run and that is empty while the unit is stopped, or a container's `<ID>@<State.StartedAt>`. The Gateway pins that answer into the `process.restart` order, so every send of the step carries the same run. The restart first applies the unit's boot policy, as Swamp's `Set boot policy` does on every run. Then it reads the run again:
+
+| On the Node | What `process.restart` does | `restarted` |
+| --- | --- | --- |
+| The pinned run, and no attempt for this order | Syncs an attempt file for the order (`/var/lib/orbit/executor/process-restart/<operation>-<step>`), then runs `systemctl restart` or `docker container restart` | `now` |
+| Another run, and no attempt | Nothing: the run it would replace already ended, or an earlier execution of this order restarted it and its attempt ended | `already` |
+| An attempt for this order | Never restarts again: it waits up to 30 s for a new run, else fails `process.restart_unresolved` | `recovered` |
+
+The read-back requires a unit loaded, `active` and at its admitted boot policy, or a container `running` with its admitted image, and in both a run other than the pinned one, else `process.state_mismatch` or `process.restart_unverified`. The attempt file is removed once the result is known. A crash after that leaves a run that differs from the pinned one, so a replay answers `already` and acts on nothing. A resend whose `done` record exists gets the journal's stored result, as for every fenced action.
 
 A unit in an Instance container is not covered: Swamp first moves the container's app account with a script, which no fixed argv reproduces, so the Gateway keeps that shape on Swamp. A property `systemctl show` leaves out never counts as its value. Each failure code names its phase: the change (`process.apply_failed`, `process.unit_missing`, `process.container_missing`), a stop's plain `systemctl stop` after it (`process.unit_stop_failed`), the read-back read (`process.read_failed`, `schedule.read_failed`) or a read of another state (`process.state_mismatch`, `schedule.state_mismatch`); the Gateway keeps these step codes beside the public `operation.native_failed` a Swamp run records.
 

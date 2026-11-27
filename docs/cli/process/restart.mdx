@@ -14,8 +14,8 @@ On a container Instance, a Process whose definition the Project removed answers 
 
 <div className="flow-at" data-chart="process/restart"></div>
 
-### Proposed executor path
+### Executor path
 
-On the Gateway engine, the restart compares the unit's run evidence before it acts, so a lost receipt never causes a second restart. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, a restart of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process, is two signed orders on the Process's Node. `process.read_instance` reads the run in place: the unit's `InvocationID` or the container's ID and start time. `process.restart` carries that run, applies the boot policy (disabled for an on-demand Process), and restarts only while the Process still runs it. It records its attempt before it calls the runtime, so a lost receipt or a resend never restarts twice. Its read-back requires the Process active or running on a new run. A dev-server Process (`vp-dev`, `vite`), a Process of an Instance outside app-dev, a unit in an Instance container, a Gateway release-container Process, a Node's host Horizon unit, and a Node whose agent does not report both actions stay on Swamp. A failure records `operation.native_failed` as the Swamp flow does. The run holds the Process lock until its terminal receipt, and another Operation on the Process is refused `operation.target_busy` meanwhile. Runtime proof on a nested fleet is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="process/engine/restart"></div>

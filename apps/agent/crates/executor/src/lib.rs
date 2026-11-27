@@ -155,7 +155,7 @@ impl Run for Families {
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames | Action::InstanceSyncBase | Action::InstanceClearBase => instance(order),
-            Action::ProcessEnsureState | Action::ScheduleEnsureTimer => process(order),
+            Action::ProcessEnsureState | Action::ProcessReadInstance | Action::ProcessRestart | Action::ScheduleEnsureTimer => process(order),
         }
     }
 }
@@ -367,6 +367,11 @@ fn process(order: &VerifiedOrder) -> Outcome {
     let result = match order.action() {
         Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(&system, order.input())
             .map(|timer| Outcome::Output { stdout: serde_json::json!(timer).to_string() }),
+        Action::ProcessReadInstance => orbit_executor_process::read_instance(&system, order.input())
+            .map(|read| Outcome::Output { stdout: serde_json::json!(read).to_string() }),
+        // The order's Operation step keys its attempt, so a replay of this order finds it and a new Operation does not.
+        Action::ProcessRestart => orbit_executor_process::restart(&system, &order.operation().as_str().replace(':', "-"), order.input())
+            .map(|restart| Outcome::Output { stdout: serde_json::json!(restart).to_string() }),
         _ => orbit_executor_process::ensure_state(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {
@@ -490,6 +495,8 @@ mod tests {
         assert!(process_slot(Action::ProcessEnsureState, "7:process-417", &state));
         assert!(!process_slot(Action::ProcessEnsureState, "7:process-418", &state));
         assert!(!process_slot(Action::ProcessEnsureState, "7", &state));
+        assert!(process_slot(Action::ProcessRestart, "7:process-417", &state));
+        assert!(!process_slot(Action::ProcessReadInstance, "7:process-418", &state));
         let timer = serde_json::json!({"schedule_id": "7f3c0a5e-1b2c-4d3e-8f90-0123456789ab"});
         assert!(process_slot(Action::ScheduleEnsureTimer, "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab", &timer));
         assert!(!process_slot(Action::ScheduleEnsureTimer, "7:process-417", &timer));

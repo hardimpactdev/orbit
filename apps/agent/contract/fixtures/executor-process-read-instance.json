@@ -1,0 +1,18 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "pMpBS4NZbw/XoloZ5pxUNZZ5GRTK3AS40a+2LYqvIvw=",
+    "fields": {
+        "action": "process.read_instance",
+        "node": "7",
+        "target": "7:process-417",
+        "operation": "42:read",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "process_id": 417,
+            "runtime": "systemd",
+            "name": "orbit-process-417-web.service"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJwcm9jZXNzLnJlYWRfaW5zdGFuY2UiLCJub2RlIjoiNyIsInRhcmdldCI6Ijc6cHJvY2Vzcy00MTciLCJvcGVyYXRpb24iOiI0MjpyZWFkIiwibm9uY2UiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMSIsImV4cGlyZXNfbXMiOjE4MDAwMDAwMDgwMDAsImlucHV0Ijp7InByb2Nlc3NfaWQiOjQxNywicnVudGltZSI6InN5c3RlbWQiLCJuYW1lIjoib3JiaXQtcHJvY2Vzcy00MTctd2ViLnNlcnZpY2UifX0=.ksLRgCKhFjNCI3t4ycqjDjxkdNXo2jBOj+bvY8tTwUqvPoajgVXoXoGmg2gsewC29wvYPwpk5SWWnv68dO6eAQ=="
+}
