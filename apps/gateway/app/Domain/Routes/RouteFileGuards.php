@@ -46,7 +46,7 @@ final readonly class RouteFileGuards
                 ...($after === null ? [] : ['php_versions_after' => implode(',', array_keys((array) (ValidatedData::object(
                     $this->publications->snapshot($node, $after, true)['php'])['configurations'] ?? [])))]),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
-                'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
+                'catalog' => $dns === null ? null : self::catalogDigest(ValidatedData::string($dns['catalog']))], is_string(...));
         }
 
         return $guards;
@@ -89,14 +89,36 @@ final readonly class RouteFileGuards
             $dns = is_array($render['dns'] ?? null) ? $render['dns'] : null;
             $live = is_array($before['dns']) ? $before['dns'] : null;
             if ($dns !== null && $live !== null && ($dns['records'] !== $live['records'] || $dns['catalog'] !== $live['catalog'])) {
-                foreach (['records', 'catalog'] as $file) {
-                    $row['dns'][$file] = ['from_sha256' => hash('sha256', ValidatedData::string($live[$file])), 'content' => ValidatedData::string($dns[$file])];
-                }
+                $row['dns']['records'] = ['from_sha256' => hash('sha256', ValidatedData::string($live['records'])), 'content' => ValidatedData::string($dns['records'])];
+                $row['dns']['catalog'] = ['from_sha256' => self::catalogDigest(ValidatedData::string($live['catalog'])), 'content' => ValidatedData::string($dns['catalog'])];
             }
             $nodes[(int) $id] = $row;
         }
 
         return $nodes;
+    }
+
+    /**
+     * The guard digest of a private DNS catalog: its canonical form, the JSON with every object's keys in byte order, an empty
+     * array read as an empty object (PHP's empty map), compact, and one newline. Swamp's withdrawal writes the same catalog
+     * with its merge's key order and `{}` where this renderer writes `[]`; the executor's `catalog_sha256` (dns crate) hashes
+     * the live file the same way, so only a change of content refuses.
+     */
+    public static function catalogDigest(string $catalog): string
+    {
+        $canonical = static function (mixed $value) use (&$canonical): mixed {
+            if ($value instanceof \stdClass) {
+                $fields = get_object_vars($value);
+                ksort($fields, SORT_STRING);
+
+                return (object) array_map($canonical, $fields);
+            }
+
+            return is_array($value) ? ($value === [] ? new \stdClass : array_map($canonical, $value)) : $value;
+        };
+
+        return hash('sha256', json_encode($canonical(json_decode($catalog, false, 512, JSON_THROW_ON_ERROR)),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS | JSON_THROW_ON_ERROR)."\n");
     }
 
     /**

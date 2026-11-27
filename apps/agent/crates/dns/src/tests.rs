@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use super::{publish_records, System, CATALOG, RECORDS};
+use super::{catalog_sha256, publish_records, System, CATALOG, RECORDS};
 
 struct Fake {
     root: tempfile::TempDir,
@@ -178,4 +178,45 @@ fn the_gateway_signed_guarded_input_decodes() {
     fs::write(fake.file(RECORDS), "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n").unwrap();
     fs::write(fake.file(CATALOG), "{\"shop.example\":1}\n").unwrap();
     assert_eq!(publish_records(&fake, &fixture["fields"]["input"]), Ok(2));
+}
+
+/// The catalog Swamp's route withdrawal wrote on the nested VPN Node (ORB-6310 proof), and the Gateway's render of the same
+/// state: Swamp keeps its merge's key order and writes `{}` for the empty overrides, PHP writes `requesters` first and `[]`.
+const SWAMP_CATALOG: &[u8] = b"{\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":{}}\n";
+const GATEWAY_CATALOG: &[u8] = b"{\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":[]}\n";
+/// The canonical digest both sides compute; the Gateway's test (RouteFileGuardsTest) pins the same value.
+const CANONICAL_CATALOG_SHA256: &str = "141b5eab6c46db1a9c5e2615fc229b8b9bf0253d3f4079b95e6ce4470a03baba";
+
+#[test]
+fn a_catalog_swamp_rewrote_matches_the_canonical_digest_the_gateway_rendered_from() {
+    assert_eq!(catalog_sha256(SWAMP_CATALOG).as_deref(), Some(CANONICAL_CATALOG_SHA256));
+    assert_eq!(catalog_sha256(GATEWAY_CATALOG).as_deref(), Some(CANONICAL_CATALOG_SHA256));
+    // An already canonical file keeps its plain digest.
+    assert_eq!(catalog_sha256(b"{\"shop.example\":1}\n"), Some(digest(b"{\"shop.example\":1}\n")));
+    assert_eq!(catalog_sha256(b"not json"), None);
+
+    let mut fake = Fake::new();
+    fake.blobs.insert("c".to_owned(), b"{\"records\":{}}\n".to_vec());
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    fs::write(fake.file(CATALOG), SWAMP_CATALOG).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": CANONICAL_CATALOG_SHA256},
+    });
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), b"{\"records\":{}}\n");
+}
+
+#[test]
+fn a_catalog_with_another_answer_still_refuses() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    let foreign = String::from_utf8(SWAMP_CATALOG.to_vec()).unwrap().replace("\"swamp.orbit\":\"10.45.0.1\"", "\"swamp.orbit\":\"10.45.0.9\"");
+    fs::write(fake.file(CATALOG), &foreign).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": CANONICAL_CATALOG_SHA256},
+    });
+    assert_eq!(publish_records(&fake, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), foreign.as_bytes());
 }

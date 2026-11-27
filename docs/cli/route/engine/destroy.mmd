@@ -35,6 +35,7 @@ sequenceDiagram
       EN->>V: Withdraw the DNS answers<br/>dns.publish_records · dns-i
       %%> Reuses `dns.publish_records` with the records and the catalog rendered without the Route, its Router answers (`overrides`) included; other Routes' records stay byte for byte
       %%> The guarded input (behind the feature above) carries, per file, the digest the Gateway rendered from (`route_guards`, the whole files rendered from the sites at admission) and the desired bytes as a blob named by their digest
+      %%> The catalog's digest is of its canonical form (keys in byte order, `[]` read as `{}`, compact, one newline): Swamp's withdrawal rewrites the same catalog in its merge's key order and with `{}`; any change of content still refuses
       %%> Per file: live equals desired (this step already wrote it, also one half of a records/catalog pair) is kept; live equals the rendered-from digest is replaced; anything else refuses `owned_revision_conflict` and writes nothing, so unrelated changes are never overwritten
       %%> `dnsmasq --test`, then the restart, on every run, also a replay, so files written before a crash are loaded; a failed check puts the previous files back and restarts nothing
       V-->>EN: Files and restart<br/>applied · catalog digest

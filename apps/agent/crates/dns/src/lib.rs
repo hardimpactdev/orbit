@@ -108,6 +108,8 @@ struct Input {
 
 /// A file's desired bytes as a blob. `from_sha256` (feature `dns.guarded_records`) names the live bytes the Gateway
 /// rendered from: the file is replaced only when it still holds them, or kept when it already holds the desired bytes.
+/// For the catalog it names the canonical form of those bytes ([`catalog_sha256`]), because Swamp's withdrawal writes the
+/// same catalog with its own key order and `{}` where the Gateway writes `[]`.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BlobRef {
@@ -145,7 +147,8 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
     for ((path, content), blob) in contents.iter().zip([&input.records, &input.catalog]) {
         if let Some(from) = &blob.from_sha256 {
             let live = fs::symlink_metadata(system.path(path)).ok().filter(fs::Metadata::is_file).and_then(|_| fs::read(system.path(path)).ok()).unwrap_or_default();
-            if live != *content && sha256_hex(&live) != *from {
+            let rendered = if *path == CATALOG { catalog_sha256(&live) } else { Some(sha256_hex(&live)) };
+            if live != *content && rendered.as_deref() != Some(from.as_str()) {
                 return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this Operation")));
             }
         }
@@ -201,6 +204,29 @@ fn lock(system: &impl System) -> Result<File, Failure> {
             Err(fs::TryLockError::Error(error)) => return Err(Failure::new("dns.publish_lock_failed", error.to_string())),
         }
     }
+}
+
+/// The digest of a catalog's canonical form: its JSON with every object's keys in byte order, an empty array read as an
+/// empty object (PHP's empty map), compact, and one newline. Writers differ only in these; any other change is a new digest.
+/// None for bytes that are not JSON, which no guard matches.
+#[must_use]
+pub fn catalog_sha256(bytes: &[u8]) -> Option<String> {
+    fn canonical(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut entries: Vec<_> = map.into_iter().collect();
+                entries.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+                serde_json::Value::Object(entries.into_iter().map(|(key, value)| (key, canonical(value))).collect())
+            }
+            serde_json::Value::Array(items) if items.is_empty() => serde_json::Value::Object(serde_json::Map::new()),
+            serde_json::Value::Array(items) => serde_json::Value::Array(items.into_iter().map(canonical).collect()),
+            other => other,
+        }
+    }
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let mut text = serde_json::to_vec(&canonical(value)).ok()?;
+    text.push(b'\n');
+    Some(sha256_hex(&text))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
