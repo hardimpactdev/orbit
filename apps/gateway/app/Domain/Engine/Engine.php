@@ -7,6 +7,7 @@ namespace App\Domain\Engine;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Operation;
@@ -29,6 +30,9 @@ final readonly class Engine
 {
     /** How long past its re-send time a sent step waits before the reconciler nudges it: its own deadline comes first. */
     private const int NudgeGraceMs = 30_000;
+
+    /** Kinds whose target stays fenced by the Operation lock until every sent step has a terminal receipt. */
+    public const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, RouteUpdateEngineFlow::Kind];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -144,7 +148,7 @@ final readonly class Engine
 
     public static function requiresReceipt(Operation $operation): bool
     {
-        return self::owns($operation) && $operation->kind === InstanceDestroyEngineFlow::Kind;
+        return self::owns($operation) && in_array($operation->kind, self::ReceiptBound, true);
     }
 
     private static function text(mixed $value): string

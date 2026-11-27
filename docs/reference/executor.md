@@ -111,7 +111,8 @@ The executor implements these action families:
 | `sleep`, `wake`, `discard` | `power` | Signed container freeze, memory restore/unfreeze, and plan cleanup |
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
-| `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
+| `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile; `route.update` sends it twice, the side-by-side and then the lasting Caddyfile, never with `APP_URL` |
+| `route.withdraw_site` | `route` | route.destroy's site withdrawal, not released yet; `route.update` sends it for the old domain's leaves after the lasting Caddyfile |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
 
 ### The instance family

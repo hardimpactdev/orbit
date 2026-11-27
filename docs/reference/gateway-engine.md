@@ -34,6 +34,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
+| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, guarded `dns.publish_records` and route.destroy's site withdrawal, both not released yet |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `remove` | `instance.destroy` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
@@ -52,7 +53,29 @@ The engine runs the admitted `route_create` plan while preserving Route holds an
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do other Route kinds such as `route.update`.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.update`.
+
+### route.update
+
+`RouteUpdateEngineFlow` runs a `--domain` change of a private Route from the admitted `route_update` plan (docs/cli/route/engine/update.mmd). Its steps run in this order:
+
+| Step | Work |
+| --- | --- |
+| `csr-<i>`, `sign-<i>` | The leaves, as for `route.create` |
+| `site-<node>` | `route.publish_site` with the early leaves and a Caddyfile that serves the old and the new name side by side |
+| `probe-<i>` | The TLS handshake with each serving Node under the new name |
+| `dns-<i>` | The guarded `dns.publish_records` on each VPN Node |
+| `cutover` | A Gateway transaction that marks the replacement `active` and the old Route `retiring`; its `done` row is the acknowledgement |
+| `grace` | 31 s from the latest stored DNS receipt, so a resend or retry never shortens it |
+| `final-<node>` | `route.publish_site` with the lasting Caddyfile and the late leaves, validated and read back |
+| `withdraw-<node>` | route.destroy's site withdrawal for the old domain's leaves |
+| `sibling-<node>` | Another active Route on the Node still answers over TLS; a Node without one passes |
+
+A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times. One chain never mixes engines: a retry of a Swamp-started update stays on Swamp, and `StartSwampRun` refuses a Swamp start of an engine-started chain with `route.update_engine_chain`.
+
+The update is receipt-bound, as `instance.destroy` is: the Gateway binds the steps and takes the Route's Operation lock in one transaction, and the Route, its replacement and the held Nodes stay fenced until each sent step has a terminal receipt. Admission still takes the exclusive Route publication holds of the serving Nodes.
+
+A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. Until route.destroy releases the guarded DNS input and the site withdrawal, an update that moves private DNS or withdraws an old leaf also stays on Swamp: no Node reports `route.withdraw_site`.
 
 ### instance.create
 

@@ -8,7 +8,6 @@ use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\InstanceMigration\InstanceMigration;
-use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
@@ -17,6 +16,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -82,12 +82,12 @@ final readonly class StartSwampRun
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
                 $runId = EngineRun::runIdOf($operation->id);
-                if ($operation->kind === InstanceDestroyEngineFlow::Kind) {
-                    $lock = OperationStore::lockKey('instance', $operation->target_id);
+                if (in_array($operation->kind, Engine::ReceiptBound, true)) {
+                    $lock = OperationStore::lockKey($operation->target_type, $operation->target_id);
                     try {
                         app(Engine::class)->start($operation, fn () => $this->bind($operation, $runId, $lock));
                     } catch (UniqueConstraintViolationException $exception) {
-                        throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the Instance lock.', 409, previous: $exception);
+                        throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);
                     }
                 } else {
                     $this->bind($operation, $runId);
@@ -97,6 +97,7 @@ final readonly class StartSwampRun
 
                 return;
             }
+            RouteUpdateEngineFlow::assertSwampMayRun($operation);
             $endpoint = $this->endpoint();
             // The run-time execution copies and the start share one connection: one serve handshake per start.
             $response = app(SwampDispatch::class)->shared(function () use ($operation, $endpoint, $started, &$submitted, &$phases, &$connectFailure, &$notAdmitted): array {
