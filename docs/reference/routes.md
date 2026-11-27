@@ -347,7 +347,9 @@ Dedicated hostnames keep service endpoints independent of application routes wit
 
 ## Remove a Route
 
-`route:destroy` removes DNS records, waits the grace period, withdraws Caddy sites, converges development PHP-FPM pools, removes certificates and unused LAN/public firewall rules, verifies no residue remains, and deletes the Route record. The record moves to `retiring` just before it is deleted, so an additional web-root Route of an active Instance goes while the Instance keeps its one authoritative Route. It refuses active public app Routes and Routes in an active replacement pair (`route.reconciliation_required`), `analytics_tracking` Routes (`route.tracking_managed` 409), and missing coordinators (`route.coordinator_required` 409).
+`route:destroy` removes DNS records, waits the grace period, withdraws Caddy sites, converges development PHP-FPM pools, removes certificates and unused LAN/public firewall rules, verifies no residue remains, and deletes the Route record.
+
+The record moves to `retiring` just before it is deleted. So an additional web-root Route of an active Instance goes, and the Instance keeps its one authoritative Route. As on Swamp, the deletion first checks again that no active Instance needs the Route. An Instance that became active during the removal keeps its primary Route. The removal then fails with `route.target_conflict`. It refuses active public app Routes and Routes in an active replacement pair (`route.reconciliation_required`), `analytics_tracking` Routes (`route.tracking_managed` 409), and missing coordinators (`route.coordinator_required` 409).
 
 | Destroy error code | Step |
 | --- | --- |

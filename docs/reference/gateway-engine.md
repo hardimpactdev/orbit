@@ -254,7 +254,11 @@ If the Gateway cannot read the bucket (for example during a `nats-server` restar
 
 Orders publish after the transaction commits. For each dispatched step, the engine schedules its deadline first and then publishes the order. An unbuildable order or one exceeding 4 KB fails with `engine.order_invalid`. A publish error resets the step to pending and negatively acknowledges the event for retry after one second.
 
-The engine mirrors step state into `state.native_progress` so `operation:show` matches Swamp output. At completion, it calls the kind's domain projection. A projection that throws is acknowledged, not redelivered: the engine records `state.engine.finish_attempts`, and a deadline retries it after 2 s, then 4 s. After the third failure the Operation ends `failed` with `engine.projection_failed` and the step `projection`, and its lock is released. Each projection runs in one transaction, so a failed one changed no records, and a later message for the Operation finds it ended and does nothing.
+The engine mirrors step state into `state.native_progress` so `operation:show` matches Swamp output. At completion, it calls the kind's domain projection.
+
+A projection that throws is acknowledged, not redelivered: the engine records `state.engine.finish_attempts`, and a deadline retries it after 2 s, then 4 s. After the third failure the Operation ends `failed` with `engine.projection_failed` and the step `projection`, and its lock is released. When that terminal write fails too, because a lifecycle hook it runs (such as a linked task's update) is what keeps throwing, the engine writes the end without the hooks.
+
+The engine runs each projection in one transaction, so its terminal result commits together with every write that follows it, such as a create's runtime power state or a fetch credential's removal, or none does and the end stays retryable. A later message for an ended Operation does nothing.
 
 ### Orders and receipts
 

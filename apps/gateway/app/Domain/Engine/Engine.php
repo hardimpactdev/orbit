@@ -6,8 +6,10 @@ namespace App\Domain\Engine;
 
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
+use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessControlEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Schedules\ScheduleEnableEngineFlow;
@@ -417,7 +419,9 @@ final readonly class Engine
             return; // A backed-off retry waits for its own deadline.
         }
         try {
-            $definition->finish($operation, $this->run($operation->id));
+            // One transaction: the terminal result commits with every write the projection makes after it, or none does and the
+            // end stays retryable.
+            DB::transaction(fn () => $definition->finish($operation, $this->run($operation->id)));
 
             return;
         } catch (Throwable $exception) {
@@ -427,9 +431,7 @@ final readonly class Engine
         $state = $operation->refresh()->state ?? [];
         if ($attempts >= self::FinishAttempts) {
             $state['engine'] = [...ValidatedData::object($state['engine'] ?? []), 'finish_attempts' => $attempts, 'finish_retry_ms' => null];
-            $this->operations->change($operation, ['status' => OperationStatus::Failed, 'error_code' => self::ProjectionFailed,
-                'failed_step' => self::ProjectionStep, 'current_step' => null, 'finished_at' => now(), 'lock_key' => null, 'state' => $state,
-                'result' => ['error_code' => self::ProjectionFailed, 'failed_step' => self::ProjectionStep]], onlyWhileOpen: true);
+            $this->failExhausted($operation, $state);
 
             return;
         }
@@ -444,6 +446,41 @@ final readonly class Engine
             $this->operations->change($operation, ['state' => $state], onlyWhileOpen: true);
 
             throw $exception;
+        }
+    }
+
+    /**
+     * Ends an Operation whose projection kept throwing. The usual terminal write runs the kind's lifecycle hooks, which may be
+     * what threw: when it fails too, the end is written without them, so the Operation still fails, its lock goes and the next
+     * delivery finds it ended and is acknowledged.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    private function failExhausted(Operation $operation, array $state): void
+    {
+        $changes = ['status' => OperationStatus::Failed, 'error_code' => self::ProjectionFailed, 'failed_step' => self::ProjectionStep,
+            'current_step' => null, 'finished_at' => now(), 'lock_key' => null, 'state' => $state,
+            'result' => ['error_code' => self::ProjectionFailed, 'failed_step' => self::ProjectionStep]];
+        try {
+            $this->operations->change($operation, $changes, onlyWhileOpen: true);
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+        DB::transaction(static function () use ($operation, $changes): void {
+            $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+            if (! $current->status->terminal()) {
+                $current->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
+            }
+        });
+        if (RoutePublicationHolds::tracks($operation->kind)) {
+            app(RoutePublicationHolds::class)->release($operation->id, false);
+        }
+        try {
+            app(OperationBroadcaster::class)->changed($operation->refresh(), true);
+        } catch (Throwable $exception) {
+            report($exception); // Watchers read the end at their next poll.
         }
     }
 

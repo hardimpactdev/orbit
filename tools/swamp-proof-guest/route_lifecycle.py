@@ -3,6 +3,7 @@
 The VPN Node of the nested fleet is the Gateway (Node 1), so the lane also runs the executor there with the `dns` family,
 behind the guard that admits the Gateway's own `orbit` user to the bus."""
 import functools
+import hashlib
 import json
 import shlex
 import subprocess
@@ -175,11 +176,12 @@ class RouteLane(CloneLane):
         answers exactly the known page the fixture serves behind it."""
         route = self.routes_made[name]
         if getattr(self, 'project_type', 'laravel-package') == 'laravel-app':
-            # The app's own server answers the site, so no known page stands behind it: the site, its leaf, its DNS answer and an
-            # HTTPS answer at the address that answer names show it serves.
+            # The app's own server answers the site: its site, leaf and DNS answer, and its page with HTTP 200 at the address that
+            # answer names, trusting only the nested root, show it serves.
             state = self.state(route['domain'], route['scope'])
-            require(self.present(state), f'sibling Route {name} is not healthy: {state}')
-            return state
+            page = self.app_page(route['domain'], state['dns_address'] or self.node_ip)
+            require(self.present(state) and page['code'] == '200', f'sibling Route {name} is not healthy: {state} {page["code"]}')
+            return {**state, 'page': page}
         if 'token' not in route:
             self.serve_known(route)
         state = self.state(route['domain'], route['scope'])
@@ -312,15 +314,25 @@ class RouteLane(CloneLane):
             WHERE t.instance_id={instance} AND r.web_root IS NULL""")
         require(len(rows) == 1 and rows[0]['status'] == 'active', f'clone {clone} has no one authoritative Route: {rows}')
         state = self.state(rows[0]['domain'], f'app-instance-{instance}')
-        # A name inside the TLD has no record line of its own: its site, leaf and HTTPS answer show that it serves.
-        require(state['caddy_lines'] > 0 and state['caddy_admin'] and state['leaf_paths'] == 1 and state['https'] != '000',
-                f'the main Route {rows[0]["domain"]} of clone {clone} does not serve: {state}')
+        page = self.app_page(rows[0]['domain'], state['dns_address'] or self.node_ip)
+        # A name inside the TLD has no record line of its own: its site, its leaf and its page with HTTP 200 show that it serves.
+        require(state['caddy_lines'] > 0 and state['caddy_admin'] and state['leaf_paths'] == 1 and page['code'] == '200',
+                f'the main Route {rows[0]["domain"]} of clone {clone} does not serve: {state} {page["code"]}')
         status = self.db(f'SELECT status FROM instances WHERE id={instance}')[0]['status']
         require(status == 'active', f'clone {clone} is {status}, not active')
         # ORB-6339: the refused delete threw in the projection and the receipt came back forever, each time logged.
         refused = self.log_lines('An active Instance requires exactly one authoritative Route')
         require(refused['lines'] == 0, f'laravel.log records a refused Route delete: {refused}')
-        self.record(clone + '-main-route', {'route': rows[0], 'instance_status': status, 'state': state, 'refused_delete_log_lines': refused['lines']})
+        # Each check keeps its own receipt, with the last route.destroy before it, so the order of observations stays readable.
+        self.main_checks = getattr(self, 'main_checks', 0) + 1
+        last = self.db("SELECT max(id) AS id FROM operations WHERE kind='route.destroy'")[0]['id']
+        self.record(f'{clone}-main-route-{self.main_checks}', {'route': rows[0], 'instance_status': status, 'state': state, 'page': page,
+                                                              'after_route_destroy': last, 'refused_delete_log_lines': refused['lines']})
+
+    def app_page(self, domain, address):
+        """The app's page at `address`, trusting only the nested root: its HTTP status, its size and the digest of its body."""
+        code, text = self.body(domain, address)
+        return {'code': code, 'bytes': len(text), 'sha256': hashlib.sha256(text.encode()).hexdigest()}
 
     def log_lines(self, needle):
         """The nested Gateway's current log (the daily channel's newest `laravel*.log`): its size, and how many lines hold `needle`."""

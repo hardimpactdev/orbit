@@ -313,3 +313,23 @@ it('destroys a secondary web-root Route of an active Instance and keeps its auth
         ->and($main->targets()->pluck('instance_id')->all())->toBe([$instance->id])
         ->and($instance->refresh()->status->value)->toBe('active');
 });
+
+it('keeps a primary Route whose Instance became active after the destroy was admitted, and fails the removal', function (): void {
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'owned', 'late');
+    $instance = $route->targets()->firstOrFail()->instance;
+    $route->update(['status' => 'pending', 'sites_published' => false]);
+    [$operation] = destroyAdmission($route);
+    // The Instance's completion activates it and its primary Route, its one authoritative Route, before the removal ends.
+    $route->update(['status' => 'active', 'sites_published' => true]);
+    $instance->update(['status' => 'active']);
+
+    $operation = app(NativeRouteRemovalProjection::class)->apply($operation, ['status' => 'succeeded', 'error_code' => null, 'run_id' => 'fixture-run',
+        'started_at' => now()->toIso8601ZuluString(), 'finished_at' => now()->toIso8601ZuluString(), 'result' => ['steps' => []]]);
+
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('route.target_conflict')
+        ->and($route->refresh()->status->value)->toBe('active')
+        ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id])
+        ->and($instance->refresh()->status->value)->toBe('active');
+});

@@ -10,6 +10,7 @@ use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
@@ -80,6 +81,9 @@ final class FailureStepDefinition implements EngineDefinition
 
     public static int $finishes = 0;
 
+    /** How many more times the projection throws after it wrote the terminal result. */
+    public static int $throwsAfterEnd = 0;
+
     public function __construct(private int $node) {}
 
     public function steps(Operation $operation): array
@@ -112,6 +116,12 @@ final class FailureStepDefinition implements EngineDefinition
         }
         self::$finished = ($run->failed()?->name ?? 'none').':'.($run->succeeded() ? 'succeeded' : 'not succeeded');
         $operation->forceFill(['status' => $run->failed() === null ? OperationStatus::Succeeded : OperationStatus::Failed])->save();
+        if (self::$throwsAfterEnd > 0) {
+            self::$throwsAfterEnd--;
+
+            throw new RuntimeException('runtime write refused');
+        }
+        $operation->forceFill(['result' => ['runtime' => 'written']])->save();
     }
 }
 
@@ -126,6 +136,7 @@ beforeEach(function (): void {
     FailureStepDefinition::$finished = null;
     FailureStepDefinition::$throws = 0;
     FailureStepDefinition::$finishes = 0;
+    FailureStepDefinition::$throwsAfterEnd = 0;
     $this->app->instance(InstanceCreateEngineFlow::class, new FailureStepDefinition($this->node->id));
     $this->operation = Operation::query()->forceCreate(['kind' => 'instance.create', 'status' => OperationStatus::Running, 'target_type' => 'instance',
         'target_id' => 7, 'node_id' => $this->node->id, 'input' => []]);
@@ -216,4 +227,57 @@ it('recovers from a projection that fails once within the bound', function (): v
     expect(FailureStepDefinition::$finishes)->toBe(2)
         ->and(FailureStepDefinition::$finished)->toBe('none:succeeded')
         ->and($this->operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('ends the Operation and frees its lock when the terminal write\'s own lifecycle hook throws, and reruns nothing after', function (): void {
+    // The create's lifecycle hook runs on every terminal write: here it is what keeps failing.
+    $this->app->instance(TaskLifecycle::class, new class
+    {
+        public int $calls = 0;
+
+        public function createEnded(Operation $operation): void
+        {
+            $this->calls++;
+
+            throw new RuntimeException('linked task update refused');
+        }
+    });
+    $this->operation->forceFill(['lock_key' => 'instance:7'])->save();
+    FailureStepDefinition::$throws = PHP_INT_MAX;
+    ($this->receipt)('make', ['status' => 'applied', 'changes' => 1]);
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    foreach ([1, 2] as $retry) {
+        $this->travel(10)->seconds();
+        app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+    }
+    $operation = $this->operation->refresh();
+
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe(Engine::ProjectionFailed)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->state['engine']['finish_attempts'])->toBe(3)
+        ->and(app(TaskLifecycle::class)->calls)->toBe(1);
+
+    $this->travel(60)->seconds();
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+
+    expect(FailureStepDefinition::$finishes)->toBe(3)
+        ->and(app(TaskLifecycle::class)->calls)->toBe(1);
+});
+
+it('rolls back a terminal result whose following write failed, and retries until both commit', function (): void {
+    FailureStepDefinition::$throwsAfterEnd = 1;
+    ($this->receipt)('make', ['status' => 'applied', 'changes' => 1]);
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+
+    expect($this->operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($this->operation->result)->toBeNull();
+
+    $this->travel(3)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+
+    expect(FailureStepDefinition::$finishes)->toBe(2)
+        ->and($this->operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($this->operation->result)->toBe(['runtime' => 'written']);
 });
