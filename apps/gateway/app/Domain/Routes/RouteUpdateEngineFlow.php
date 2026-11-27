@@ -345,9 +345,10 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
      */
     private static function guardedDnsInput(Operation $operation, array $row): array
     {
+        $vpn = ValidatedData::integer($row['node_id']);
         $guards = ValidatedData::object($operation->input['route_update'] ?? [])['dns_guards'] ?? [];
-        $guard = is_array($guards) && is_array($guards[ValidatedData::integer($row['node_id'])] ?? null)
-            ? ValidatedData::object($guards[ValidatedData::integer($row['node_id'])]) : throw new EngineUnsupported("VPN Node {$row['node_id']} has no captured DNS digests.");
+        $guard = is_array($guards) && is_array($guards[$vpn] ?? null) ? ValidatedData::object($guards[$vpn])
+            : throw new EngineUnsupported("VPN Node {$vpn} has no captured DNS digests.");
 
         return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])], 'from_sha256' => RouteDestroyEngineFlow::digest($guard, 'records')],
             'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])], 'from_sha256' => RouteDestroyEngineFlow::digest($guard, 'catalog')]];
