@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\NodeReadBus;
+use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -356,6 +358,203 @@ it('sends the recorded baseline to the reader and reads a default without one', 
     $command = $this->workspace->calls[1][1];
     expect(array_slice($command->arguments, 4))->toHaveCount(4)
         ->and($command->input)->toContain('BASELINE = json.loads(base64.b64decode("'.base64_encode('null').'"))');
+});
+
+/**
+ * A Node whose executor reports `$actions`, and its signed reads: each send is recorded with its signed payload, and answered by
+ * the next scripted reply (a reader answer as an `output` line, a whole line, null for a lost reply, or a Throwable).
+ *
+ * @param  list<string>  $actions
+ * @param  list<mixed>  $replies
+ */
+function connSignedReads(array $actions, array $replies = []): object
+{
+    $pair = sodium_crypto_sign_keypair();
+    config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($pair))]);
+    $reads = new class($replies, $actions) implements NodeReadBus
+    {
+        /** @var list<array{node: int, payload: array<string, mixed>, seconds: float}> */
+        public array $sent = [];
+
+        /** @var list<mixed> */
+        public array $content = [];
+
+        /** @var list<float> seconds each capability lookup was given */
+        public array $lookups = [];
+
+        public function __construct(public array $replies, public array $reported) {}
+
+        public function actions(int $node, float $deadline): array
+        {
+            $this->lookups[] = $deadline - hrtime(true) / 1e9;
+
+            return $this->reported;
+        }
+
+        public bool $acknowledged = true;
+
+        public bool $refused = false;
+
+        public function content(int $node, string $content, float $deadline): ?array
+        {
+            $this->content[] = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+            if ($this->refused) {
+                throw new RuntimeException('engine.publish_failed');
+            }
+
+            return $this->acknowledged ? ['sha256' => hash('sha256', $content)] : null;
+        }
+
+        public function read(int $node, SignedExecutorOrder $order, float $deadline): ?array
+        {
+            $payload = json_decode((string) base64_decode(explode('.', $order->wire)[0], true), true, flags: JSON_THROW_ON_ERROR);
+            $this->sent[] = ['node' => $node, 'payload' => $payload, 'seconds' => $deadline - hrtime(true) / 1e9];
+            $reply = array_shift($this->replies);
+            if ($reply instanceof Throwable) {
+                throw $reply;
+            }
+            if (is_array($reply) && ! isset($reply['status'])) {
+                $reply = ['status' => 'output', 'stdout' => json_encode($reply, JSON_THROW_ON_ERROR)];
+            }
+
+            return $reply === null ? null : [...['operation' => $order->operation, 'action' => 'instance.work_read', 'target' => $payload['target']], ...$reply];
+        }
+    };
+    app()->instance(NodeReadBus::class, $reads);
+
+    return $reads;
+}
+
+it('reads the workspace through a signed executor read when the Node reports it, and never over SSH', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.destroy', 'instance.work_read'], [connWorkAnswer(), connWorkAnswer(modified: 2, commits: 1)]);
+    $signed = connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean')->assertJsonPath('data.baseline', 'recorded')->json('data');
+    // The same answer the SSH read gives for the same reader output.
+    app()->instance(NodeReadBus::class, connSignedReads([]));
+    $this->workspace->answer = json_encode(connWorkAnswer());
+    $viaSsh = connWorkRead($instance->id)->assertOk()->json('data');
+    expect(Arr::except($signed, ['read_at', 'duration_ms']))->toBe(Arr::except($viaSsh, ['read_at', 'duration_ms']))
+        ->and($this->workspace->calls)->toHaveCount(1);
+
+    $order = $reads->sent[0]['payload'];
+    expect($reads->sent)->toHaveCount(1)
+        ->and($reads->sent[0]['node'])->toBe($instance->node_id)
+        ->and($order)->toMatchArray(['action' => 'instance.work_read', 'node' => (string) $instance->node_id, 'target' => (string) $instance->id,
+            'operation' => 'read:'.$instance->id])
+        ->and($order['input'])->toMatchArray(['project' => $instance->runtime->incus_project, 'name' => $instance->runtime->container_name,
+            'default' => ['project' => $this->default->runtime->incus_project, 'name' => $this->default->runtime->container_name]])
+        ->and($order['input']['budget_ms'])->toBeLessThanOrEqual(2000)->toBeGreaterThan(1000)
+        ->and($order['input'])->not->toHaveKey('state')
+        ->and($order['expires_ms'] - now()->getTimestampMs())->toBeLessThanOrEqual(4000);
+});
+
+it('reads afresh at the unacknowledged destroy and refuses dirty work by that read', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer(), connWorkAnswer(untracked: 3)]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean');
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.unsaved_work')->assertJsonPath('error.details.state', 'dirty')
+        ->assertJsonPath('error.details.untracked.count', 3);
+    expect($reads->sent)->toHaveCount(2)
+        ->and($reads->sent[0]['payload']['nonce'])->not->toBe($reads->sent[1]['payload']['nonce'])
+        ->and($this->workspace->calls)->toBe([])
+        ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(0);
+});
+
+it('answers unknown from a signed read only for a real read failure', function (mixed $reply, string $reason): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [$reply]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', $reason)
+        ->assertJsonPath('data.modified', null);
+    expect($reads->sent)->toHaveCount(1)->and($this->workspace->calls)->toBe([]);
+})->with([
+    'stopped' => [['state' => 'unknown', 'reason' => 'stopped'], 'stopped'],
+    'asleep, not woken' => [['state' => 'unknown', 'reason' => 'asleep'], 'asleep'],
+    'not a repository' => [['state' => 'unknown', 'reason' => 'not_a_repository'], 'not_a_repository'],
+    'the Node budget ran out' => [['state' => 'unknown', 'reason' => 'timeout'], 'timeout'],
+    'expired before it ran' => [['status' => 'failed', 'code' => 'executor.order_expired'], 'timeout'],
+    'refused input' => [['status' => 'failed', 'code' => 'instance.work_read_input_invalid'], 'unreachable'],
+    'refused order' => [['status' => 'refused', 'reason' => 'unknown_target'], 'unreachable'],
+    'expired on arrival' => [['status' => 'refused', 'reason' => 'expired'], 'timeout'],
+
+]);
+
+it('reads again with a fresh nonce when a reply is lost, and gives timeout when none comes in the budget', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [null, connWorkAnswer(stashes: 1)]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'dirty')->assertJsonPath('data.stashes.count', 1);
+    expect($reads->sent)->toHaveCount(2)
+        ->and($reads->sent[0]['payload']['nonce'])->not->toBe($reads->sent[1]['payload']['nonce'])
+        ->and($reads->sent[0]['seconds'])->toBeLessThanOrEqual(2.5);
+
+    $reads = connSignedReads(['instance.work_read'], [null, null, connWorkAnswer()]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toHaveCount(2);
+});
+
+it('tries once more after a send that never left, and is unreachable only when no send reached the bus', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), connWorkAnswer(modified: 1)]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'dirty');
+    expect($reads->sent)->toHaveCount(2)->and($reads->sent[0]['payload']['nonce'])->not->toBe($reads->sent[1]['payload']['nonce']);
+
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), new RuntimeException('engine.read_failed')]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'unreachable');
+    expect($reads->sent)->toHaveCount(2);
+
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+});
+
+it('keeps the capability lookup and every send inside the four-second request budget', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [null, null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+    expect($reads->lookups[0])->toBeLessThanOrEqual(1.0)
+        ->and($reads->sent[0]['seconds'])->toBeLessThanOrEqual(2.5)
+        ->and($reads->sent[1]['seconds'])->toBeLessThanOrEqual(4.0)
+        ->and($reads->sent[0]['payload']['expires_ms'] - now()->getTimestampMs())->toBeLessThanOrEqual(4000);
+});
+
+it('gives timeout, not unreachable, when the replies or the content acknowledgement went missing after they went out', function (): void {
+    $instance = connRemovalClone();
+    // Both orders reached the bus and their replies were lost, also by a connection that closed after each.
+    $reads = connSignedReads(['instance.work_read'], [null, null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toHaveCount(2);
+
+    $instance->runtime()->update(['workspace_baseline' => ['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => []]]);
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
+    $reads->acknowledged = false;
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toBe([]);
+
+    // Content the bus did not take whole, or refused, was never sent: no reply can be missing.
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
+    $reads->refused = true;
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'unreachable');
+    expect($reads->sent)->toBe([]);
+});
+
+it('sends a recorded baseline and published commits as content the order names by hash', function (): void {
+    $instance = connRemovalClone();
+    $baseline = ['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => ['notes.txt']];
+    $instance->runtime()->update(['workspace_baseline' => $baseline, 'workspace_baseline_at' => now()]);
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean');
+    $input = $reads->sent[0]['payload']['input'];
+    expect($reads->content)->toBe([['baseline' => $baseline, 'published' => []]])
+        ->and($input['state'])->toBe(['blob' => ['sha256' => hash('sha256', json_encode(['baseline' => $baseline, 'published' => []], JSON_UNESCAPED_SLASHES))]])
+        ->and($input)->not->toHaveKey('default');
+});
+
+it('reads over SSH exactly as before when the Node does not report the read action', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.destroy']);
+    $this->workspace->answer = json_encode(connWorkAnswer(modified: 1));
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'dirty');
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertConflict();
+    expect($reads->sent)->toBe([])->and($this->workspace->calls)->toHaveCount(2);
 });
 
 it('keeps the read behind the destroy access rule and to container Instances', function (): void {

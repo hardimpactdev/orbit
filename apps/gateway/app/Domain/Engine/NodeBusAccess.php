@@ -95,13 +95,14 @@ final readonly class NodeBusAccess
 
     /**
      * Only the Node's own inbox prefix: replies to its own requests and its order deliveries. Another Node's replies, such as its
-     * content, never reach it.
+     * content, never reach it. And the Node's own signed reads (docs/reference/executor.md#signed-reads), which only the Gateway
+     * publishes; the user's one reply per request (`resp`) answers them.
      *
      * @return list<string>
      */
     public static function subscribe(int $node): array
     {
-        return ["_INBOX.node-{$node}.>"];
+        return ["_INBOX.node-{$node}.>", "orbit.node.{$node}.reads"];
     }
 
     /**
