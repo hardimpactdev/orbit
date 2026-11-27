@@ -1325,6 +1325,47 @@ class SyncLane(CloneLane):
         self.record('sync-comparison', comparison)
 
 
+class CancelWatch:
+    """Judges one waiting task cancel from samples. Each sample is the CLI's exit, read first, then one atomic Gateway snapshot of the
+    cancel, its destroy and the copy's runtime row, which commit in one transaction. A sample never mixes reads from other times: the
+    Node's container is read only after a snapshot showed the cancel ended (CancelLane.held_receipt)."""
+
+    def __init__(self, cancel):
+        self.cancel = cancel
+        self.seen = {}
+        self.cli_order = None
+
+    @property
+    def ended(self):
+        return 'cancel' in self.seen
+
+    @property
+    def done(self):
+        return self.ended and 'cli' in self.seen
+
+    def sample(self, exited, destroy, cancel, runtime, now):
+        events = []
+        if runtime == 0 and 'record_gone' not in self.seen:
+            self.seen['record_gone'] = now
+            events.append(('copy record gone', {'cancel': cancel, 'destroy': destroy}))
+        if destroy['status'] in TERMINAL and 'destroy' not in self.seen:
+            self.seen['destroy'] = now
+            events.append(('destroy ended', {'destroy': destroy, 'cancel': cancel}))
+        if cancel['status'] in TERMINAL and not self.ended:
+            require(destroy['status'] == 'succeeded' and runtime == 0,
+                    f'cancel {self.cancel} ended ({cancel["status"]}) while its destroy was {destroy["status"]} and the copy record was {"gone" if runtime == 0 else "present"}')
+            self.seen['cancel'] = now
+            events.append(('cancel ended', {'cancel': cancel, 'destroy': destroy}))
+        if exited and 'cli' not in self.seen:
+            # The exit was read before this snapshot: a snapshot that still shows the cancel unended means the CLI left early. An exit and an
+            # end first seen in the same sample cannot be told apart, and no order is claimed for them.
+            require(self.ended, f'the CLI exited while cancel {self.cancel} was still {cancel["status"]}')
+            self.cli_order = 'after the cancel ended' if self.seen['cancel'] < now else 'not distinguished from the cancel end'
+            self.seen['cli'] = now
+            events.append(('cli task:cancel exited', {'order': self.cli_order}))
+        return events
+
+
 class CancelLane(SyncLane):
     """task:cancel of a group that owns a copy, through the CLI: the cancel runs while the copy's destroy runs and takes its end."""
     KINDS = CloneLane.KINDS
@@ -1477,44 +1518,33 @@ class CancelLane(SyncLane):
         finally:
             self.systemctl('gateway', 'start', ENGINE_UNIT)
         event('receipt consumer started')
-        seen = {}
+        watch = CancelWatch(cancel)
         deadline = time.monotonic() + 300
-        while time.monotonic() < deadline and not ('cancel' in seen and 'cli' in seen):
-            # The CLI's exit first, then the Node's container, then one database snapshot: the destroy's end, the cancel's end and the copy's
-            # runtime row commit in one transaction, so separate reads could split it. An exit is never seen before its cancel's end.
+        while time.monotonic() < deadline and not watch.done:
             exited = process.poll() is not None
-            container = self.resources(instance)['incus']
             destroy_row, cancel_row, runtime = self.snapshot(destroy, cancel, instance)
-            gone = runtime == 0 and not container
-            now = self.at()
-            if gone and 'gone' not in seen:
-                seen['gone'] = now
-                event('copy gone', cancel=cancel_row)
-            if destroy_row['status'] in TERMINAL and 'destroy' not in seen:
-                seen['destroy'] = now
-                event('destroy ended', destroy=destroy_row, cancel=cancel_row, copy_gone=gone)
-            if cancel_row['status'] in TERMINAL and 'cancel' not in seen:
-                seen['cancel'] = now
-                event('cancel ended', cancel=cancel_row, destroy=destroy_row, copy_gone=gone)
-                require(gone and destroy_row['status'] == 'succeeded', f'cancel {cancel} ended before its copy was gone')
-            if exited and 'cli' not in seen:
-                seen['cli'] = now
-                event('cli task:cancel exited', rc=process.returncode)
+            for what, data in watch.sample(exited, destroy_row, cancel_row, runtime, self.at()):
+                event(what, **data)
+            if watch.ended and 'container_absent' not in watch.seen:
+                # Only after the snapshot showed the cancel ended: the Node no longer has the copy's container.
+                require(not self.resources(instance)['incus'], f'cancel {cancel} ended while the Node still had the copy container')
+                watch.seen['container_absent'] = self.at()
+                event('copy container absent on the Node', after='cancel ended')
             time.sleep(0.2)
-        if 'cli' not in seen:
+        if 'cli' not in watch.seen:
             process.kill()
         stdout, _stderr = process.communicate(timeout=30)
-        require('cancel' in seen and 'cli' in seen, f'cancel {cancel} or its CLI did not end')
+        require(watch.done, f'cancel {cancel} or its CLI did not end')
         answer = parsed('task:cancel --json', stdout)
         ended = self.operation_times(cancel)
-        require(process.returncode == 0 and answer.get('id') == cancel and answer.get('status') == 'succeeded'
-                and ended['status'] == 'succeeded' and ended['finished_at'] >= self.operation_times(destroy)['finished_at']
-                and seen['destroy'] <= seen['cancel'] and seen['gone'] <= seen['cancel'] <= seen['cli'],
+        # The CLI's own answer shows it waited: it printed the cancel as ended, as the Gateway recorded it.
+        require(process.returncode == 0 and answer.get('id') == cancel and answer.get('status') == 'succeeded' and answer.get('finished_at')
+                and ended['status'] == 'succeeded' and ended['finished_at'] >= self.operation_times(destroy)['finished_at'],
                 f'cancel {cancel} did not end succeeded after its destroy and the copy removal')
         after = self.group_row(group)
         require(after['status'] == 'cancelled' and after['taskable_id'] is None, f'group {group} did not end cancelled without its copy')
-        evidence.update(group_after=after, cli_answer={key: answer.get(key) for key in ('id', 'kind', 'status', 'error_code')},
-                        order_ms=seen, cancel_end=ended, destroy_end=self.operation_times(destroy))
+        evidence.update(group_after=after, cli_answer={key: answer.get(key) for key in ('id', 'kind', 'status', 'error_code', 'finished_at')},
+                        order_ms=watch.seen, cli_order=watch.cli_order, cancel_end=ended, destroy_end=self.operation_times(destroy))
 
     def removal_fault(self, group, instance, before, evidence, event):
         # The copy's destroy deletes the container, then fails on an owned volume a profile still holds (as clone_destroy's held-volume).
