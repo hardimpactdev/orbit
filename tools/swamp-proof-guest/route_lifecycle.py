@@ -56,6 +56,8 @@ class RouteLane(CloneLane):
         gateway_paths = ('/etc/orbit/executor', '/var/lib/orbit/executor', EXECUTOR, '/etc/systemd/system/' + EXECUTOR_UNIT)
         self.guest('gateway', 'sh', '-eu', '-c', 'if getent passwd orbit-executor-relay >/dev/null; then exit 1; fi; for path; do test ! -e "$path"; done',
                    'sh', *gateway_paths)
+        # Uninstall deletes the guard table: it must be the proof's own.
+        self.guest('gateway', 'sh', '-c', 'if nft list table inet orbit_bus_guard >/dev/null 2>&1; then exit 1; fi')
         super().install(staged)
         settings = self.helper('configuration')
         self.gateway_executor = True

@@ -147,8 +147,15 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
     for ((path, content), blob) in contents.iter().zip([&input.records, &input.catalog]) {
         if let Some(from) = &blob.from_sha256 {
             let live = fs::symlink_metadata(system.path(path)).ok().filter(fs::Metadata::is_file).and_then(|_| fs::read(system.path(path)).ok()).unwrap_or_default();
-            let rendered = if *path == CATALOG { catalog_sha256(&live) } else { Some(sha256_hex(&live)) };
-            if live != *content && rendered.as_deref() != Some(from.as_str()) {
+            // A catalog compares by its canonical form against both states: Swamp may already have written the desired catalog
+            // in its own serialization, which a forward retry keeps rather than refuses.
+            let (rendered, desired) = if *path == CATALOG {
+                let live = catalog_sha256(&live);
+                (live.clone(), live.is_some() && live == catalog_sha256(content))
+            } else {
+                (Some(sha256_hex(&live)), false)
+            };
+            if live != *content && !desired && rendered.as_deref() != Some(from.as_str()) {
                 return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this Operation")));
             }
         }

@@ -204,7 +204,7 @@ class CloneLane:
                              'driver': json.loads(self.incus('query', '/1.0/storage-pools/' + POOL))['driver']})
 
     def install(self, staged):
-        gateway_paths = (GUEST_STATE, '/etc/nats/nats.conf', '/usr/local/bin/nats-server', '/var/lib/nats',
+        gateway_paths = (GUEST_STATE, '/etc/nats', '/usr/local/bin/nats-server', '/var/lib/nats',
                          '/etc/systemd/system/' + NATS_UNIT, '/etc/systemd/system/' + ENGINE_UNIT)
         node_paths = ('/etc/orbit/executor', '/var/lib/orbit/executor', EXECUTOR, '/etc/systemd/system/' + EXECUTOR_UNIT)
         for node, paths, user in (('gateway', gateway_paths, 'nats'), (self.node, node_paths, 'orbit-executor-relay')):

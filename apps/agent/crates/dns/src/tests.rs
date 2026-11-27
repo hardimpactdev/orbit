@@ -220,3 +220,29 @@ fn a_catalog_with_another_answer_still_refuses() {
     assert_eq!(publish_records(&fake, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
     assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), foreign.as_bytes());
 }
+
+#[test]
+fn a_catalog_already_desired_in_swamps_form_is_kept_on_a_retry() {
+    // The desired catalog is the Gateway's render; Swamp wrote the same answers in its own form. The guard's original is stale.
+    let mut fake = Fake::new();
+    fake.blobs.insert("c".to_owned(), GATEWAY_CATALOG.to_vec());
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    fs::write(fake.file(CATALOG), SWAMP_CATALOG).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"stale\":1}\n")},
+    });
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), GATEWAY_CATALOG);
+    assert_eq!(fake.runs.borrow().iter().filter(|argv| argv[0] == "/usr/bin/systemctl").count(), 1);
+
+    // Another answer is neither state and still refuses.
+    let other = Fake::new();
+    let mut blobs = other.blobs.clone();
+    blobs.insert("c".to_owned(), GATEWAY_CATALOG.to_vec());
+    let other = Fake { blobs, ..other };
+    fs::write(other.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    let foreign = String::from_utf8(SWAMP_CATALOG.to_vec()).unwrap().replace("\"swamp.orbit\":\"10.45.0.1\"", "\"swamp.orbit\":\"10.45.0.9\"");
+    fs::write(other.file(CATALOG), &foreign).unwrap();
+    assert_eq!(publish_records(&other, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
+}
