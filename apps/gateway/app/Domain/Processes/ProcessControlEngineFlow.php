@@ -30,6 +30,10 @@ use LogicException;
  * a Process of an Instance outside app-dev (a production release layout), any Process in a container (an Instance container's
  * app-account move is a script; a Gateway release container drains), and a Node's host systemd Horizon Process, whose stop
  * waits for its drain.
+ *
+ * Production stays on Swamp too, whatever the Node's executor reports: the engine takes a Process only on a Node the Gateway's
+ * own roles place in development (Node::placementEnvironment), so an app-prod Node, a Node with both app roles or neither,
+ * and a missing Node keep the whole Operation on Swamp, as does an intent with a production release (`production_control`).
  */
 final readonly class ProcessControlEngineFlow implements EngineDefinition, EngineEvidence
 {
@@ -178,8 +182,12 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition, Engin
             || ($runtime === ProcessRuntime::Docker->value && ! is_string($input['image'] ?? null))) {
             throw new EngineUnsupported('The Process runtime is outside the signed control contract.');
         }
-        if (isset($input['container']) || isset($input['vite_plan']) || ($input['vite'] ?? null) !== null || isset($input['directory'])) {
-            throw new EngineUnsupported('A container, Vite or release-layout plan stays on Swamp.');
+        if (isset($input['container']) || isset($input['vite_plan']) || ($input['vite'] ?? null) !== null || isset($input['directory'])
+            || isset($input['production_control'])) {
+            throw new EngineUnsupported('A container, Vite, release-layout or production-release plan stays on Swamp.');
+        }
+        if (Node::query()->find($node)?->placementEnvironment() !== 'development') {
+            throw new EngineUnsupported('A Process on a production or unclassified Node stays on Swamp.');
         }
         $process = Process::query()->find($operation->target_id);
         if ($process === null || $process->runtime->value !== $runtime || $process->isDevServerPreset()) {
@@ -192,7 +200,7 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition, Engin
         }
         $owned = match (true) {
             Instance::isMorphType($process->owner_type) => Instance::query()->find($process->owner_id)?->placedOnAppDev() === true,
-            default => $process->owner_type === Node::class,
+            default => $process->owner_type === Node::class && (int) $process->owner_id === $node,
         };
         if (! $owned) {
             throw new EngineUnsupported('Only a Node Process or an app-dev Instance Process runs on the engine.');

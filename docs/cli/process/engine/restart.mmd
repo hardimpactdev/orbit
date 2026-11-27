@@ -20,6 +20,7 @@ sequenceDiagram
     Note over GW: Refuse the engine<br/>EngineUnsupported
     %%> - a restart stops first, so the drain-waiting Processes of process/engine/stop.mmd refuse here too, whatever their placement: a host Horizon unit (`GatewayHorizon::runs`, long-drain stop directives) and Gateway release-container Processes
     %%> - dev-server Processes (`vp-dev`, `vite`, Vite plans), Processes of an Instance outside app-dev (release layouts), and Instance-container Processes, as for process/engine/start.mmd
+    %%> - Processes on a Node not placed in development (app-prod, both app roles or neither, no Node row) and `production_control` intents, from the Gateway's own Node roles, as for process/engine/start.mmd
     %%> - decided at admission, before any order; the whole Operation takes the Swamp branch below
   end
   alt the engine admits the whole Operation

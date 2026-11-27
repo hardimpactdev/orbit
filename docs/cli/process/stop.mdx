@@ -16,6 +16,6 @@ On a container Instance, a Process whose definition the Project removed answers 
 
 ### Executor path
 
-On the Gateway engine, the stop is the same `process.ensure_state` order: the unit ends `inactive` and disabled at boot, a container ends `exited`. The same Processes as for a start stay on Swamp, so a Horizon stop that waits for its drain never runs here. A failure records `operation.native_failed` as the Swamp flow does. The run holds the Process lock until its terminal receipt. Runtime proof on a nested fleet is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, the stop is the same `process.ensure_state` order: the unit ends `inactive` and disabled at boot, a container ends `exited`. The same Processes as for a start stay on Swamp, production ones included, so a Horizon stop that waits for its drain never runs here. A failure records `operation.native_failed` as the Swamp flow does. The run holds the Process lock until its terminal receipt. Runtime proof on a nested fleet is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="process/engine/stop"></div>

@@ -4,7 +4,9 @@ import time
 
 from clone_lifecycle import (
     ENGINE_UNIT,
+    EXECUTOR,
     EXECUTOR_UNIT,
+    STAGED,
     TERMINAL,
     CloneLane,
     require,
@@ -42,8 +44,8 @@ class ProcessLane(CloneLane):
     def cli(self, *args, timeout=150):
         return self.run.fleet.cli([str(arg) for arg in args], timeout=timeout)
 
-    def unit(self, name):
-        shown = self.guest(self.node, 'systemctl', 'show', '-p', ','.join(SHOW), name)
+    def unit(self, name, node=None):
+        shown = self.guest(node or self.node, 'systemctl', 'show', '-p', ','.join(SHOW), name)
         return dict(line.split('=', 1) for line in shown.splitlines() if '=' in line)
 
     def timer(self, name):
@@ -76,7 +78,7 @@ class ProcessLane(CloneLane):
 
     def state(self, name):
         fixture = self.processes[name]
-        live = self.container(fixture['unit']) if fixture['runtime'] == 'docker' else self.unit(fixture['unit'])
+        live = self.container(fixture['unit']) if fixture['runtime'] == 'docker' else self.unit(fixture['unit'], fixture.get('node'))
         return {'row': self.process_row(fixture['id']), 'node': live}
 
     def latest(self, kind, target):
@@ -103,10 +105,11 @@ class ProcessLane(CloneLane):
         self.host_paths = getattr(self, 'host_paths', []) + [(instance, label, path)]
         self.record(f'fixture-{name}', {'project': self.project, 'instance': instance, 'checkout': path})
 
-    def process(self, name, runtime='systemd', start=False, instance=None):
-        """A host Process on app-dev, created through Swamp's process:create. Its Node unit or container is read back before use."""
+    def process(self, name, runtime='systemd', start=False, instance=None, node=None):
+        """A host Process on app-dev (or on `node`), created through Swamp's process:create. Its Node unit or container is read back
+        before use."""
         require(name not in self.processes, 'one fixture per name')
-        owner = '--node=' + str(self.node_id) if instance is None else '--instance=' + str(self.instances.get(instance, instance))
+        owner = '--node=' + str(self.run.fleet.nodes[node or self.node]['node_id']) if instance is None else '--instance=' + str(self.instances.get(instance, instance))
         args = ['process:create', f'{self.prefix}-{name}', owner, '--runtime=' + runtime, '--idempotency-key=' + self.prefix + '-create-' + name]
         if runtime == 'docker':
             args += ['--image=' + IMAGE, '--command=sleep', '--command=infinity']
@@ -127,7 +130,7 @@ class ProcessLane(CloneLane):
         process, operation, unit = int(reply['target_id']), int(reply['id']), reply['input']['name']
         rows = self.db(f"SELECT id FROM processes WHERE name='{self.prefix}-{name}'")
         require([int(row['id']) for row in rows] == [process], f'process:create {name} did not record exactly its own Process')
-        self.processes[name] = {'id': process, 'runtime': runtime, 'unit': unit, 'container': isinstance(instance, int)}
+        self.processes[name] = {'id': process, 'runtime': runtime, 'unit': unit, 'container': isinstance(instance, int), 'node': node or self.node}
         state = {'row': self.process_row(process)} if isinstance(instance, int) else self.state(name)
         self.record(f'fixture-{name}', {'process': process, 'unit': unit, 'create_operation': operation, **state})
         return process
@@ -357,7 +360,7 @@ class ProcessLane(CloneLane):
         before_trigger = self.native_artifacts(fixture['id'], fixture['workflow'])['trigger'] if kind == 'schedule.enable' else None
         if kind == 'schedule.enable':
             require(self.schedule_row(fixture['id'])['desired_timer_state'] == 'disabled', f'{name}: the cron Schedule is already enabled')
-        answer = self.cli(kind.replace('.', ':'), fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name)
+        answer = self.cli(kind.replace('.', ':'), fixture['id'], '--idempotency-key=' + self.prefix + '-refused-' + name + '-' + kind.split('.')[1])
         started = self.db(f'SELECT id, kind FROM operations WHERE id > {mark} ORDER BY id')
         require(len(started) == 1, f'{name}: {kind} started {len(started)} Operations (exit {answer["rc"]})')
         operation = int(started[0]['id'])
@@ -377,7 +380,7 @@ class ProcessLane(CloneLane):
             if native else self.operation(operation, 'swamp')
         summary['steps'] = self.steps(operation)
         require(not summary['steps'] and summary['run'] != f'engine-{operation}', f'{name}: {kind} recorded engine work')
-        self.record(f'refused-{name}', {'trigger_before': before_trigger,
+        self.record(f'refused-{name}-{kind}', {'trigger_before': before_trigger,
                                          'trigger_after': self.native_artifacts(fixture['id'], fixture['workflow'])['trigger'] if kind == 'schedule.enable' else None, 'kind': kind, 'started_kind': started[0]['kind'], 'cli_rc': answer['rc'], 'operation': summary,
                                          'public': {k: terminal.get(k) for k in ('status', 'error_code')}})
 
@@ -442,3 +445,88 @@ class ProcessLane(CloneLane):
         self.closed = True
         self.record('cleanup', {'native_artifacts_after': absent, 'node_timers_after': timers, 'processes_removed': [f['id'] for f in self.processes.values()],
                                 'schedules_removed': [f['id'] for f in self.schedules.values()], 'temporary_services_removed': True})
+
+
+class ProductionLane(ProcessLane):
+    """The non-production limit: the executor runs on app-dev and on app-prod, and both report every process action. A Process on
+    app-dev runs on the engine; one on app-prod, the Node the Gateway's roles place in production, runs wholly on Swamp."""
+    KINDS = ('process.start', 'process.stop', 'process.restart')
+    FAMILY, PRESENT, ABSENT = 'process', 'process.ensure_state', 'schedule.ensure_timer'
+    ALSO = ('process.read_instance', 'process.restart')
+    PROD = 'app-prod'
+    PROD_IP = '10.45.0.3'
+    PROD_PATHS = ('/etc/orbit/executor', '/var/lib/orbit/executor', EXECUTOR, '/etc/systemd/system/' + EXECUTOR_UNIT)
+
+    def __init__(self, run, fleet_contract):
+        super().__init__(run, fleet_contract)
+        self.prod_installed = False
+        self.prod_firewall = False
+
+    def prod_executor(self):
+        """The executor this checkout builds, installed on app-prod as on app-dev, with the process family enabled. The Gateway's
+        record of app-prod keeps its app-prod role; only the Node's own report changes."""
+        node = self.PROD
+        prod_id = int(self.run.fleet.nodes[node]['node_id'])
+        roles = [row['role'] for row in self.db(f'SELECT role FROM node_roles WHERE node_id={prod_id} ORDER BY role')]
+        require(roles == ['app-prod'], f'{node}: the proof needs the app-prod role alone, found {roles}')
+        self.guest(node, 'sh', '-eu', '-c', 'if getent passwd orbit-executor-relay >/dev/null; then exit 1; fi; for path; do test ! -e "$path"; done',
+                   'sh', *self.PROD_PATHS)
+        self.guest(node, 'sh', '-c', 'if nft list table inet orbit_bus_guard >/dev/null 2>&1; then exit 1; fi')
+        settings = self.helper('configuration')
+        self.prod_installed = True
+        self.guest(node, 'useradd', '--system', '--home-dir=/nonexistent', '--shell=/usr/sbin/nologin', 'orbit-executor-relay')
+        self.push(node, STAGED / 'orbit-executor', EXECUTOR)
+        self.guest(node, 'install', '-d', '/etc/orbit/executor')
+        self.put(node, '/etc/systemd/system/' + EXECUTOR_UNIT, settings['executor_unit'])
+        for name, content in {'gateway.pub': settings['executor_keys'], 'node': str(prod_id) + '\n', 'nats.json': settings['executor_bus'],
+                              'bus-guard.nft': settings['executor_guard'], 'restore-threads': '32\n', 'enabled': self.FAMILY + '\n' + self.FAMILIES}.items():
+            self.put(node, '/etc/orbit/executor/' + name, content)
+        firewall = self.guest('gateway', 'ufw', 'allow', 'in', 'on', 'orbit', 'from', self.PROD_IP, 'to', self.gateway_address,
+                              'port', 4222, 'proto', 'tcp', 'comment', self.prefix + '-prod')
+        self.prod_firewall = 'Rule added' in firewall
+        require(self.prod_firewall, 'the proof Gateway NATS rule for app-prod was already present')
+        self.systemctl(node, 'daemon-reload')
+        self.systemctl(node, 'start', EXECUTOR_UNIT)
+
+        def advertised():
+            found = self.helper('capabilities', prod_id)
+            return found if all(action in found['actions'] for action in (self.PRESENT, *self.ALSO)) else None
+
+        report = wait_for(advertised, f'{node}: the executor did not report the process actions', 30)
+        self.record('prod-executor', {'node': prod_id, 'roles': roles, 'advertisement': report})
+
+    def prod_refused(self, name):
+        """process:stop, process:start and process:restart of an app-prod Process while app-prod reports every process action: each
+        starts one Operation that runs its Swamp workflow with no engine step, and the Node's unit follows the verb."""
+        fixture = self.processes[name]
+        require(fixture['node'] == self.PROD, f'{name} is not an app-prod Process')
+        prod_id = int(self.run.fleet.nodes[self.PROD]['node_id'])
+        found = {}
+        for kind, live in (('process.stop', 'inactive'), ('process.start', 'active'), ('process.restart', 'active')):
+            actions = self.helper('capabilities', prod_id)['actions']
+            require(all(action in actions for action in (self.PRESENT, *self.ALSO)), f'{self.PROD} stopped reporting the process actions: {actions}')
+            before = self.unit(fixture['unit'], self.PROD) | {'InvocationID': self.guest(self.PROD, 'systemctl', 'show', '-p', 'InvocationID', '--value', fixture['unit'])}
+            self.refused(name, kind)
+            operation = self.latest(kind, fixture['id'])
+            row = self.db(f"SELECT status, json_extract(state,'$.swamp_run_id') AS run FROM operations WHERE id={operation}")[0]
+            after = self.unit(fixture['unit'], self.PROD) | {'InvocationID': self.guest(self.PROD, 'systemctl', 'show', '-p', 'InvocationID', '--value', fixture['unit'])}
+            require(row['status'] == 'succeeded' and row['run'] and not row['run'].startswith('engine-') and after['ActiveState'] == live
+                    and (kind != 'process.restart' or after['InvocationID'] != before['InvocationID']), f'{name}: {kind} on Swamp {row} {before} -> {after}')
+            found[kind] = {'operation': operation, 'swamp_run': row['run'], 'engine_steps': len(self.steps(operation)), 'before': before, 'after': after,
+                           'advertised_actions': sorted(a for a in actions if a.startswith('process.'))}
+        self.record(f'prod-refused-{name}', found)
+
+    def cleanup(self):
+        if self.prod_installed:
+            self.guest(self.PROD, 'sh', '-c', '''
+                systemctl stop orbit-executor.service 2>/dev/null || :
+                nft delete table inet orbit_bus_guard 2>/dev/null || :
+                rm -rf /etc/orbit/executor /var/lib/orbit/executor /usr/local/libexec/orbit-executor /etc/systemd/system/orbit-executor.service
+                userdel orbit-executor-relay 2>/dev/null || :
+                systemctl daemon-reload
+            ''')
+            if self.prod_firewall:
+                self.guest('gateway', 'ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'from', self.PROD_IP,
+                           'to', self.gateway_address, 'port', 4222, 'proto', 'tcp')
+            self.prod_installed = False
+        super().cleanup()
