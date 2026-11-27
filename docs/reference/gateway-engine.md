@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php,Domain/Tasks/TaskSyncEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Processes/ProcessControlEngineFlow.php,Domain/Schedules/ScheduleEnableEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php,Domain/Tasks/TaskSyncEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -37,6 +37,8 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
+| `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
+| `schedule.enable` | `timer` on the Schedule's Node | `schedule.ensure_timer` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
@@ -105,6 +107,35 @@ The removal can still be cancelled during order preparation, deadline scheduling
 The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
 
 A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`. If no complete line fits in the tail, the error records that the diagnostic was omitted rather than exposing part of a line.
+
+### process.start and process.stop
+
+The engine runs a start or stop of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
+
+Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across engines. These throw `EngineUnsupported` and run their whole Swamp workflow:
+
+- a dev-server Process (`vp-dev`, `vite`), whose start publishes a dev route, checks its listener and marks it awake;
+- a Process of an Instance not placed on app-dev, such as a production release layout;
+- any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
+- a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain.
+
+`process.restart` stays on Swamp.
+
+Both kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
+
+A collector of the AI router checks the lock before it writes or calls its Node again. A removal that would delete a fenced Process (an Instance, a Node, the analytics role, a database server) is refused `operation.target_busy` at admission, and a Process start or stop does not bind while such a removal is open. If a row is gone when the receipt arrives, the run still ends and frees its lock.
+
+No budget fails a sent step and no expiry ends the Operation. A lost receipt is resent under the same step ID with a fresh nonce, and the Node's journal answers the stored result. The Process stays fenced until a terminal receipt. The step settles only on an `applied` receipt from its own Node, action and target.
+
+The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step its phase stands for. That is the change (`Start the Process`, `Stop the container` …), `Stop the unit`, the check (`Check the unit`, `Check the container`) or the assert (`Verify the state`). A cancel waits for a published order's receipt, then records no error code, as a cancelled Swamp run does.
+
+### schedule.enable
+
+The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`).
+
+The kind is receipt-bound like a Process start. The run holds the Schedule's own lock (`schedule:<uuid>`), so the owner's other Schedules stay free. Its step settles only on an `output` receipt whose read-back shows the timer enabled and active with an answered next elapse (`EngineEvidence`); other output fails it as `engine.receipt_invalid`.
+
+While the run holds its lock, any admission for that Schedule, a create's reservation included, refuses `operation.target_busy` before changing the row. A failure records `operation.native_failed` with failed step `timer`, `check_timer` or `Check the timer`, by the phase that failed. A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine. A timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
 
 ### tasks.sync
 

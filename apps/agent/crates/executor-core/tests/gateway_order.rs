@@ -51,6 +51,29 @@ fn the_gateway_signed_route_withdrawal_and_guarded_dns_records_verify_with_their
     }
 }
 
+
+#[test]
+fn the_gateway_signed_process_orders_target_a_node_part_and_keep_their_input() {
+    for (text, action, operation) in [
+        (include_str!("../../../contract/fixtures/executor-process-ensure-state.json"), Action::ProcessEnsureState, "42:converge"),
+        (include_str!("../../../contract/fixtures/executor-schedule-ensure-timer.json"), Action::ScheduleEnsureTimer, "43:timer"),
+    ] {
+        let fixture: serde_json::Value = serde_json::from_str(text).expect("fixture");
+        let keys = PinnedKeys::parse(field(&fixture, "public_key")).expect("fixture key");
+        let node = field(&fixture["fields"], "node").parse().expect("Node ID");
+        let now = fixture["now_ms"].as_u64().expect("now");
+        let wire = field(&fixture, "wire").as_bytes();
+        let without = Enabled::parse("instance").expect("valid");
+        assert_eq!(check(wire, &Checks { keys: &keys, enabled: &without, node: &node }, now).err(), Some(OrderRefusal::ActionNotEnabled));
+        let enabled = Enabled::parse("process").expect("valid");
+        let order = check(wire, &Checks { keys: &keys, enabled: &enabled, node: &node }, now).expect("the fixture verifies");
+        assert_eq!(order.action(), action);
+        assert_eq!(action.target_kind(), TargetKind::Node);
+        assert_eq!(order.operation().as_str(), operation);
+        assert_eq!(order.input(), &fixture["fields"]["input"]);
+    }
+}
+
 #[test]
 fn the_gateway_signed_copy_sync_orders_target_the_copy_and_keep_their_input() {
     for (text, action, operation) in [

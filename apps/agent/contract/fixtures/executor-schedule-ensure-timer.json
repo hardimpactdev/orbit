@@ -1,0 +1,17 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "zegz1qijBON6Pt6+M4XIgdOpkhFe7Ormnh4b1bl4fLc=",
+    "fields": {
+        "action": "schedule.ensure_timer",
+        "node": "7",
+        "target": "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab",
+        "operation": "43:timer",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "schedule_id": "7f3c0a5e-1b2c-4d3e-8f90-0123456789ab",
+            "unit": "orbit-schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab.timer"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJzY2hlZHVsZS5lbnN1cmVfdGltZXIiLCJub2RlIjoiNyIsInRhcmdldCI6Ijc6c2NoZWR1bGUtN2YzYzBhNWUtMWIyYy00ZDNlLThmOTAtMDEyMzQ1Njc4OWFiIiwib3BlcmF0aW9uIjoiNDM6dGltZXIiLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwiZXhwaXJlc19tcyI6MTgwMDAwMDAwODAwMCwiaW5wdXQiOnsic2NoZWR1bGVfaWQiOiI3ZjNjMGE1ZS0xYjJjLTRkM2UtOGY5MC0wMTIzNDU2Nzg5YWIiLCJ1bml0Ijoib3JiaXQtc2NoZWR1bGUtN2YzYzBhNWUtMWIyYy00ZDNlLThmOTAtMDEyMzQ1Njc4OWFiLnRpbWVyIn19.ACDb+3BmQ04dXw1V4UadVaylL1NjbJvD7qM41YYO97BOxiFixFC2TRwZJ2fa85IOi6WTYldN6RTW7A/srh+0Cg=="
+}
