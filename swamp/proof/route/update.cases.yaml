@@ -7,7 +7,7 @@ cases:
   - id: signed-route-domain-change
     batch: fresh-fleet
     covers: ["path:engine", "path:cutover", "path:withdraw", "path:sibling", "path:lost-receipt", "path:failed-after-cutover", "path:retry", "path:swamp"]
-    summary: Move a clone's own private Route to another name inside the Node's TLD on the signed executor (side-by-side site, probe, cutover, lasting Caddyfile, staging leaf withdrawn), again after a dropped receipt of the lasting Caddyfile, again after a withdrawal refused once the cutover committed and its forward retry, and through Swamp when the Route Node lacks the route family; a sibling Route on the same Node answers its known page throughout.
+    summary: Move a clone's own private Route to another name inside the Node's TLD on the signed executor (side-by-side site, probe, cutover, lasting Caddyfile, staging leaf withdrawn), again after a dropped receipt of the old site's withdrawal, again after a withdrawal refused once the cutover committed and its forward retry, and through Swamp when the Route Node lacks the route family; a sibling Route on the same Node answers its known page throughout.
     exclusive: true
     fails_on_base: true
     timeout: 1800

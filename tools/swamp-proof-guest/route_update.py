@@ -5,10 +5,12 @@ composer.json, so they write no APP_URL line and no .env: the shape the engine a
 route.destroy's `route.withdraw_site`."""
 import time
 
-from clone_lifecycle import EXECUTOR_UNIT, TERMINAL, ProofInfrastructure, require, wait_for
+from clone_lifecycle import EXECUTOR_UNIT, TERMINAL, require, wait_for
 from route_lifecycle import CADDYFILE, RouteLane, traced
 
 FAULT_LINE = '# proof: a change the Gateway did not render'
+PUBLISH_LOCK = '/etc/caddy/.orbit-publish.lock'
+HOLD_UNIT = 'orbit-proof-publish-hold'
 
 
 class UpdateLane(RouteLane):
@@ -57,36 +59,17 @@ class UpdateLane(RouteLane):
         self.routes_made[name] = {'domain': domain, 'route': route, 'instance': instance, 'scope': scope, 'create': int(row['id']), 'https': state['https']}
         self.record(name + '-route-create', {**self.routes_made[name], 'state': state})
 
-    def hold_after(self, operation, step):
-        """Stops the Node's executor right after it journaled `step` done, from a watcher on the Node itself, and lets it go briefly
-        until the Gateway holds that receipt: the next Node step is then published while no executor reads it."""
-        watch = f'''import json, os, subprocess, time
-want = "{operation}:{step}"
-deadline = time.monotonic() + 240
-while time.monotonic() < deadline:
-    try:
-        lines = open("/var/lib/orbit/executor/journal").read().splitlines()
-    except OSError:
-        lines = []
-    for line in lines:
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if row.get("operation") == want and row.get("record") == "done":
-            pid = subprocess.check_output(["systemctl", "show", "-p", "MainPID", "--value", "{EXECUTOR_UNIT}"], text=True).strip()
-            os.kill(int(pid), 19)
-            raise SystemExit(0)
-    time.sleep(0.01)
-raise SystemExit(1)'''
-        self.guest(self.node, 'python3', '-c', watch, timeout=250)
-        for _ in range(100):
-            if next(row for row in self.steps(operation) if row['name'] == step)['status'] == 'done':
-                return
-            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
-            time.sleep(0.05)
-            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
-        raise ProofInfrastructure(f'route.update {operation} did not record {step}')
+    def hold_publication(self):
+        """Holds the Node's publication lock, which route.withdraw_site takes (and route.publish_site does not), so the withdrawal waits
+        inside its action with the executor alive. The lock file must already exist: the fixture creates nothing it would leave."""
+        self.guest(self.node, 'test', '-f', PUBLISH_LOCK)
+        self.guest(self.node, 'sh', '-c', 'if systemctl is-active --quiet "$1"; then exit 1; fi', 'sh', HOLD_UNIT)
+        self.guest(self.node, 'systemd-run', '--unit', HOLD_UNIT, 'flock', PUBLISH_LOCK, 'sleep', '240')
+        wait_for(lambda: self.guest(self.node, 'sh', '-c', 'flock -n "$1" true && echo free || echo held', 'sh', PUBLISH_LOCK) == 'held',
+                 'the publication lock was not held', 10, interval=0.2)
+
+    def release_publication(self):
+        self.guest(self.node, 'sh', '-c', 'systemctl stop "$1" 2>/dev/null; systemctl reset-failed "$1" 2>/dev/null || :', 'sh', HOLD_UNIT)
 
     def published(self, operation, step):
         def found():
@@ -107,53 +90,50 @@ raise SystemExit(1)'''
     def admit_update(self, route, domain, key):
         return self.admitted('PATCH', f'routes/{route}', {'domain': domain}, key)
 
-    def held_final(self, operation):
-        """The lasting Caddyfile's order is published while the Node's executor is stopped; then the engine stops and the executor runs
-        it, so its receipt waits unread. The caller starts the engine again."""
+    def dropped_withdraw(self, route, domain, key, sibling):
+        """A lost receipt after the cutover: the withdrawal waits on the held publication lock until the engine stops, then runs and its
+        receipt is dropped. The same request answers the same Operation, which stays open, and the resent order repeats the journal's
+        stored result."""
+        step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'
+        self.hold_publication()
         try:
-            self.hold_after(operation, f'site-{self.node_id}')
-            dispatch = self.published(operation, f'final-{self.node_id}')
-            self.systemctl('gateway', 'stop', 'orbit-gateway-engine.service')
-        finally:
-            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
-        return dispatch
-
-    def dropped_final(self, route, domain, key, sibling):
-        """A lost receipt after the cutover: the lasting Caddyfile is installed on the Node and its receipt is dropped. The same request
-        answers the same Operation, which stays open, and the resent order repeats the journal's stored result."""
-        step, action = f'final-{self.node_id}', 'route.publish_site'
-        admitted = self.admit_update(route, domain, key)
-        operation = int(admitted['id'])
-        try:
-            dispatch = self.held_final(operation)
+            admitted = self.admit_update(route, domain, key)
+            operation = int(admitted['id'])
+            dispatch = self.published(operation, step)
             require(dispatch['sends'] == 1, f'route.update {operation} resent {step} before the fault')
+            self.systemctl('gateway', 'stop', 'orbit-gateway-engine.service')
+            self.release_publication()
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
-                               f'route.update {operation} did not leave the expected queued receipt', 300)
+                               f'route.update {operation} did not leave the expected queued receipt', 50)
             row = self.db(f'SELECT status FROM operations WHERE id={operation}')[0]
             replay = self.admit_update(route, domain, key)
             steps = {row['name']: row for row in self.steps(operation)}
             fence = {'operation_open': row['status'] not in TERMINAL, 'replay_same_operation': replay['id'] == operation,
-                     'step_not_done': steps[step]['status'] != 'done', 'cutover_committed': steps['cutover']['status'] == 'done'}
+                     'step_not_done': steps[step]['status'] != 'done', 'cutover_committed': steps['cutover']['status'] == 'done',
+                     'lasting_site_done': steps[f'final-{self.node_id}']['status'] == 'done'}
             require(all(fence.values()), f'route.update {operation} did not keep its fence without a receipt: '
                     + ', '.join(name for name, held in fence.items() if not held))
             return admitted, {'dispatch': dispatch, 'dropped': dropped, 'operation_while_fenced': row, 'fence': fence,
                               'sibling_while_fenced': self.healthy(sibling)}
         finally:
+            self.release_publication()
             self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
     def failed_after_cutover(self, route, old, domain, key, sibling):
-        """A failure after the cutover: once the lasting Caddyfile is installed, the Node's Caddyfile gets a change the Gateway did not
-        render, so the withdrawal refuses. The replacement stays authoritative; the fault alone is removed, and a retry runs forward."""
+        """A failure after the cutover: while the withdrawal waits on the held publication lock (the lasting Caddyfile is installed), the
+        Node's Caddyfile gets a change the Gateway did not render, so the withdrawal refuses. The replacement stays authoritative; the
+        fault alone is removed, and a retry runs forward."""
         original = None
-        operation = int(self.admit_update(route, domain, key + '-partial')['id'])
+        self.hold_publication()
         try:
-            self.held_final(operation)
-            wait_for(lambda: self.guest(self.node, 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', old, CADDYFILE) == '0',
-                     f'route.update {operation} did not install the lasting Caddyfile', 300, interval=0.25)
+            operation = int(self.admit_update(route, domain, key + '-partial')['id'])
+            self.published(operation, f'withdraw-{self.node_id}')
             original = self.guest(self.node, 'sha256sum', CADDYFILE).split()[0]
+            require(self.guest(self.node, 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', old, CADDYFILE) == '0',
+                    f'route.update {operation} sent its withdrawal before the lasting Caddyfile')
             self.guest(self.node, 'sh', '-eu', '-c', 'printf "%s\\n" "$2" >> "$1"', 'sh', CADDYFILE, FAULT_LINE)
         finally:
-            self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
+            self.release_publication()
         try:
             terminal = self.terminal(operation, expect='failed', seconds=180)
         finally:
@@ -185,7 +165,7 @@ raise SystemExit(1)'''
         started = time.monotonic()
         cli = interrupted = None
         if fault == 'receipt':
-            admitted, interrupted = self.dropped_final(route, new, key, sibling)
+            admitted, interrupted = self.dropped_withdraw(route, new, key, sibling)
         elif fault == 'partial':
             # The forward retry: the same command again, with the fault removed.
             admitted = self.admit_update(route, new, key + '-retry')
@@ -222,10 +202,10 @@ raise SystemExit(1)'''
                         f'route.update {operation} did not probe before its cutover and write the lasting site after it')
             result['journal'] = self.engine_receipts(summary, operation)
             if fault == 'receipt':
-                final = steps[f'final-{self.node_id}']
-                mine = [entry for entry in result['journal'] if entry['operation'] == f'{operation}:final-{self.node_id}']
-                require(final['sends'] >= 2 and sum(entry['record'] == 'seen' for entry in mine) >= 2,
-                        f'route.update {operation} did not resend the lasting site and repeat the stored result')
+                withdraw = steps[f'withdraw-{self.node_id}']
+                mine = [entry for entry in result['journal'] if entry['operation'] == f'{operation}:withdraw-{self.node_id}']
+                require(withdraw['sends'] >= 2 and sum(entry['record'] == 'seen' for entry in mine) >= 2,
+                        f'route.update {operation} did not resend the withdrawal and repeat the stored result')
         made['domain'], made['route'] = new, int(replacement[0]['id'])
         made.setdefault('update_results', {})[to] = result
         self.record(f'{name}-{to}-route-update', result)
