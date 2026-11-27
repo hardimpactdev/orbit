@@ -29,7 +29,7 @@ cases:
   - id: route-owning-clone
     batch: fresh-fleet
     covers: ["path:admitted", "path:route-withdrawal", "path:succeeded"]
-    summary: Destroy a clone that owns a private development Route on one engine, withdrawing its DNS answers and site before the signed removal, beside the same destroy on Swamp; a sibling Route on the same Node answers throughout.
+    summary: Destroy a clone that owns a private development Route and no Processes on one engine, withdrawing its DNS answers and site before the signed removal in one Operation with no retry (Op 35060 failed its first withdrawal read-back), beside the same destroy on Swamp; a sibling Route on the same Node answers throughout, and the VPN Node answers every other name (.orbit, .nested-prod, .nested-dev, other Routes) alike before and after.
     exclusive: true
     fails_on_base: true
     timeout: 1200

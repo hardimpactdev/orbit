@@ -4,7 +4,7 @@
 //! - [`publish_site`] (`route.publish_site`): Caddy access to the served roots, `APP_URL`, environment links, PHP-FPM pools,
 //!   the signed leaf and its account copy, the Orbit root's trust, and the Caddyfile, validated before it goes live.
 //! - [`withdraw_site`] (`route.withdraw_site`): one Node's withdrawal of a Route: pools and Caddyfile without it, its leaf
-//!   folders removed, Caddy reloaded and read back through its admin API.
+//!   folders removed, Caddy reloaded and read back through its admin API until it has loaded the new configuration.
 //!
 //! The Gateway renders every file; the Node only places it. Each command is built here from typed fields, never taken
 //! from the order. Large or secret content arrives as a blob the executor has already read and checked by its SHA-256.
@@ -19,6 +19,7 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 pub use csr::ensure_csr;
 pub use site::publish_site;
@@ -97,6 +98,16 @@ pub trait System {
     ///
     /// A message when the blob is not in the local cache.
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String>;
+
+    /// The monotonic time a read-back's budget is measured on.
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    /// Waits before a read-back is tried again.
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 
     /// The id of the user that owns the files the primitives place: root on a Node.
     fn superuser(&self) -> u32 {
