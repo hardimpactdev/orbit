@@ -811,7 +811,9 @@ class SyncLane(CloneLane):
         # Puts origin/<default> back on HEAD and prunes every object only the mirror head reached; the stash reflog is kept.
         ref = f'refs/remotes/origin/{self.branch}'
         self.work(instance, 'update-ref', ref, self.work(instance, 'rev-parse', 'HEAD'))
-        for line in self.work(instance, 'for-each-ref', '--contains', self.tip, '--format=%(refname)').splitlines():
+        # A pruned head has no ref left that reaches it, and `--contains` refuses a missing object.
+        reaching = self.work(instance, 'for-each-ref', '--contains', self.tip, '--format=%(refname)') if self.holds(instance, self.tip) else ''
+        for line in reaching.splitlines():
             require(not line.startswith(('refs/heads/', 'refs/stash')), f'copy {instance}: {line} still reaches the mirror head')
             self.work(instance, 'update-ref', '-d', line)
         logs = [line for line in self.work(instance, 'for-each-ref', '--format=%(refname)').splitlines() if line != 'refs/stash']
