@@ -4,11 +4,12 @@ The VPN Node of the nested fleet is the Gateway (Node 1), so the lane also runs 
 behind the guard that admits the Gateway's own `orbit` user to the bus."""
 import functools
 import json
+import shlex
 import subprocess
 import traceback
 import time
 
-from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, TERMINAL, CloneLane, ProofFailure, require, wait_for
+from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, TERMINAL, CloneLane, ProofFailure, ProofInfrastructure, require, wait_for
 
 VPN_NODE = 1
 GRACE_MS = 31_000
@@ -67,6 +68,14 @@ class RouteLane(CloneLane):
             self.put('gateway', '/etc/orbit/executor/' + name, content)
         self.systemctl('gateway', 'daemon-reload')
         self.set_dns(True)
+
+    def helper(self, *args):
+        result = self.run.fleet.sh('gateway', shlex.join(['runuser', '-u', 'orbit', '--', 'php', self.guest_helper, *map(str, args)]), timeout=45)
+        try:
+            return json.loads(result.stdout)
+        except ValueError:
+            self.run.evidence_text(f'helper-{args[0]}.err', f'exit {result.returncode}\nstderr: {result.stderr[-1500:]}\nstdout: {result.stdout[-300:]}\n')
+            raise ProofInfrastructure(f'the guest helper {args[0]} answered no JSON (exit {result.returncode})') from None
 
     def set_dns(self, enabled):
         if self.dns is not enabled:
