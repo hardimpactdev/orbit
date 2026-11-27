@@ -152,7 +152,7 @@ Subtasks move through `todo` -> `running` -> `reviewing` -> `completed` (or `fai
 
 ### Bring main into a copy
 
-`POST /api/v1/tasks/{task}/sync` (`tasks.sync`) runs `operation-task-sync-copy` to fetch the default branch into the Node mirror and import objects into `refs/remotes/origin/<default>` without touching working files.
+`POST /api/v1/tasks/{task}/sync` (`tasks.sync`) runs `operation-task-sync-copy` to fetch the default branch into the Node mirror and import objects into `refs/remotes/origin/<default>` without touching working files. When the copy's Node reports the sync primitives, the same steps run on the [Gateway engine](/reference/gateway-engine#taskssync).
 
 ## Checks and deliverables
 

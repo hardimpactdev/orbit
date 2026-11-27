@@ -132,6 +132,7 @@ fn destroy_forces_a_frozen_clone_off_and_cleans_only_its_resources() {
     let ours = [
         fixture.file("/var/tmp/orbit-task-base-12/bundle"),
         fixture.file("/var/lib/orbit/instance-repositories/12.git/config"),
+        fixture.file("/var/lib/orbit/instance-repositories/12.git.seeding/HEAD"),
         fixture.file("/var/lib/orbit/instance-mail/instance-12/pending"),
         fixture.file("/data/caddy/orbit/hibernation/app-instance-12.asleep"),
         fixture.file("/data/caddy/orbit/hibernation/app-instance-12.cold"),
@@ -139,12 +140,13 @@ fn destroy_forces_a_frozen_clone_off_and_cleans_only_its_resources() {
         fixture.file("/dev/shm/orbit/hibernation/app-instance-12.awake"),
     ];
     let sibling = fixture.file("/var/lib/orbit/instance-repositories/120.git/config");
+    let sibling_seed = fixture.file("/var/lib/orbit/instance-repositories/120.git.seeding/HEAD");
     let sibling_marker = fixture.file("/data/caddy/orbit/hibernation/app-instance-120.asleep");
 
     destroy(&fixture, "12", &input()).expect("remove disposable clone");
 
     assert!(ours.iter().all(|path| !path.exists()));
-    assert!(sibling.is_file() && sibling_marker.is_file());
+    assert!(sibling.is_file() && sibling_seed.is_file() && sibling_marker.is_file());
     fixture.checked();
 }
 

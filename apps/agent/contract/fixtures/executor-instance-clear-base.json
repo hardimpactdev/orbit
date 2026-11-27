@@ -1,0 +1,19 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+    "fields": {
+        "action": "instance.clear_base",
+        "node": "7",
+        "target": "12",
+        "operation": "42:clear_after_failure",
+        "nonce": "00000000000000000000000000000002",
+        "expires_ms": 1800000008000,
+        "input": {
+            "project": "orbit-instances",
+            "name": "instance-12",
+            "instance_id": 12,
+            "mirror": "/var/lib/orbit/instance-repositories/12.git"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJpbnN0YW5jZS5jbGVhcl9iYXNlIiwibm9kZSI6IjciLCJ0YXJnZXQiOiIxMiIsIm9wZXJhdGlvbiI6IjQyOmNsZWFyX2FmdGVyX2ZhaWx1cmUiLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAyIiwiZXhwaXJlc19tcyI6MTgwMDAwMDAwODAwMCwiaW5wdXQiOnsicHJvamVjdCI6Im9yYml0LWluc3RhbmNlcyIsIm5hbWUiOiJpbnN0YW5jZS0xMiIsImluc3RhbmNlX2lkIjoxMiwibWlycm9yIjoiL3Zhci9saWIvb3JiaXQvaW5zdGFuY2UtcmVwb3NpdG9yaWVzLzEyLmdpdCJ9fQ==.6TPmS5jvVNFKVocVqP9FklM1HMnY2NWTtXUfYsYo8cU8ejNiH2TWSDZfYbBDROoAo7YtY67bRmc5ndnVTMkSBQ=="
+}

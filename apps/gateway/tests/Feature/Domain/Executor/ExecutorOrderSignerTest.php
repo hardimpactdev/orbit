@@ -58,6 +58,8 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
 })->with([
     'proof' => ['executor-order.json', ExecutorOrderSigner::ExpiresAfterMs],
     'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'copy sync import' => ['executor-instance-sync-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'copy sync scratch' => ['executor-instance-clear-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'workspace read' => ['executor-instance-work-read.json', ExecutorOrderSigner::ReadExpiresAfterMs],
 ]);
 
