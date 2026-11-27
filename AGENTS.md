@@ -26,6 +26,7 @@ Build and prove every feature end to end in one Orbit container, a task copy wit
 
 - Fix the root cause from first principles. Add no fallback, compatibility path, or legacy branch.
 - Keep one rule in one place.
+- Keep an Operation's logic in the Gateway. The Rust executor holds only primitives on one host resource ([Primitives](docs/reference/executor.md#primitives)). Never port an Operation, one of its steps, or a Swamp phase into an executor action.
 - Guard against a race or crash window only when the [reviewer rule](docs/reference/tasks.md#the-reviewer-rule) and its impact bar would block on it.
 - Every behaviour change has a test that fails without it. The documentation changes with the code.
 
