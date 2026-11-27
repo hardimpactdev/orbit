@@ -238,9 +238,10 @@ class RouteLane(CloneLane):
 
             def published():
                 rows = [row for row in self.steps(operation) if row['name'] == step]
-                return rows[0] if rows and rows[0]['first_order_expires_ms'] else None
+                return rows[0] if rows and rows[0]['first_sent_ms'] else None
 
-            dispatch = wait_for(published, f'route.destroy {operation} did not publish its withdrawal', 75, interval=0.5)
+            dispatch = wait_for(published, f'route.destroy {operation} did not publish its withdrawal', 75, interval=0.25)
+            require(dispatch['sends'] == 1, f'route.destroy {operation} resent its withdrawal before the fault')
             queued = wait_for(lambda: self.helper('pending-order', self.node_id, operation, self.node_id, step, action),
                               f'route.destroy {operation} had no signed withdrawal order on JetStream', 5)
             self.systemctl('gateway', 'stop', 'orbit-gateway-engine.service')
