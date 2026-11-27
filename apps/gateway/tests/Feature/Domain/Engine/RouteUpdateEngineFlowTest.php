@@ -6,11 +6,19 @@ use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteUpdateProjection;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
+use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 
@@ -91,16 +99,6 @@ it('installs the early leaves with the publication and the late leaves with the 
         ->and($site['url_lines'])->toBe([])->and($final['url_lines'])->toBe([]);
 });
 
-it('withdraws the old leaves through route.destroy\'s removal action after the lasting Caddyfile', function (): void {
-    $operation = updateOperation(updateIntent(['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => 'app-instance-7-old']]]]));
-
-    expect(array_slice(updateSteps($operation), -2))->toBe([
-        ['withdraw-3', 3, RouteUpdateEngineFlow::RemovalAction, ['final-3']],
-        ['sibling-3', 0, 'route.probe', ['withdraw-3']],
-    ])->and(app(RouteUpdateEngineFlow::class)->input($operation, 'withdraw-3', new EngineRun($operation->id, [], 0, null)))
-        ->toBe(['leaves' => [['user' => 'orbit', 'scope' => 'app-instance-7-old']]]);
-});
-
 it('leaves every URL write, public Route, edge, LAN rule and unguarded DNS move to Swamp', function (array $plan, array $intent): void {
     app(RouteUpdateEngineFlow::class)->steps(updateOperation(updateIntent($plan, $intent)));
 })->throws(EngineUnsupported::class)->with([
@@ -111,6 +109,7 @@ it('leaves every URL write, public Route, edge, LAN rule and unguarded DNS move 
     'the Ingress edge' => [['ingress' => [['node_id' => 6]]], []],
     'a LAN rule' => [['lan_absent' => [['node_id' => 3]]], []],
     'private DNS before the guarded input lands' => [['dns' => [['node_id' => 1, 'records' => "address=/new.orbit/10.44.0.2\n", 'catalog' => "{}\n"]]], []],
+    'a leaf withdrawal before route.destroy\'s action is wired' => [['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => 'app-instance-7-old']]]], []],
 ]);
 
 it('resumes an engine-started update after its cutover with only the post-cutover steps, from the stored plan and leaves', function (): void {
@@ -140,8 +139,54 @@ it('never mixes engines in one update chain', function (): void {
     $swamp->forceFill(['status' => OperationStatus::Succeeded])->save();
     $engine = updateOperation(updateIntent());
     $engine->forceFill(['status' => OperationStatus::Failed, 'state' => ['swamp_run_id' => 'engine-'.$engine->id]])->save();
-    expect(fn () => RouteUpdateEngineFlow::assertSwampMayRun(updateOperation(updateIntent())))
+    expect(fn () => RouteUpdateEngineFlow::assertChain(updateOperation(updateIntent()), false))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.update_engine_chain'));
+});
+
+it('keeps an update whose Swamp start was uncertain off the engine, though it was never bound', function (): void {
+    $uncertain = updateOperation(updateIntent());
+    $uncertain->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_uncertain'])->save();
+
+    expect(RouteUpdateEngineFlow::owner(updateOperation(updateIntent())))->toBe('swamp')
+        ->and(fn () => app(RouteUpdateEngineFlow::class)->steps(updateOperation(updateIntent())))->toThrow(EngineUnsupported::class);
+});
+
+it('resumes from the attempt that committed the cutover, past a later forward retry that failed', function (): void {
+    $first = updateOperation(updateIntent());
+    $first->forceFill(['status' => OperationStatus::Failed, 'state' => ['swamp_run_id' => 'engine-'.$first->id]])->save();
+    OperationEngineStep::query()->forceCreate(['operation_id' => $first->id, 'name' => 'cutover', 'node_id' => 0, 'action' => 'route.cutover', 'target' => 'gateway',
+        'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 60_000, 'status' => 'done', 'output' => 'cutover 9 to 10']);
+    $retry = updateOperation(updateIntent());
+    $retry->forceFill(['status' => OperationStatus::Cancelled, 'state' => ['swamp_run_id' => 'engine-'.$retry->id]])->save();
+    OperationEngineStep::query()->forceCreate(['operation_id' => $retry->id, 'name' => 'final-3', 'node_id' => 3, 'action' => 'route.publish_site', 'target' => '3',
+        'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 5_000, 'status' => 'failed']);
+
+    $next = updateOperation(updateIntent());
+    expect(RouteUpdateEngineFlow::cutoverOwner($next)?->id)->toBe($first->id)
+        ->and(array_column(updateSteps($next), 0))->toBe(['final-3', 'sibling-3']);
+});
+
+it('refuses to resume a lasting Caddyfile that a sibling Route changed since the cutover, rather than overwrite it', function (): void {
+    $first = updateOperation(updateIntent());
+    $first->forceFill(['status' => OperationStatus::Failed, 'state' => ['swamp_run_id' => 'engine-'.$first->id]])->save();
+    OperationEngineStep::query()->forceCreate(['operation_id' => $first->id, 'name' => 'cutover', 'node_id' => 0, 'action' => 'route.cutover', 'target' => 'gateway',
+        'after' => [], 'budget_ms' => 30_000, 'resend_ms' => 60_000, 'status' => 'done', 'output' => 'cutover 9 to 10']);
+
+    RouteUpdateEngineFlow::assertChain(updateOperation(updateIntent()), true);
+    $sibling = updateOperation(updateIntent(['retire' => updatePhase(['caddy' => [['node_id' => 3, 'content' => "new.orbit {\n}\nsibling.orbit {\n}\n"]]], [1])]));
+    expect(fn () => RouteUpdateEngineFlow::assertChain($sibling, true))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
+});
+
+it('probes any other site the Node serves, a proxy without an Instance target included, and fails a Node without an address', function (): void {
+    $site = static fn (string $domain): DevelopmentSite => new DevelopmentSite(3, '10.44.0.2', 'proxy', '', '', null, $domain);
+    $node = (new Node)->forceFill(['id' => 3, 'wireguard_ip' => '10.44.0.2']);
+
+    expect(RouteUpdateEngineFlow::siblingProbe($node, [$site('new.orbit'), $site('old.orbit')], ['old.orbit', 'new.orbit']))->toBeNull()
+        ->and(RouteUpdateEngineFlow::siblingProbe($node, [$site('new.orbit'), $site('proxy.orbit')], ['old.orbit', 'new.orbit']))
+        ->toBe(['address' => '10.44.0.2', 'domain' => 'proxy.orbit'])
+        ->and(fn () => RouteUpdateEngineFlow::siblingProbe($node->forceFill(['wireguard_ip' => null]), [$site('proxy.orbit')], ['new.orbit']))
+        ->toThrow(RuntimeException::class);
 });
 
 it('labels every failure after the committed cutover as post-cutover, so the projection keeps the replacement authoritative', function (): void {
@@ -172,4 +217,38 @@ it('waits the DNS grace from the stored DNS receipt, without a worker, and never
     Carbon::setTestNow(Carbon::createFromTimestampMs($received + 31_000));
     expect(app(RouteUpdateEngineFlow::class)->local($operation, 'grace', $run))->toBe('grace ended '.($received + 31_000));
     Carbon::setTestNow();
+});
+
+it('settles a retry\'s success after a post-cutover failure without making the acknowledged cutover again', function (): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'app-dev', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit']));
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'type' => 'node-package',
+        'repository_url' => 'https://github.com/example/shop.git', 'default_branch' => 'main', 'root' => 'public']);
+    $route = static fn (string $domain, array $extra = []): Route => Route::query()->create(['kind' => 'app', 'project_id' => $project->id,
+        'node_id' => $node->id, 'provenance' => 'explicit', 'publication' => 'private', 'domain' => $domain, 'status' => 'pending', ...$extra]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'shop',
+        'checkout_path' => '/home/orbit/apps/shop', 'status' => 'active', 'source_layout' => 'worktree', 'root' => 'public',
+        'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+    $old = $route('old.shop.test');
+    $old->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $old->update(['status' => 'active', 'sites_published' => true]);
+    $new = $route('new.shop.test', ['replaces_route_id' => $old->id, 'replacement_step' => RouteReplacementStep::Reserved]);
+    $new->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $old->update(['replaced_by_route_id' => $new->id]);
+    $new->update(['status' => 'activating']);
+    $intent = updateIntent([], ['route_id' => $old->id, 'result_route_id' => $new->id, 'analytics_changes' => []]);
+    $settle = function (OperationStatus $status, ?string $step) use ($intent): void {
+        $operation = updateOperation($intent);
+        $operation->forceFill(['status' => $status, 'error_code' => $step === null ? null : 'route.withdraw_failed'])->save();
+        app(NativeRouteUpdateProjection::class)->settle($operation, $step);
+    };
+
+    $settle(OperationStatus::Failed, 'Withdraw the old site');
+    expect($old->refresh()->status->value)->toBe('retiring')->and($new->refresh()->status->value)->toBe('active')
+        ->and($new->replaces_route_id)->toBeNull();
+
+    $settle(OperationStatus::Succeeded, null);
+    expect($new->refresh()->status->value)->toBe('active')
+        ->and(Route::query()->find($old->id))->toBeNull();
 });

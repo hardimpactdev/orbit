@@ -25,7 +25,7 @@ sequenceDiagram
     %%> The engine admits nothing here; no run, no Node order
   else Node work needed
     Note over GW: Hold the Route Nodes
-    %%> The exclusive publication holds of the serving Nodes and of each VPN Node whose DNS catalog the update publishes; a route.create on that catalog holds it too, so the two wait for each other
+    %%> Admission holds the serving Nodes, as route/update.mmd; an engine start also holds its site phases' Nodes and its VPN Nodes in the bind transaction, or refuses `route.publication_held`
     alt the engine admits the whole Operation
       %%> Admission, one decision per Operation (EngineKinds::routes):
       %%> - `route.update` is in `ORBIT_ENGINE_KINDS`

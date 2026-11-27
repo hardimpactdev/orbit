@@ -185,9 +185,18 @@ final readonly class Engine
 
             return;
         }
-        if ($receiptBound !== null && (! in_array($status, ['done', 'failed'], true)
-            || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
-            || ($line['code'] ?? null) === 'executor.order_expired')) {
+        if ($receiptBound !== null && (! in_array($status, ['done', 'applied', 'output', 'failed'], true)
+            || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target)) {
+            return;
+        }
+        // The journal keeps an expired order's result for every action but the removal (orbit-executor-core `ends_operation`):
+        // a fenced removal sends its step again, any other fenced step has its terminal result.
+        if ($receiptBound !== null && ($line['code'] ?? null) === 'executor.order_expired') {
+            if ($step->action === InstanceDestroyEngineFlow::Kind) {
+                return;
+            }
+            $step->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'executor.order_expired']);
+
             return;
         }
         match (true) {
@@ -235,8 +244,11 @@ final readonly class Engine
             $steps = self::steps($operationId, lock: true);
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
-            $mayCancel = ! $receiptBound || ! array_any($steps, static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null);
-            $cancel = $operation->cancel_requested_at !== null && $mayCancel;
+            // A receipt-bound run keeps its fence while any order it may have published has no terminal receipt; an order it never
+            // published holds nothing, so neither a failure nor a cancel waits for it.
+            $outstanding = $receiptBound && array_any($steps, static fn (OperationEngineStep $step): bool => $step->status === 'sent'
+                && $step->node_id > 0 && $step->first_order_expires_ms !== null);
+            $cancel = $operation->cancel_requested_at !== null && ! $outstanding;
             foreach ($steps as $step) {
                 if (! $receiptBound && $step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
                     $step->update(['status' => 'failed', 'done_ms' => $now, 'error_code' => 'engine.step_budget_exceeded']);
@@ -245,7 +257,9 @@ final readonly class Engine
             $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
             $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
             foreach ($steps as $step) {
-                if ($step->on_failure !== $failed || ($receiptBound && $cancel)) {
+                // A receipt-bound order that may be out still gets its resends after a failure or a cancel, until its receipt comes.
+                $fenced = $receiptBound && $step->status === 'sent' && $step->node_id > 0 && $step->first_order_expires_ms !== null;
+                if (! $fenced && ($step->on_failure !== $failed || ($receiptBound && $operation->cancel_requested_at !== null))) {
                     continue; // A failed run sends no more of its own steps; a run without a failure none of its failure steps.
                 }
                 if ($step->on_failure && $step->status === 'pending' && ! array_all($step->after, $done)) {
@@ -256,7 +270,8 @@ final readonly class Engine
                 // A timed Gateway step (EngineStepNotYet) runs again once its deadline delivers at its time.
                 $ready = ($step->status === 'pending' && array_all($step->after, $done))
                     || ($step->status === 'waiting' && $now >= ($step->resend_at_ms ?? PHP_INT_MAX));
-                $overdue = $deadline && $step->status === 'sent' && $step->node_id > 0 && $now >= ($step->resend_at_ms ?? PHP_INT_MAX);
+                // A receipt-bound run's Gateway step whose worker was lost after it was marked sent runs again: each is idempotent.
+                $overdue = $deadline && $step->status === 'sent' && ($step->node_id > 0 || $receiptBound) && $now >= ($step->resend_at_ms ?? PHP_INT_MAX);
                 if (! $ready && ! $overdue) {
                     continue;
                 }
@@ -274,7 +289,7 @@ final readonly class Engine
             // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result. A failed run
             // ends once its failure steps ended.
             $end = match (true) {
-                $failed => $rescued ? 'failed' : null,
+                $failed => $rescued && ! $outstanding ? 'failed' : null,
                 array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
                 $cancel => 'cancelled',
                 default => null,
@@ -383,7 +398,7 @@ final readonly class Engine
     private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): void
     {
         try {
-            $input = $definition->input($operation, $step->name, $run);
+            $input = EngineContent::upload($this->bus, $step->node_id, $definition->input($operation, $step->name, $run));
             $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
             $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
             $this->bus->publishOrder($step->node_id, $order, fn (): bool => $this->claimPublication($step, $order->expiresMs));

@@ -11,6 +11,8 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\RoutePublicationSites;
+use App\Domain\Routes\RouteUpdateEngineFlow;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -731,66 +733,43 @@ it('takes the Instance slot the way the destroy workflow names its container ste
         ->and(RoutePublicationHolds::destroySlot(routeWrite([5])))->toBeNull();
 });
 
-/** A Route create or update that serves its site on `$serving` and publishes the private DNS catalog of VPN Node `$dns`. */
-function dnsWrite(string $kind, int $serving, int $dns): Operation
+/** A Route update admitted with serving Node `$serving` whose plan writes sites on `$sites` and the DNS catalog of VPN Node `$dns`. */
+function engineUpdateWrite(int $serving, array $sites, int $dns): Operation
 {
-    $operation = routeWrite([$serving], $kind);
-    $rows = [['node_id' => $dns, 'records' => "address=/new.example/10.44.0.2\n", 'catalog' => "{}\n"]];
-    $operation->update(['input' => [...$operation->input,
-        ...($kind === 'route.update' ? ['route_update' => ['plan' => ['dns' => $rows]]] : ['route_create' => ['dns' => $rows]])]]);
+    $operation = routeWrite([$serving], 'route.update');
+    $phase = ['site_nodes' => $sites];
+    $operation->update(['input' => [...$operation->input, 'route_update' => ['route_id' => 1, 'result_route_id' => 2, 'plan' => [
+        'publish' => $phase, 'retire' => $phase, 'cleanup' => [], 'dns' => [['node_id' => $dns, 'records' => "address=/new.example/10.44.0.2\n", 'catalog' => "{}\n"]]]]]]);
 
     return $operation->refresh();
 }
 
-it('holds the VPN Node of a Route update\'s private DNS alone, so a second update on that catalog waits and starts after a success', function (): void {
-    $started = startedOperations();
+it('leaves the DNS Node of a Swamp-run Route write unheld, as before the engine', function (): void {
     $holds = app(RoutePublicationHolds::class);
-    [$first, $second] = [dnsWrite('route.update', 5, 8), dnsWrite('route.update', 6, 8)];
+    [$first, $second] = [engineUpdateWrite(5, [5], 8), engineUpdateWrite(6, [6], 8)];
 
-    expect(RoutePublicationHolds::nodes($first))->toBe([5, 8])
+    expect(RoutePublicationHolds::nodes($first))->toBe([5])
         ->and($holds->admit($first))->toBeTrue()
-        ->and($holds->admit($second))->toBeFalse()
-        ->and($second->refresh()->state['hold_nodes'])->toBe([6, 8])
-        ->and(holder(8))->toBe($first->id)
-        ->and(holder(6))->toBeNull();
-
-    finish($first);
-    runPromotion();
-    expect($second->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and(holder(8))->toBe($second->id)
-        ->and($started->getArrayCopy())->toBe([$second->id]);
-
-    finish($second, OperationStatus::Failed);
-    expect(DB::table('route_publication_holds')->count())->toBe(0);
+        ->and($holds->admit($second))->toBeTrue()
+        ->and(holder(8))->toBeNull();
 });
 
-it('keeps a Route update and a Route create on one DNS catalog apart, in either order, and frees the Node on a failure', function (): void {
-    $started = startedOperations();
+it('holds an engine-run update\'s site phase Nodes and VPN Node at its start, refuses a second, and frees them at its end', function (): void {
     $holds = app(RoutePublicationHolds::class);
-    [$create, $update, $later] = [dnsWrite('route.create', 5, 8), dnsWrite('route.update', 6, 8), dnsWrite('route.create', 7, 8)];
-
-    expect($holds->admit($create))->toBeTrue()
-        ->and($holds->admit($update))->toBeFalse()
-        ->and($holds->admit($later))->toBeFalse();
-
-    finish($create, OperationStatus::Failed);
-    runPromotion();
-    expect($update->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and($later->refresh()->status)->toBe(OperationStatus::Waiting)
-        ->and(holder(8))->toBe($update->id)
-        ->and($started->getArrayCopy())->toBe([$update->id]);
-});
-
-it('frees the DNS Node of a finished Route update that nothing released, and starts the waiting update', function (): void {
-    $started = startedOperations();
-    $holds = app(RoutePublicationHolds::class);
-    [$first, $second] = [dnsWrite('route.update', 5, 8), dnsWrite('route.update', 6, 8)];
+    [$first, $second] = [engineUpdateWrite(5, [5, 7], 8), engineUpdateWrite(6, [6], 8)];
     $holds->admit($first);
     $holds->admit($second);
-    Operation::query()->whereKey($first->id)->update(['status' => OperationStatus::Failed, 'finished_at' => now()]);
 
-    expect($holds->sweep())->toBe(2)
-        ->and($second->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and(holder(8))->toBe($second->id)
-        ->and($started->getArrayCopy())->toBe([$second->id]);
+    RouteUpdateEngineFlow::holdNodes($first);
+    expect(holder(7))->toBe($first->id)->and(holder(8))->toBe($first->id)
+        ->and(fn () => RouteUpdateEngineFlow::holdNodes($second))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'));
+
+    finish($first, OperationStatus::Failed);
+    expect(holder(7))->toBeNull()->and(holder(8))->toBeNull();
+    RouteUpdateEngineFlow::holdNodes($second);
+    expect(holder(8))->toBe($second->id);
+
+    Operation::query()->whereKey($second->id)->update(['status' => OperationStatus::Failed, 'finished_at' => now()]);
+    expect($holds->sweep())->toBe(2)->and(holder(8))->toBeNull();
 });
