@@ -14,7 +14,7 @@ In progress.
 
 The owner decided P1–P10 below on 2026-11-16. The shared foundation is partly built through ADR 0266 slices 1–3: the executor's no-op `proof` action, installation, Gateway signer, observer WebSocket pass-through and result listener ([Executor](/reference/executor)). No command sends a real action through it yet. Fast-action admission, sleep/wake and the clone action remain pending; the spike timings below are not delivered command timings.
 
-Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor runs every fast Node action for every caller, and one Rust module holds each action's rule. The signature is the security boundary, as in ADR 0266. Exceptions:
+Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor runs every fast Node action for every caller, and one Rust module holds each resource's rule ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#the-owners-decisions) N3 replaced "each action's rule"). The signature is the security boundary, as in ADR 0266. Exceptions:
 
 - [No exceptions and no legacy](/mission#principles): none beyond ADR 0266's. A Python path that an action replaces is deleted in the slice that replaces it.
 - The frozen agent of [ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained): the observer gets no new command for a new action. It passes orders through once ADR 0266 slice 2 lands. The review slice (B1) changes the observer's code without changing its contract.
@@ -69,7 +69,7 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 | Listener and hand-off | `orbit-agent-view.service` records each result on its Operation, then pushes it to the Valkey key `executor:op:<operation>` for a waiting request |
 | Contract | The executor exports its allowlist: each action's input, result and size bound. The Gateway pins it beside the agent's contract and signs no action the Node's executor lacks |
 
-**Add an action.** A new action is one pull request with these parts, in this order:
+**Add an action.** [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#primitives) replaces this recipe: an Operation is a flow of primitives in the Gateway, and the executor gains an action only for a host resource that the [catalogue](/reference/executor#the-catalogue) lacks. The parts below describe the actions built before that rule and are not a pattern for a new one:
 
 1. The command's chart and page, updated to the executor path ([stage 1](/reference/command-development-pipeline#1-prep)).
 2. An allowlist entry: one variant of the executor's action enum, its input and result types, its target kind and size bound, exported in the contract.
