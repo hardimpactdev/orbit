@@ -279,13 +279,15 @@ class RouteLane(CloneLane):
             row = self.db(f'SELECT status, lock_key FROM operations WHERE id={operation}')[0]
             replay = self.admitted('DELETE', path, {}, key)
             pending = next(row for row in self.steps(operation) if row['name'] == step)
-            fence = {'withdrawn_on_node': self.absent(withdrawn), 'operation_open': row['status'] not in TERMINAL, 'lock_held': bool(row['lock_key']),
+            # A route Operation takes no Operation lock (`lock_key`, on Swamp as on the engine): its fence is the Route Node hold, from
+            # admission to the terminal state (RoutePublicationHolds), and the Route record.
+            fence = {'withdrawn_on_node': self.absent(withdrawn), 'operation_open': row['status'] not in TERMINAL, 'nodes_held': sum((holds := self.held(operation)).values()) > 0,
                      'route_kept': bool(self.db(f"SELECT id FROM routes WHERE domain='{domain}'")), 'replay_same_operation': replay['id'] == operation,
                      'step_not_done': pending['status'] != 'done'}
             require(all(fence.values()), f'route.destroy {operation} did not keep its fence after the Node withdrew without a receipt: '
                     + ', '.join(name for name, held in fence.items() if not held) + f' (state {withdrawn}, operation {row})')
             interrupted = {'dispatch': dispatch, 'queued_signed_order': queued, 'dropped': dropped, 'state_without_receipt': withdrawn,
-                           'operation_while_fenced': row, 'sibling_while_fenced': self.healthy(sibling), 'http_replay': {'id': replay['id'], 'status': replay['status']}}
+                           'operation_while_fenced': row, 'node_holds_while_fenced': holds, 'sibling_while_fenced': self.healthy(sibling), 'http_replay': {'id': replay['id'], 'status': replay['status']}}
             return admitted, interrupted
         finally:
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
