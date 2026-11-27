@@ -1317,6 +1317,25 @@ class CancelLane(SyncLane):
     def at(self):
         return round((time.monotonic() - self.started_at) * 1000)
 
+    def setup(self, repository, branch):
+        self.new_images = []
+        try:
+            super().setup(repository, branch)
+        finally:
+            # The seed's launch may unpack its image into the pool: that cache is this run's, and goes after the seed (uninstall).
+            if self.start_counts is not None:
+                images = self.image_volumes()
+                self.new_images = [name for name in self.counts()['volumes'] if name not in self.start_counts['volumes'] and f'image:{name}' in images]
+
+    def image_volumes(self):
+        return {f'{row["type"]}:{row["name"]}' for row in parsed('incus volumes', self.incus('storage', 'volume', 'list', POOL, '--project', POOL, '--format=json'))
+                if row['type'] == 'image'}
+
+    def uninstall(self):
+        super().uninstall()
+        for name in getattr(self, 'new_images', []):
+            self.incus('storage', 'volume', 'delete', POOL, 'image/' + name, '--project', POOL)
+
     def cli(self, *args, form='json'):
         result = self.run.fleet.cli(list(args), timeout=600, form=form)
         return {'rc': result['rc'], 'json': result['json'], 'stdout': result['stdout'][-2000:], 'stderr': result['stderr'][-500:], 'secs': result['secs']}
