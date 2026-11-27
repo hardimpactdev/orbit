@@ -5,6 +5,7 @@ covers:
   - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-process-restart-output,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
+  - bin/check-executor-actions
   - swamp/ansible/tasks/node-executor.yml
 ---
 
@@ -121,6 +122,8 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 
 | Primitive | Resource | State | Replaces |
 | --- | --- | --- | --- |
+| `proof.noop` | Nothing: it proves the order path | Built | |
+| `sleep`, `wake`, `discard` | The frozen state of one container | Built; [stays one call each](#primitives-that-span-more-than-one-file-or-call) | |
 | `ufw.ensure_rule` | One ufw rule, port or route | Built for port rules; route rules planned | The `ufw route allow` call inside `instance.clone`; the rule removals of `instance.destroy` |
 | `tls.ensure_csr` | One private key and its signing request | Built; its folder pattern, owner, mode and certificate subject move into the input | |
 | `file.ensure` | One file, folder or link: content, owner, mode, an optional digest it must still hold, or absent | Planned | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
@@ -174,6 +177,8 @@ Compose the Operation from the catalogue first. Add a primitive only for a resou
 2. For a missing resource, add one primitive with a typed input, a result bound and a row in the catalogue.
 3. State in the pull request which resource it is and how the primitive meets the five conditions.
 4. Never add a primitive for an Operation, for one step of one Operation, or to port a Swamp phase or script as a whole.
+
+`bin/check-executor-actions` holds the catalogue and the code together. Every action in the Rust enum has a row marked Built, or a line in `docs/reference/executor-actions-predating.txt` until its rewrite deletes it. That list only shrinks: CI fails a line that the base commit lacks. The check also fails a new action whose name starts with an Orbit concept, such as `instance` or `route`.
 
 A new primitive ships in an agent release and reaches a Node through the pin. A flow that uses only existing primitives ships in a Gateway release alone.
 

@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// Keeps the executor's actions to primitives (ADR 0271 N3; docs/reference/executor.md#primitives). Every action in the
+// Rust enum has a Built row in the catalogue, or waits in docs/reference/executor-actions-predating.txt until its
+// rewrite. That list may only shrink, and no new action is named after an Orbit concept.
+const { readFileSync } = require('node:fs')
+const { execFileSync } = require('node:child_process')
+const { resolve } = require('node:path')
+
+const root = resolve(__dirname, '..')
+const ENUM = 'apps/agent/crates/executor-core/src/action.rs'
+const PAGE = 'docs/reference/executor.md'
+const LIST = 'docs/reference/executor-actions-predating.txt'
+const CONCEPTS = ['instance', 'route', 'process', 'schedule', 'task', 'project', 'node', 'orbit', 't3']
+// The first word of a name, also in the plural: `instances.rename` and `route_publish` name a concept too.
+const concept = (action) => { const word = action.split(/[._]/)[0]; return CONCEPTS.includes(word) || CONCEPTS.includes(word.replace(/s$/, '')) }
+
+let bad = 0
+const fail = (message) => { bad++; console.log(message) }
+const list = (text) => text.split('\n').map((line) => line.trim()).filter((line) => line !== '' && !line.startsWith('#'))
+
+// The enum's names: the arms of `Action::name`.
+const source = readFileSync(`${root}/${ENUM}`, 'utf8')
+const names = source.slice(source.indexOf('pub fn name(self)'))
+const actions = [...names.slice(0, names.indexOf('\n    }\n')).matchAll(/Self::\w+\s*=>\s*"([^"]*)"/g)].map((match) => match[1])
+for (const action of actions) if (!/^[a-z0-9_.]+$/.test(action)) fail(`${action}: an action name holds only lower-case letters, digits, "_" and "."`)
+// `ALL` counts the enum's variants, so an arm this parse missed shows as a difference.
+const count = Number((source.match(/ALL: \[Self; (\d+)\]/) ?? [])[1])
+if (actions.length !== count) fail(`${ENUM}: Action::name has ${actions.length} names, but ALL has ${count} actions`)
+
+// The catalogue: the first table under "### The catalogue". A row's first cell names its primitives, its third cell its state.
+const page = readFileSync(`${root}/${PAGE}`, 'utf8')
+const start = page.indexOf('\n### The catalogue\n')
+if (start < 0) fail(`${PAGE}: no "### The catalogue" section`)
+const built = new Set()
+const planned = new Set()
+for (const line of (start < 0 ? '' : page.slice(start + 1, page.indexOf('\n### ', start + 1))).split('\n')) {
+  const cells = line.split('|').map((cell) => cell.trim())
+  if (cells.length < 5 || cells[1] === 'Primitive' || cells[1].startsWith('---')) continue
+  for (const match of cells[1].matchAll(/`([a-z0-9_.]+)`/g)) (cells[3].startsWith('Built') ? built : planned).add(match[1])
+}
+
+const predating = list(readFileSync(`${root}/${LIST}`, 'utf8'))
+for (const action of actions) {
+  if (predating.includes(action)) continue
+  if (concept(action)) fail(`${action}: an action is not named after an Orbit concept; name the host resource it acts on`)
+  if (planned.has(action)) fail(`${action}: the catalogue in ${PAGE} still says Planned; mark its row Built`)
+  else if (!built.has(action)) fail(`${action}: no catalogue row in ${PAGE}; compose the Operation from existing primitives in the Gateway, or add a primitive that meets the five conditions with its row`)
+}
+for (const action of predating) {
+  if (!actions.includes(action)) fail(`${LIST}: ${action} is no action; remove the line`)
+  if (built.has(action) || planned.has(action)) fail(`${LIST}: ${action} has a catalogue row; remove the line`)
+}
+if (process.env.BASE) {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  let before = null
+  try { git('cat-file', '-e', `${process.env.BASE}^{commit}`) } catch { fail(`BASE ${process.env.BASE} is no commit here, so the list cannot be compared`) }
+  // A base from before the list has no file to compare.
+  try { before = git('show', `${process.env.BASE}:${LIST}`) } catch {}
+  if (before !== null) for (const action of predating) if (!list(before).includes(action)) fail(`${LIST}: ${action} is new; the list may only shrink, so add a primitive instead`)
+}
+
+console.log(bad ? `${bad} problem(s)` : `all executor actions ok; ${built.size} built primitives, ${predating.length} actions predate the rule`)
+process.exitCode = bad ? 1 : 0
