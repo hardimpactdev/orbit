@@ -84,6 +84,8 @@ Every direct Operation tracks its execution budget from `started_at`. `Operation
 
 Unbound admissions with zero attempts have a separate 600-second admission budget.
 
+A `tasks.cancel` that waits for its task copy's `instance.destroy` has no deadline: it is recorded `running` without a lock, and it ends when the destroy ends, succeeded or failed with the destroy's error code. The destroy's budget bounds it, except a [signed clone removal](/reference/gateway-engine#instancedestroy), which stays fenced past its budget until its Node returns the result ([`task:cancel`](/cli/task/cancel)).
+
 When a bound Operation reaches its deadline, the reconciler marks it `failed` with `operation.timed_out`, sets `overdue_since` (queuing one `operation:overdue-alert` webhook on `tasks`), and forwards `workflow.cancel` to Swamp. Target holds stay locked until Swamp confirms the bound run is terminal or 60 minutes elapse (`native_terminal_status: unproven`). An Operation that timed out before Swamp bound its start to a run stays in every reconciler pass after its hold is released, until Swamp's lookup by its start key finds the run or verifies that none exists. If a bound run actually completed before its deadline and its terminal history arrives later, the reconciler reopens and projects the true outcome.
 
 A run that ended after its deadline stays timed out, but a projection that declares `DirectOperationLateResult` receives the run's terminal result and its verified history once, as the reconciler records that end, so its records keep what the run proved. It also learns when an Operation never ran: a cancel before its run, or a lost start Swamp has no run for. Tool Operations and Tool and Node convergence use it ([Ownership](/reference/tools#ownership)).
@@ -195,7 +197,7 @@ Route-writing Operations (`instance.create`, `instance.complete`, `instance.dest
 | `instance_slot` | Older removal of the same Instance slot (`id % 64`) on the Node is open |
 | `share_cap` | Eight shared writers hold one of the Nodes |
 
-Removals share Nodes with other removals and release their Route hold early right after `Withdraw the Route` via `operation:direct:route-release`. Waiting creates, clones, restores, and `route.create` Operations re-capture their Caddyfile from the current catalog when promoted by `PromoteRouteWrites`.
+Removals share Nodes with other removals and release their Route hold early right after `Withdraw the Route` via `operation:direct:route-release`. A removal whose admission rendered an engine plan (`route_engine`) holds its Nodes alone instead, because the engine writes whole files. Waiting creates, clones, restores, and `route.create` Operations re-capture their Caddyfile from the current catalog when promoted by `PromoteRouteWrites`.
 
 ## Errors
 

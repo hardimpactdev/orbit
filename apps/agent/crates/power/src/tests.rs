@@ -288,6 +288,7 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::UfwEnsureRule
             | orbit_executor_core::action::Action::TlsEnsureCsr
             | orbit_executor_core::action::Action::RoutePublishSite
+            | orbit_executor_core::action::Action::RouteWithdrawSite
             | orbit_executor_core::action::Action::DnsPublishRecords
             | orbit_executor_core::action::Action::InstanceClone
             | orbit_executor_core::action::Action::InstancePrepare
@@ -306,6 +307,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::InstanceNames
             | orbit_executor_core::action::Action::InstanceWorkRead
             | orbit_executor_core::action::Action::ProcessEnsureState
+            | orbit_executor_core::action::Action::ProcessReadInstance
+            | orbit_executor_core::action::Action::ProcessRestart
             | orbit_executor_core::action::Action::ScheduleEnsureTimer => {
                 panic!("power actions only")
             }

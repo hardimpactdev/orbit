@@ -101,8 +101,9 @@ final class GatewayFailureRenderer
             return $safe;
         }
 
-        if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed'], true)) {
-            // The operation that holds the target, or the one that could not be queued, so the caller can follow or cancel it.
+        if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed', 'tasks.cancel_waits_for_destroy'], true)) {
+            // The operation that holds the target, the one that could not be queued, or the destroy a task cancel waits for, so the caller
+            // can follow or cancel it.
             $operationId = $details['operation_id'] ?? null;
 
             return is_int($operationId) && $operationId > 0 ? ['operation_id' => $operationId] : [];

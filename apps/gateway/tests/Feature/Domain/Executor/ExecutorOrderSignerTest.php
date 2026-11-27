@@ -58,11 +58,15 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
 })->with([
     'proof' => ['executor-order.json', ExecutorOrderSigner::ExpiresAfterMs],
     'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'site withdrawal' => ['executor-route-withdraw-site.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'guarded DNS records' => ['executor-dns-guarded-records.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'copy sync import' => ['executor-instance-sync-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'copy sync scratch' => ['executor-instance-clear-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'workspace read' => ['executor-instance-work-read.json', ExecutorOrderSigner::ReadExpiresAfterMs],
     'Process state' => ['executor-process-ensure-state.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'Schedule timer' => ['executor-schedule-ensure-timer.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'Process run read' => ['executor-process-read-instance.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'Process restart' => ['executor-process-restart.json', ExecutorOrderSigner::StepExpiresAfterMs],
 ]);
 
 it('signs a read with no Operation, for its target, expiring with the request that waits for it', function (): void {

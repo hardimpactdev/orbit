@@ -126,10 +126,15 @@ final class RoutePublicationHolds
         return InstanceDestroyKind::removes($kind);
     }
 
-    /** A removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their Nodes. */
+    /**
+     * A Swamp removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their
+     * Nodes. A removal with an engine plan does not.
+     */
     private static function sharesNodes(Operation $operation): bool
     {
-        return InstanceDestroyKind::removes($operation->kind) || ClonePublication::sharesNodes($operation);
+        // A removal the engine may run writes whole files rendered at its admission, so it takes its Nodes alone (RouteFileGuards).
+        return (InstanceDestroyKind::removes($operation->kind) && ($operation->input['route_engine'] ?? []) === [])
+            || ClonePublication::sharesNodes($operation);
     }
 
     /** Whether the terminal state of the kind has holds to free. */
@@ -511,12 +516,19 @@ final class RoutePublicationHolds
     }
 
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
-    public function releaseWithdrawn(Operation $operation): void
+    public function releaseWithdrawn(Operation $operation): bool
     {
-        if (self::releasesAfterWithdraw($operation->kind)
-            && DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete() > 0) {
+        if (! self::releasesAfterWithdraw($operation->kind)) {
+            return false;
+        }
+        // Every hold the removal took: shared slots, and the Nodes an engine plan held alone, also when Swamp runs that removal.
+        $freed = DB::table('route_publication_holds')->where('operation_id', $operation->id)->delete()
+            + DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete();
+        if ($freed > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
+
+        return $freed > 0;
     }
 
     /** @param list<int> $nodes */

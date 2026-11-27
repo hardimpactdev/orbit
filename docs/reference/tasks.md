@@ -349,6 +349,12 @@ Assistance comments at the parent group level stay on the task group independent
 
 `POST /api/v1/tasks/{task}/cancel` (`task:cancel`) stops running Operations, cancels open subtasks, and destroys the task copy (removing pending/failed exclusive Routes on `source_resolved` workspaces while refusing active shared Routes).
 
+The cancel of a task that owns a copy stays `running` until the copy's `instance.destroy` ends, and takes its outcome. It succeeds once the copy is gone. The task is then `cancelled`, a `failed` task included; a task that a completion completed meanwhile stays `completed`. It fails with the destroy's error code when the destroy fails or its budget expires, and the task keeps the copy and runs on. A later receipt that corrects the destroy's end corrects the cancel too.
+
+The cancel holds no lock and blocks no other admission of the task while it waits. It has no budget of its own; the destroy's budget bounds it. A [signed clone removal](/reference/gateway-engine#instancedestroy) on the Gateway engine stays fenced past its budget until its Node returns the result, and the cancel waits with it. The reconciler ends a waiting cancel whose destroy ended without it.
+
+Its result names the destroy as `destroy_operation_id`. A stop request on the waiting cancel fails with HTTP 409 `tasks.cancel_waits_for_destroy` and names the destroy. See [`task:cancel`](/cli/task/cancel).
+
 ## Metrics and insights
 
 ### Task insights

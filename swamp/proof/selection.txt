@@ -62,6 +62,14 @@ apps/agent/crates/instance/src/work.rs                              instance:des
 # instance:migrate, until the last checkout Instance has moved. Its cases are the refusals of the CLI and of the admission; its
 # Swamp code stays uncovered until a proof Node has the Instance pool.
 swamp/proof/instance/migrate.cases.yaml                             instance:migrate
+
+# route:destroy on the signed executor, and the Route withdrawal of a clone's destroy. The Swamp withdrawal keeps its own lines below.
+swamp/proof/route/destroy.cases.yaml                                route:destroy
+swamp/proof/instance/destroy.cases.yaml                             instance:destroy
+apps/gateway/app/Domain/Routes/RouteDestroyEngineFlow.php           route:destroy instance:destroy
+apps/gateway/app/Domain/Instances/InstanceDestroyEngineFlow.php     instance:destroy
+apps/agent/crates/route/**                                          route:destroy instance:destroy
+apps/agent/crates/dns/**                                            route:destroy instance:destroy
 apps/cli/app/Commands/Instances/MigrateInstanceCommand.php         instance:migrate
 apps/gateway/app/Actions/Instances/StartInstanceMigrateAction.php  instance:migrate
 apps/gateway/app/Http/Controllers/Api/InstanceMigrationsController.php  instance:migrate
@@ -329,6 +337,9 @@ swamp/ansible/tasks/task-copy-base-names.yml  task:sync
 swamp/proof/task/sync.cases.yaml  task:sync
 apps/gateway/app/Domain/Tasks/TaskSyncEngineFlow.php  task:sync
 apps/agent/crates/instance/src/sync.rs  task:sync
+swamp/proof/task/cancel.cases.yaml  task:cancel
+apps/gateway/app/Domain/Tasks/TaskEnd.php  task:cancel
+apps/gateway/app/Domain/Tasks/TaskCancelIntent.php  task:cancel
 swamp/extensions/behaviors/operations/certificates/manifest.yaml  instance:clone instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-dev-command/manifest.yaml  instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-source-command/manifest.yaml  instance:clone
@@ -346,9 +357,12 @@ swamp/extensions/behaviors/operations/tools/manifest.yaml  instance:clone
 swamp/proof/process/start.cases.yaml             process:start
 swamp/workflows/workflow-operation-process-start.yaml  instance:create process:start
 swamp/workflows/workflow-operation-process-stop.yaml   process:start
-apps/gateway/app/Domain/Processes/ProcessControl*.php  process:start
+apps/gateway/app/Domain/Processes/ProcessControl*.php  process:start process:restart
 apps/gateway/app/Domain/Schedules/ScheduleEnableEngineFlow.php  process:start
-apps/agent/crates/process/**                     process:start
+apps/agent/crates/process/**                     process:start process:restart
+# process:restart's cases prove the signed restart and its Swamp fallback.
+swamp/proof/process/restart.cases.yaml           process:restart
+swamp/workflows/workflow-operation-process-control.yaml  process:restart
 
 # The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change

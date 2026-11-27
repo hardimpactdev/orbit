@@ -187,3 +187,19 @@ it('records the refusal of the Node withdrawal transaction as the failure stderr
         ->and($destroy->state['native_failure'])->toBe(['failed_step' => 'Read container removal',
             'detail' => 'caddy.owned_revision_conflict: Withdraw the Route from the shared files: caddy.owned_revision_conflict', 'stderr_recorded' => true]);
 });
+
+it('frees the Nodes an engine plan held alone when Swamp runs that removal and calls the release', function (): void {
+    $destroy = ($this->running)(app(StartInstanceDestroyAction::class)->execute($this->instance, true));
+    // The removal's admission held its Nodes alone, as one with an engine plan does; the executor lacked a capability, so Swamp runs it.
+    DB::table('route_withdrawal_holds')->where('operation_id', $destroy->id)->delete();
+    DB::table('route_publication_holds')->insert(['operation_id' => $destroy->id, 'node_id' => $this->node->id]);
+    $write = ($this->routeWrite)();
+    expect($write->status)->toBe(OperationStatus::Waiting);
+
+    ($this->release)($destroy)->assertOk()->assertJsonPath('data.released', true);
+
+    expect(DB::table('route_publication_holds')->where('operation_id', $destroy->id)->exists())->toBeFalse()
+        ->and($destroy->fresh()->status)->toBe(OperationStatus::Running);
+    app(RoutePublicationHolds::class)->promote();
+    expect($write->fresh()->status)->toBe(OperationStatus::Queued);
+});

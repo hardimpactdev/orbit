@@ -63,6 +63,15 @@ final class RetryTaskCopyCreate implements ShouldQueue
         $failure = $group?->copy_create_failure;
 
         return $group === null || $failure === null || $group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null
-            || $failure['operation_id'] !== $this->operationId ? null : [$group, $failure];
+            || $failure['operation_id'] !== $this->operationId || self::cancelled($group, $failure['operation_id']) ? null : [$group, $failure];
+    }
+
+    /** A `task:cancel` that destroyed the failed copy ends the group, whichever worker recorded the destroy (TaskEnd::sweep). */
+    private static function cancelled(Task $group, int $create): bool
+    {
+        $copy = Operation::query()->whereKey($create)->value('target_id');
+
+        return $copy !== null && Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('input->instance_id', $copy)->exists();
     }
 }

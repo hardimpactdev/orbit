@@ -185,6 +185,8 @@ The reconciler reads late migrate finishes, including an uncertain start with no
 
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. When a root run ends, the observer also queues the prompt projection of that Operation ([How an operation runs](/reference/operations#how-an-operation-runs)); the pass stays its retry. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
+Each pass also ends a [task copy's cancel](/reference/tasks#cancel-a-stuck-task) that waits for a copy destroy which has ended, when the worker that recorded that end did not end the cancel, as during a release's worker handover. A succeeded destroy then also cancels the task.
+
 Each pass also keeps the [warm proof copy pool](/cli/proof/run#warm-copies): it replaces the warm copies of an older seed and refills the pool. A warm copy uses no command step of its own.
 
 Each pass checks every open Operation of a direct kind, held timeouts, unsettled migrate timeouts and recent unconfirmed timeout cancels.
