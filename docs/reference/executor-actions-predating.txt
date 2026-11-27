@@ -1,0 +1,26 @@
+# Executor actions that predate the primitive rule (docs/reference/executor.md#primitives; ADR 0271, "Actions that predate
+# the rule"). An action leaves this list when its rewrite deletes it. No action joins it: bin/check-executor-actions fails a
+# new line.
+route.publish_site
+route.withdraw_site
+dns.publish_records
+instance.clone
+instance.prepare
+instance.start
+instance.fetch_branch
+instance.checkout
+instance.t3
+instance.club_key
+instance.copy_volume
+instance.stop
+instance.destroy
+instance.spare_volume
+instance.fleet_ready
+instance.names
+instance.sync_base
+instance.clear_base
+instance.work_read
+process.ensure_state
+process.read_instance
+process.restart
+schedule.ensure_timer

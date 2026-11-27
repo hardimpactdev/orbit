@@ -92,7 +92,7 @@ When `ORBIT_PROOF_ENABLED=true`, `proof-eligibility` and `proof-run` (plus `proo
 
 ### The scoped task check
 
-In a task copy, `bin/task-check` runs the fast scoped gate for changed files (`--base`, `--budget` default `270`, `--only`, `--ci-time-limit`, `PIN_TESTS`) and writes `orbit-handoff/delivery.json`. It covers changed PHP tests, Pint, PHPStan, `bin/docs-impact`, `bin/swamp-shape-gate`, CI policy, and API fixtures.
+In a task copy, `bin/task-check` runs the fast scoped gate for changed files (`--base`, `--budget` default `270`, `--only`, `--ci-time-limit`, `PIN_TESTS`) and writes `orbit-handoff/delivery.json`. It covers changed PHP tests, Pint, PHPStan, `bin/docs-impact`, the flow chart and [executor action](/reference/executor#add-a-primitive) checks, `bin/swamp-shape-gate`, CI policy, and API fixtures.
 
 ### The candidate gate
 
