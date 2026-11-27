@@ -83,7 +83,7 @@ One `nats-server` runs on the Gateway host, reachable only over WireGuard. A Nod
 
 A primitive is one variant of the executor's action enum, with a typed input, a result bound and a target kind. The Gateway's signer allowlist and the executor's enum come from one list, and a contract test fails when they differ.
 
-The [Executor](/reference/executor#primitives) page owns the rule in full: the five conditions every action meets, the catalogue of primitives, the three primitives that span more than one file or call, and the steps to add one. `ufw.ensure_rule` is the model. A port of a kind starts as a flow in the Gateway that composes primitives from the catalogue. It adds a primitive only for a resource the catalogue lacks, and its pull request states that resource. A review blocks an action that does not meet the five conditions.
+The [Executor](/reference/executor#primitives) page owns the rule in full: the five conditions every action meets, the catalogue of primitives, the three primitives that span more than one file or call, and the steps to add one. `ufw.ensure_rule` is the model. A port of a kind starts as a flow in the Gateway that composes primitives from the catalogue. It adds a primitive only for a resource the catalogue lacks, and its pull request states that resource. A task that touches the executor names the five conditions as a deliverable, so a review blocks an action that misses one.
 
 ### Actions that predate the rule
 
@@ -91,9 +91,9 @@ The ports from `route.create` on moved one Swamp phase or script into one Rust a
 
 | Order | Actions to replace | Kinds that change | Primitives they become |
 | --- | --- | --- | --- |
-| 1 | `route.publish_site`, `route.withdraw_site`, `dns.publish_records` | `route.create`, `route.destroy`, `route.update`, and the Route steps of `instance.destroy` | `config.apply`, `file.ensure`, `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure`, `http.probe` |
-| 2 | `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, `instance.fetch_branch`, `instance.prepare`, `instance.start`, `instance.checkout`, `instance.t3`, `instance.club_key`, `instance.names`, `instance.stop`, `instance.fleet_ready` | `instance.create` and its completion, finalize and fleet kinds | The `incus.*`, `file.*`, `json.ensure`, `git.fetch`, `git.checkout` and `conn.*` primitives, and route rules in `ufw.ensure_rule` |
-| 3 | `instance.destroy` | `instance.destroy` | `incus.*` and `file.ensure` with absent, `ufw.ensure_rule`, `discard` |
+| 1 | `route.publish_site`, `route.withdraw_site`, `dns.publish_records`; `tls.ensure_csr` is changed in place | `route.create`, `route.destroy`, `route.update`, and the Route steps of `instance.destroy` | `config.apply`, `file.ensure`, `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure`, `http.probe` |
+| 2 | `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, `instance.fetch_branch`, `instance.prepare`, `instance.start`, `instance.checkout`, `instance.t3`, `instance.club_key`, `instance.names`, `instance.stop`, `instance.fleet_ready` | `instance.create`, `instance.finalize` and `instance.fleet` | The `incus.*`, `file.*`, `json.ensure`, `dotenv.ensure`, `ca.trust.ensure`, `hostname.ensure`, `account.ensure`, `systemd.unit.*`, `http.probe`, `git.fetch`, `git.checkout` and `conn.*` primitives, and route rules in `ufw.ensure_rule` |
+| 3 | `instance.destroy` | `instance.destroy` | `incus.*` and `file.ensure` with absent, `ufw.ensure_rule` with absent for each rule the Gateway recorded, and `discard` for the freeze state of both engines |
 | 4 | `instance.sync_base`, `instance.clear_base`, `instance.work_read` | `tasks.sync` and the workspace read | `git.fetch`, `git.ref.ensure`, `git.worktree.read`, `file.ensure` |
 | 5 | `process.ensure_state`, `process.read_instance`, `process.restart`, `schedule.ensure_timer` | `process.start`, `process.stop`, `process.restart`, `schedule.enable` | `systemd.unit.ensure`, `systemd.unit.restart`, `docker.container.ensure`, `docker.container.restart` |
 
