@@ -100,8 +100,8 @@ final readonly class StartSwampRun
                             // A Process or Schedule run binds only while no other open Operation acts on it, on either engine.
                             EngineTargetFence::alone($operation);
                             $this->bind($operation, $runId, $lock);
+                            // Only the hold: the update's Caddyfile recheck is its first step, outside this write transaction.
                             RouteUpdateEngineFlow::holdNodes($operation);
-                            RouteUpdateEngineFlow::assertCurrent($operation);
                         });
                     } catch (UniqueConstraintViolationException $exception) {
                         throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);

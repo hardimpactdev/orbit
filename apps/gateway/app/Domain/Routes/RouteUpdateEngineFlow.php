@@ -8,6 +8,7 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\EngineWait;
 use App\Domain\Engine\StepSpec;
@@ -55,7 +56,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
     private const int GraceMs = RouteDestroyEngineFlow::GraceMs;
 
     /** Each step prefix's chart label (NativeRouteUpdateProjection::StepCodes). */
-    private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
+    private const array Labels = ['current' => 'Check the Route Nodes', 'csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
         'probe' => 'Probe the site over TLS', 'dns' => 'Move private DNS', 'cutover' => 'Move private DNS', 'grace' => 'Wait the DNS grace',
         'final' => 'Withdraw the old site', 'withdraw' => 'Withdraw the old site', 'sibling' => 'Withdraw the old site'];
 
@@ -80,25 +81,26 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
         $plan = self::plan($resumed ?? $operation);
         self::admit($intent, $plan);
 
-        $steps = [];
-        $before = [];
+        // Every step waits for `current`: the Caddyfile recheck under the Node hold, outside the bind's write transaction.
+        $steps = [new StepSpec('current', 0, 'route.plan_check', 'gateway', budgetMs: 60_000, resendMs: self::LocalResendMs)];
+        $before = ['current'];
         if ($resumed === null) {
             $signs = [];
             foreach (array_keys(RouteExecutionProof::objects($plan['leaves'])) as $index) {
                 $node = ValidatedData::integer(RouteExecutionProof::objects($plan['leaves'])[$index]['node_id']);
                 $this->create->csrInput(RouteExecutionProof::objects($plan['leaves'])[$index]);
-                $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000);
+                $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, ['current'], budgetMs: 60_000, resendMs: 15_000);
                 $steps[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000, resendMs: self::LocalResendMs);
                 $signs[] = "sign-{$index}";
             }
             $sites = [];
             foreach (ValidatedData::integerList(ValidatedData::object($plan['publish'])['site_nodes']) as $node) {
                 RouteEngineFlow::fits($this->phaseInput($plan, 'publish', $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
-                $steps[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $signs, budgetMs: 900_000, resendMs: 30_000);
+                $steps[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $signs === [] ? ['current'] : $signs, budgetMs: 900_000, resendMs: 30_000);
                 $sites[] = "site-{$node}";
             }
             foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
-                $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $sites, budgetMs: 60_000, resendMs: self::LocalResendMs);
+                $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $sites === [] ? ['current'] : $sites, budgetMs: 60_000, resendMs: self::LocalResendMs);
                 $before[] = "probe-{$index}";
             }
             foreach (RouteExecutionProof::objects($plan['dns']) as $index => $row) {
@@ -159,6 +161,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
         $parts = explode('-', $step, 2);
 
         return match ($parts[0]) {
+            'current' => self::assertCurrent($operation),
             'sign' => $this->create->sign($operation, RouteExecutionProof::objects($plan['leaves'])[(int) $parts[1]], $run->output("csr-{$parts[1]}") ?? '', $run),
             'probe' => $this->create->probe(RouteExecutionProof::objects($plan['probes'])[(int) $parts[1]]),
             'cutover' => $this->cutover($operation),
@@ -291,14 +294,22 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
         }
     }
 
-    /** Called under the Node hold that holdNodes took: the stored Caddyfiles this start would write are still current. */
-    public static function assertCurrent(Operation $operation): void
+    /**
+     * The `current` step, the first of every attempt: under the Node hold that the bind took (holdNodes), the stored Caddyfiles
+     * this run would write are still current. It renders whole Caddyfiles, so it runs as a Gateway step outside any transaction,
+     * not in the bind's: the hold keeps every other Route write off these Nodes from the bind on, so a check after the bind
+     * commit sees what the bind saw, and no step that writes a Node starts before it passes.
+     */
+    public static function assertCurrent(Operation $operation): string
     {
-        if ($operation->kind !== self::Kind) {
-            return;
-        }
         $resumed = self::cutoverOwner($operation);
-        $resumed === null ? self::assertPlanCurrent($operation) : self::assertLastingCurrent($resumed);
+        try {
+            $resumed === null ? self::assertPlanCurrent($operation) : self::assertLastingCurrent($resumed);
+        } catch (ResourceOperationException $exception) {
+            throw new EngineStepRefusal($exception->errorCode, $exception->getMessage(), $exception);
+        }
+
+        return 'current';
     }
 
     /**

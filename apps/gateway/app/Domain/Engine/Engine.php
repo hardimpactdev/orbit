@@ -641,6 +641,8 @@ final readonly class Engine
     {
         try {
             $line = ['status' => 'output', 'stdout' => $definition->local($operation, $name, $this->run($operation->id))];
+        } catch (EngineStepRefusal $refusal) {
+            $line = ['status' => 'failed', 'code' => $refusal->errorCode];
         } catch (Throwable $exception) {
             report($exception);
             $line = ['status' => 'failed', 'code' => 'engine.'.$name.'_failed'];

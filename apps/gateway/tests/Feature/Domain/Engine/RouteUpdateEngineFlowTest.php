@@ -7,6 +7,7 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\EngineWait;
 use App\Domain\Nodes\RoleName;
@@ -78,13 +79,14 @@ function updateSteps(Operation $operation): array
 
 it('publishes the new site beside the old one, probes it, commits the cutover and only then writes the lasting Caddyfile', function (): void {
     expect(updateSteps(updateOperation(updateIntent())))->toBe([
-        ['csr-0', 3, 'tls.ensure_csr', []],
+        ['current', 0, 'route.plan_check', []],
+        ['csr-0', 3, 'tls.ensure_csr', ['current']],
         ['sign-0', 0, 'certificate.sign', ['csr-0']],
-        ['csr-1', 3, 'tls.ensure_csr', []],
+        ['csr-1', 3, 'tls.ensure_csr', ['current']],
         ['sign-1', 0, 'certificate.sign', ['csr-1']],
         ['site-3', 3, 'route.publish_site', ['sign-0', 'sign-1']],
         ['probe-0', 0, 'route.probe', ['site-3']],
-        ['cutover', 0, 'route.cutover', ['probe-0']],
+        ['cutover', 0, 'route.cutover', ['current', 'probe-0']],
         ['final-3', 3, 'route.publish_site', ['cutover']],
         ['sibling-3', 0, 'route.probe', ['final-3']],
     ]);
@@ -130,7 +132,8 @@ it('resumes an engine-started update after its cutover with only the post-cutove
     $retry = updateOperation(updateIntent(['retire' => updatePhase(['caddy' => [['node_id' => 3, 'content' => "other\n"]]], [1])]));
 
     expect(updateSteps($retry))->toBe([
-        ['final-3', 3, 'route.publish_site', []],
+        ['current', 0, 'route.plan_check', []],
+        ['final-3', 3, 'route.publish_site', ['current']],
         ['sibling-3', 0, 'route.probe', ['final-3']],
     ]);
     $final = app(RouteUpdateEngineFlow::class)->input($retry, 'final-3', new EngineRun($retry->id, [], 0, null));
@@ -170,7 +173,7 @@ it('resumes from the attempt that committed the cutover, past a later forward re
 
     $next = updateOperation(updateIntent());
     expect(RouteUpdateEngineFlow::cutoverOwner($next)?->id)->toBe($first->id)
-        ->and(array_column(updateSteps($next), 0))->toBe(['final-3', 'sibling-3']);
+        ->and(array_column(updateSteps($next), 0))->toBe(['current', 'final-3', 'sibling-3']);
 });
 
 it('probes any other site the Node serves, a proxy without an Instance target included, and fails a Node without an address', function (): void {
@@ -299,7 +302,7 @@ it('resumes a stored lasting Caddyfile only while the catalog still renders it f
 
     RouteUpdateEngineFlow::assertCurrent($resume($current));
     expect(fn () => RouteUpdateEngineFlow::assertCurrent($resume($current."sibling.orbit {\n}\n")))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
+        ->toThrow(fn (EngineStepRefusal $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
 });
 
 it('refuses a first attempt whose Node gained a sibling Route between admission and bind, from the real catalog', function (): void {
@@ -336,7 +339,7 @@ it('refuses a first attempt whose Node gained a sibling Route between admission 
     RouteUpdateEngineFlow::assertCurrent($operation);
     $site('blog', 'blog.fixture.test');
     expect(fn () => RouteUpdateEngineFlow::assertCurrent($operation))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
+        ->toThrow(fn (EngineStepRefusal $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
 });
 
 it('runs a real domain change of a Route without URL writes on the engine, withdrawing the staging leaf over the lasting Caddyfile', function (): void {
