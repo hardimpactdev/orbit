@@ -81,7 +81,8 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
         $renamed = $source->id !== $selected->id;
         $cutover = $operation->status === OperationStatus::Failed && in_array($failedStep, self::AfterCutover, true);
         if ($operation->status === OperationStatus::Succeeded || $cutover) {
-            if ($renamed) {
+            // An acknowledged cutover (the old Route already `retiring`) is not made again: its link is gone after a failure.
+            if ($renamed && $source->status !== RouteStatus::Retiring) {
                 app(RouteMutationState::class)->cutover($source, $selected);
             }
             $selected->update([...ValidatedData::object($intent['selected']),

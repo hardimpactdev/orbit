@@ -17,6 +17,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -83,7 +84,9 @@ final readonly class StartSwampRun
             // Before routing and any credential: a copy's sync never starts beside a confirmed removal of that copy, on either engine.
             TaskSyncEngineFlow::refuseConfirmedRemoval($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
-            if (app(EngineKinds::class)->routes($operation)) {
+            $engine = app(EngineKinds::class)->routes($operation);
+            RouteUpdateEngineFlow::assertChain($operation, $engine);
+            if ($engine) {
                 // An engine-eligible copy sync never starts beside its copy's removal: it is refused, not sent to Swamp. A plan the
                 // engine does not cover took the unchanged Swamp path above.
                 TaskSyncEngineFlow::assertCopyFree($operation);
@@ -97,6 +100,8 @@ final readonly class StartSwampRun
                             // A Process or Schedule run binds only while no other open Operation acts on it, on either engine.
                             EngineTargetFence::alone($operation);
                             $this->bind($operation, $runId, $lock);
+                            RouteUpdateEngineFlow::holdNodes($operation);
+                            RouteUpdateEngineFlow::assertCurrent($operation);
                         });
                     } catch (UniqueConstraintViolationException $exception) {
                         throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);

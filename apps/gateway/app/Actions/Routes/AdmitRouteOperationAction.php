@@ -25,6 +25,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -153,6 +154,7 @@ final readonly class AdmitRouteOperationAction
         $previous = array_values($route->targets()->orderBy('instance_id')->pluck('instance_id')->map(StoredInteger::from(...))->all());
 
         return app(InstanceEnvironmentOperationLock::class)->run($previous, fn (): Route => DB::transaction(function () use ($route, $previous): Route {
+            RouteUpdateEngineFlow::assertNotFenced($route);
             $updated = $this->targets->clear($route, $previous);
             DB::afterCommit(fn () => app(RecordEventBroadcaster::class)->broadcast(
                 RecordEventType::RouteUpdated, $updated->id, RouteData::fromModel($updated)->toArray(),
@@ -168,6 +170,7 @@ final readonly class AdmitRouteOperationAction
         return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $offline, $caller, $requestId): Operation {
             $ids = array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all());
             $route = $this->removal->lockAndGuard($route, $ids);
+            RouteUpdateEngineFlow::assertNotFenced($route);
             if (! $route->isUnactivatedReplacement()) {
                 if (! $route->hasWebRoot() && $route->targets->isNotEmpty()) {
                     $this->associations->assertTargetsDetachable($route);
@@ -184,6 +187,8 @@ final readonly class AdmitRouteOperationAction
     public function start(string $kind, Route $route, array $input, ?Node $caller = null, ?string $requestId = null): Operation
     {
         app(DirectOperation::class)->writer($kind);
+        // A record-only edit of a replacement an engine update publishes would be written back by its cutover.
+        RouteUpdateEngineFlow::assertNotFenced($route);
         $route->loadMissing(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'customProxy.node']);
         $currentIds = $route->targets->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
         $proposedIds = $this->instanceIds($input['targets'] ?? $currentIds);

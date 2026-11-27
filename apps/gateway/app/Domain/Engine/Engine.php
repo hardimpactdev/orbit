@@ -8,6 +8,7 @@ use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessControlEngineFlow;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Schedules\ScheduleEnableEngineFlow;
 use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
@@ -38,11 +39,12 @@ final readonly class Engine
      * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
      * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
      */
-    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, ...ProcessControlEngineFlow::Kinds, ScheduleEnableEngineFlow::Kind, 'route.destroy'];
+    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, ...ProcessControlEngineFlow::Kinds, ScheduleEnableEngineFlow::Kind, 'route.destroy',
+        RouteUpdateEngineFlow::Kind];
 
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
     private const array FencedSuccess = ['instance.destroy' => 'done', 'dns.publish_records' => 'applied', 'route.withdraw_site' => 'applied', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
-        'instance.clear_base' => 'output', ProcessControlEngineFlow::Action => 'applied', ProcessControlEngineFlow::ReadAction => 'output', ProcessControlEngineFlow::RestartAction => 'output', ScheduleEnableEngineFlow::Action => 'output'];
+        'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', ProcessControlEngineFlow::Action => 'applied', ProcessControlEngineFlow::ReadAction => 'output', ProcessControlEngineFlow::RestartAction => 'output', ScheduleEnableEngineFlow::Action => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -309,7 +311,8 @@ final readonly class Engine
                     if ($step->status !== 'sent' || ! $published($step)) {
                         continue; // Only a published order is resent until its terminal receipt.
                     }
-                } elseif ($step->on_failure !== $rescue) {
+                } elseif ($step->on_failure !== $rescue && ! ($receiptBound && ! $step->on_failure && $step->status === 'sent' && $published($step))) {
+                    // A failed receipt-bound run still resends each published order until its terminal receipt.
                     continue; // A failed run sends no more of its own steps; a run without a failure none of its failure steps.
                 }
                 if ($step->on_failure && $step->status === 'pending' && ! array_all($step->after, $done)) {
@@ -318,8 +321,9 @@ final readonly class Engine
                     continue;
                 }
                 $ready = $step->status === 'pending' && array_all($step->after, $done);
+                // A receipt-bound run's Gateway step whose worker was lost after it was marked sent runs again: each is idempotent.
                 $overdue = $deadline && $step->status === 'sent' && $now >= ($step->resend_at_ms ?? PHP_INT_MAX)
-                    && ($step->node_id > 0 || $until($step) !== null);
+                    && ($step->node_id > 0 || $receiptBound || $until($step) !== null);
                 if (! $ready && ! $overdue) {
                     continue;
                 }
@@ -346,6 +350,7 @@ final readonly class Engine
             // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result. A failed run
             // ends once its failure steps ended.
             $end = match (true) {
+                // A receipt-bound run that failed keeps its fence until each published order has its terminal receipt.
                 $failed => $rescued && ! ($receiptBound && $outstanding) ? 'failed' : null,
                 array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
                 $receiptBound && $cancel => ! $outstanding && (! $acted || $rescued) ? 'cancelled' : null,

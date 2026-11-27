@@ -77,7 +77,12 @@ final readonly class NativeRouteUpdateInput
             'renders' => $capture['renders'], 'workloads' => $metadata['workloads']]);
         unset($metadata['workloads']);
 
-        return ['intent' => [...$metadata, 'analytics_changes' => $analytics, 'plan' => $plan], 'certificates' => $capture['certificates'],
+        // The VPN Nodes' records and catalog as rendered now: the engine's guarded DNS step writes only over these bytes.
+        $dnsNodes = array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns']));
+        $guards = $dnsNodes === [] || ! RouteFileGuards::wanted('route.update') ? [] : array_map(
+            static fn (array $guard): array => array_intersect_key($guard, array_flip(['records', 'catalog'])), app(RouteFileGuards::class)->capture($dnsNodes));
+
+        return ['intent' => [...$metadata, 'analytics_changes' => $analytics, 'plan' => $plan, 'dns_guards' => $guards], 'certificates' => $capture['certificates'],
             'participant_node_ids' => $capture['participant_node_ids'], 'execution_secrets' => $capture['execution_secrets']];
     }
 }

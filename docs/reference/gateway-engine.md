@@ -35,6 +35,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
+| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
 | `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
@@ -57,7 +58,7 @@ The engine runs the admitted `route_create` plan while preserving Route holds an
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as does `route.update`.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.destroy` and `route.update`.
 
 ### route.destroy
 
@@ -71,6 +72,41 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 The grace survives a restart of the consumer, the Gateway or Horizon: the run waits only what is left, never from zero and never less. A redelivered DNS receipt does not move that time. A cancel during the grace ends the Operation `cancelled` without withdrawing. The DNS answers stay withdrawn and the Route is kept, so the same command removes it.
 
 A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
+
+
+### route.update
+
+`RouteUpdateEngineFlow` runs a `--domain` change of a private Route from the admitted `route_update` plan (docs/cli/route/engine/update.mmd). Its steps run in this order:
+
+| Step | Work |
+| --- | --- |
+| `csr-<i>`, `sign-<i>` | The leaves, as for `route.create` |
+| `site-<node>` | `route.publish_site` with the early leaves and a Caddyfile that serves the old and the new name side by side |
+| `probe-<i>` | The TLS handshake with each serving Node under the new name |
+| `dns-<i>` | The guarded `dns.publish_records` on each VPN Node |
+| `cutover` | A Gateway transaction that marks the replacement `active` and the old Route `retiring`; its `done` row is the acknowledgement |
+| `grace` | A [wait](#waits) that ends 31 s after the latest stored DNS receipt; a resend or retry never shortens it |
+| `final-<node>` | `route.publish_site` with the lasting Caddyfile and the late leaves, validated and read back |
+| `withdraw-<node>` | `route.withdraw_site` for the old name and its staging leaves, over the lasting Caddyfile |
+| `sibling-<node>` | Another site the Node serves, of any Route kind, still answers over TLS; a Node that serves none passes, one without an address fails |
+
+The lasting Caddyfile is both the rendered-from and the desired file of `withdraw-<node>`, so a sibling change since then refuses `owned_revision_conflict`. The action reloads Caddy and reads back that the old name is gone.
+
+A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times.
+
+One chain never mixes engines: a retry of an update that was bound to Swamp, or whose Swamp start was uncertain or timed out unbound, stays on Swamp, and `StartSwampRun` refuses a Swamp start of an engine-started chain with `route.update_engine_chain`. A retry resumes from the attempt that committed the cutover, past any later attempt. Under the Node hold, it refuses with `route.publication_stale` when the Caddyfile the catalog renders for that Node differs from the stored lasting one, because a sibling Route changed there.
+
+A first attempt captures its plan again under the Node hold, before any step is sent, and refuses the same way when its side-by-side or lasting Caddyfile differs from the stored one.
+
+The update is receipt-bound, as `instance.destroy` is. In one transaction the Gateway binds the steps and takes the Route's Operation lock. Neither a failure nor a cancel ends the run while an order it may have published has no terminal receipt; it sends no new order meanwhile. A Gateway step whose worker was lost after it was marked sent runs again at its next deadline or nudge.
+
+An engine-run `route.update` and any other Route write never queue behind each other: whichever is second is refused with `route.publication_held` when both write one Node (a serving or edge Node, a Node the old site leaves, or a VPN Node; `RouteWriteNodes`). The engine start checks in its bind transaction; any other Route write checks right after its record exists, before it holds or dispatches. Swamp writes among themselves keep their publication holds and queue as before.
+
+A timed-out write whose run is not proven stopped counts as writing until it settles. The Route writers whose Nodes are known only at their step (`node.role_relocate`, `instance.register`, `cluster.router_set`, `cluster.router_unset`) and an engine-run update refuse each other fleet-wide.
+
+The Operation lock names the old Route, so `route:destroy` of the replacement refuses with `operation.target_busy` while the update is open.
+
+A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. An update that moves private DNS records the VPN Node's records and catalog digests at admission and needs `dns.guarded_records` there; a VPN Node without that feature, or a Node that does not report `route.withdraw_site`, keeps the whole update on Swamp.
 
 ### instance.create
 
@@ -205,6 +241,7 @@ If the Gateway cannot read the bucket (for example during a `nats-server` restar
 
 - A pending step whose dependencies are done is dispatched.
 - A sent step past its resend deadline is dispatched again with a fresh order.
+- A waiting Gateway step whose time has come runs again.
 - A sent step past its budget fails with `engine.step_budget_exceeded`.
 - The Operation fails as soon as any step fails, and succeeds once all steps finish.
 - A cancel request ends the Operation at the next transition, except after all steps finish.
@@ -237,11 +274,13 @@ Each flow sets its own resend interval and step budget:
 | Route (`csr`, `site`, `dns`) | 15–30 seconds | 60–180 seconds |
 | Instance create (`clone`, `fetch`, `prepare`, `start`, `checkout`, `t3`) | 30–120 seconds | 120–600 seconds |
 
-Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step or a sent step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
+Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step, or a sent or waiting step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
 
 ### Waits
 
 A kind that implements `EngineWait` names the time before which a Gateway step must not run, from the steps as recorded. When such a step is ready before that time, the engine marks it sent, keeps the time as its `resend_at_ms`, and schedules its deadline for it. No process sleeps through the wait. The deadline, or the reconciler's nudge if the deadline was lost, runs the step once the time has passed; an earlier event runs nothing. A cancel during the wait sends nothing more, because the step published no order.
+
+`route.destroy` and `route.update` wait their DNS grace this way. A forward retry of `route.update` times it from the receipts of the attempt that committed the cutover.
 
 ### Cancel
 
