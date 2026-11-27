@@ -6,3 +6,5 @@
   ansible.builtin.set_fact:
     base_node: "{{ task_base_root | default('/var/tmp') }}/orbit-task-base-{{ task_base_instance }}"
     base_guest: "/tmp/orbit-task-base-{{ task_base_instance }}"
+    # The staging repository where the signed executor seeds the copy's missing mirror (instance.fetch_branch `seed`).
+    base_seeding: "{{ task_base_mirrors | default('/var/lib/orbit/instance-repositories') }}/{{ task_base_instance }}.git.seeding"

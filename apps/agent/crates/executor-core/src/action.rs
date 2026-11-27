@@ -67,6 +67,11 @@ pub enum Action {
     InstanceNames,
     /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
     InstanceDestroy,
+    /// Import the default head from the Node mirror into a task copy and move only its `refs/remotes/origin/<default>`
+    /// (docs/reference/tasks.md#bring-main-into-a-copy). Its target is the copy.
+    InstanceSyncBase,
+    /// Remove what a task copy's sync left on the Node and in the copy. Its target is the copy.
+    InstanceClearBase,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -81,7 +86,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 23] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -103,6 +108,8 @@ impl Action {
         Self::InstanceFleetReady,
         Self::InstanceNames,
         Self::InstanceDestroy,
+        Self::InstanceSyncBase,
+        Self::InstanceClearBase,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -124,9 +131,10 @@ impl Action {
             | Self::InstanceStop
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady
-            | Self::InstanceNames | Self::InstanceDestroy => {
-                Family::Instance
-            }
+            | Self::InstanceNames
+            | Self::InstanceDestroy
+            | Self::InstanceSyncBase
+            | Self::InstanceClearBase => Family::Instance,
         }
     }
 
@@ -152,10 +160,17 @@ impl Action {
             | Self::InstanceCheckout
             | Self::InstanceT3
             | Self::InstanceStop
-            | Self::InstanceNames | Self::InstanceDestroy => {
-                TargetKind::Instance
-            }
+            | Self::InstanceNames
+            | Self::InstanceDestroy
+            | Self::InstanceSyncBase
+            | Self::InstanceClearBase => TargetKind::Instance,
         }
+    }
+
+    /// Whether a lost receipt keeps the Gateway's target fenced (ADR 0271): only a terminal result settles the step, so an
+    /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
+    pub fn receipt_fenced(self) -> bool {
+        matches!(self, Self::InstanceDestroy | Self::InstanceFetchBranch | Self::InstanceSyncBase | Self::InstanceClearBase)
     }
 
     /// The action's name on the wire.
@@ -182,6 +197,8 @@ impl Action {
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
             Self::InstanceNames => "instance.names",
+            Self::InstanceSyncBase => "instance.sync_base",
+            Self::InstanceClearBase => "instance.clear_base",
         }
     }
 }
@@ -217,6 +234,8 @@ impl FromStr for Action {
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             "instance.names" => Ok(Self::InstanceNames),
+            "instance.sync_base" => Ok(Self::InstanceSyncBase),
+            "instance.clear_base" => Ok(Self::InstanceClearBase),
             _ => Err(UnknownActionError),
         }
     }

@@ -207,7 +207,7 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
         .collect();
     // An older executor refuses an input it does not know, so the Gateway sends one only to a Node that names it here.
     let features: Vec<&str> = if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
-        vec!["instance.t3_pairing"]
+        vec!["instance.t3_pairing", "instance.fetch_seed"]
     } else {
         Vec::new()
     };
@@ -492,6 +492,6 @@ mod tests {
             .collect();
         assert!(node_targets.contains(&"instance.club_key"));
         assert!(!node_targets.contains(&"instance.checkout"));
-        assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing"]));
+        assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing", "instance.fetch_seed"]));
     }
 }

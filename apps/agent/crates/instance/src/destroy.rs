@@ -152,6 +152,7 @@ pub fn destroy(system: &impl System, id: &str, input: &Value) -> Result<(), Fail
     for path in [
         format!("/var/lib/orbit/instance-mail/{}", input.name),
         format!("/var/lib/orbit/instance-repositories/{id}.git"),
+        format!("/var/lib/orbit/instance-repositories/{id}.git.seeding"),
         format!("/var/tmp/orbit-task-base-{id}"),
         format!("/data/caddy/orbit/hibernation/app-instance-{id}.asleep"),
         format!("/data/caddy/orbit/hibernation/app-instance-{id}.cold"),
