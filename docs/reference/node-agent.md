@@ -21,6 +21,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
 - **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10972.0` / agent `0.33.0`, which adds the signed Process restart actions `process.read_instance` and `process.restart`).
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
+- **Route withdrawal read-back:** Agent `0.33.1` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)). The Gateway pin moves in a separate release.
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
