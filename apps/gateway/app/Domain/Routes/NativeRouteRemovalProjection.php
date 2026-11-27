@@ -11,6 +11,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,16 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
     private function applyOwned(Operation $operation, array $data): Operation
     {
         $wasTerminal = $operation->status->terminal();
+        if (! $wasTerminal && $data['status'] === 'succeeded' && $operation->kind === 'route.destroy') {
+            // A Route that became needed since admission stays, and the removal fails with Swamp's refusal.
+            try {
+                foreach (RouteExecutionProof::objects(ValidatedData::object($operation->input['route_removal'])['routes']) as $row) {
+                    app(NativeRouteRemovalCompletion::class)->assertDetachable(ValidatedData::integer($row['route_id']));
+                }
+            } catch (ResourceOperationException $refused) {
+                $data = [...$data, 'status' => 'failed', 'error_code' => $refused->errorCode];
+            }
+        }
         $step = NativeFailedStep::label($data, array_keys(self::StepCodes));
         if ($data['status'] === 'failed') {
             $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.withdrawal_failed') : self::StepCodes[$step];

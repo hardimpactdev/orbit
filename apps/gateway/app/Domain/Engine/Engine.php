@@ -6,7 +6,10 @@ namespace App\Domain\Engine;
 
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
+use App\Domain\Operations\OperationBroadcaster;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessControlEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Schedules\ScheduleEnableEngineFlow;
@@ -34,6 +37,16 @@ final readonly class Engine
 {
     /** How long past its re-send time a sent step waits before the reconciler nudges it: its own deadline comes first. */
     private const int NudgeGraceMs = 30_000;
+
+    /** How often an ended run's projection is tried before the Operation fails, and the first retry's delay, doubled each time. */
+    private const int FinishAttempts = 3;
+
+    private const int FinishBackoffMs = 2_000;
+
+    /** The code and step of an Operation whose projection kept throwing. */
+    public const string ProjectionFailed = 'engine.projection_failed';
+
+    public const string ProjectionStep = 'projection';
 
     /**
      * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
@@ -389,7 +402,85 @@ final readonly class Engine
             $this->runLocal($operation, $definition, $name);
         }
         if ($end !== null) {
-            $definition->finish($operation->refresh(), $this->run($operationId));
+            $this->finish($operation, $definition);
+        }
+    }
+
+    /**
+     * Runs the kind's projection of the ended run. A projection that throws is tried again after a growing backoff, by a
+     * deadline rather than the message's redelivery, and after FinishAttempts the Operation fails with
+     * `engine.projection_failed`: its lock goes, nothing is redelivered and nothing more is logged.
+     */
+    private function finish(Operation $operation, EngineDefinition $definition): void
+    {
+        $engine = ValidatedData::object($operation->refresh()->state['engine'] ?? []);
+        $attempts = ValidatedData::integer($engine['finish_attempts'] ?? 0);
+        if (self::nowMs() < ValidatedData::integer($engine['finish_retry_ms'] ?? 0)) {
+            return; // A backed-off retry waits for its own deadline.
+        }
+        try {
+            // No transaction here: a projection reads the network (a Node, the vault, the bus) before it takes the writer, and
+            // commits its terminal result with the writes that depend on it in its own transaction.
+            $definition->finish($operation, $this->run($operation->id));
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+        $attempts++;
+        $state = $operation->refresh()->state ?? [];
+        if ($attempts >= self::FinishAttempts) {
+            $state['engine'] = [...ValidatedData::object($state['engine'] ?? []), 'finish_attempts' => $attempts, 'finish_retry_ms' => null];
+            $this->failExhausted($operation, $state);
+
+            return;
+        }
+        $at = self::nowMs() + self::FinishBackoffMs * 2 ** ($attempts - 1);
+        $state['engine'] = [...ValidatedData::object($state['engine'] ?? []), 'finish_attempts' => $attempts, 'finish_retry_ms' => $at];
+        $this->operations->change($operation, ['state' => $state], onlyWhileOpen: true);
+        try {
+            $this->bus->scheduleDeadline($operation->id, self::ProjectionStep, $attempts, $at);
+        } catch (Throwable $exception) {
+            // Without its deadline the retry runs at the message's redelivery instead; the attempt still counts.
+            $state['engine']['finish_retry_ms'] = null;
+            $this->operations->change($operation, ['state' => $state], onlyWhileOpen: true);
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Ends an Operation whose projection kept throwing. The usual terminal write runs the kind's lifecycle hooks, which may be
+     * what threw: when it fails too, the end is written without them, so the Operation still fails, its lock goes and the next
+     * delivery finds it ended and is acknowledged.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    private function failExhausted(Operation $operation, array $state): void
+    {
+        $changes = ['status' => OperationStatus::Failed, 'error_code' => self::ProjectionFailed, 'failed_step' => self::ProjectionStep,
+            'current_step' => null, 'finished_at' => now(), 'lock_key' => null, 'state' => $state,
+            'result' => ['error_code' => self::ProjectionFailed, 'failed_step' => self::ProjectionStep]];
+        try {
+            $this->operations->change($operation, $changes, onlyWhileOpen: true);
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+        DB::transaction(static function () use ($operation, $changes): void {
+            $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+            if (! $current->status->terminal()) {
+                $current->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
+            }
+        });
+        if (RoutePublicationHolds::tracks($operation->kind)) {
+            app(RoutePublicationHolds::class)->release($operation->id, false);
+        }
+        try {
+            app(OperationBroadcaster::class)->changed($operation->refresh(), true);
+        } catch (Throwable $exception) {
+            report($exception); // Watchers read the end at their next poll.
         }
     }
 

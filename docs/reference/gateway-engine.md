@@ -71,7 +71,7 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 
 The grace survives a restart of the consumer, the Gateway or Horizon: the run waits only what is left, never from zero and never less. A redelivered DNS receipt does not move that time. A cancel during the grace ends the Operation `cancelled` without withdrawing. The DNS answers stay withdrawn and the Route is kept, so the same command removes it.
 
-A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
+A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. It first moves the Route to `retiring`, as the Swamp `DestroyRouteAction` does, so a secondary web-root Route of an active Instance leaves its target while the Instance keeps its one authoritative Route. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
 
 
 ### route.update
@@ -254,7 +254,11 @@ If the Gateway cannot read the bucket (for example during a `nats-server` restar
 
 Orders publish after the transaction commits. For each dispatched step, the engine schedules its deadline first and then publishes the order. An unbuildable order or one exceeding 4 KB fails with `engine.order_invalid`. A publish error resets the step to pending and negatively acknowledges the event for retry after one second.
 
-The engine mirrors step state into `state.native_progress` so `operation:show` matches Swamp output. At completion, it calls the kind's domain projection; if that throws, the event redelivers and retries.
+The engine mirrors step state into `state.native_progress` so `operation:show` matches Swamp output. At completion, it calls the kind's domain projection.
+
+A projection that throws is acknowledged, not redelivered: the engine records `state.engine.finish_attempts`, and a deadline retries it after 2 s, then 4 s. After the third failure the Operation ends `failed` with `engine.projection_failed` and the step `projection`, and its lock is released. When that terminal write fails too, because a lifecycle hook it runs (such as a linked task's update) is what keeps throwing, the engine writes the end without the hooks.
+
+A projection does its network work outside the database writer: a Node read, a bus lookup or a vault call. It then commits its terminal result in one transaction with the database writes that depend on it, such as a create's runtime power state. When one of those writes fails, the transaction rolls back and the end stays retryable. Cache and vault cleanup is not rolled back: a failed fetch's read credential is removed before the transaction, it stays removed, and the retry records the rest. A later message for an ended Operation does nothing.
 
 ### Orders and receipts
 
