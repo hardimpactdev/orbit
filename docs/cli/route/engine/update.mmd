@@ -35,6 +35,8 @@ sequenceDiagram
       Note over GW: Bind steps, take the lock<br/>commit, publish the start
       %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
       GW-->>CLI: 202 Accepted<br/>task ID
+      Note over EN: Check the Route Nodes<br/>Gateway step · current
+      %%> Under the Node hold and outside any transaction: the stored Caddyfiles still equal what the catalog renders now, else `route.publication_stale` before any order; every other step waits for it
       EN->>N: Make the key and CSR<br/>tls.ensure_csr · csr-i
       %%> The key is made once and never leaves the Node; a resend answers a request for the same key
       N-->>EN: CSR<br/>output

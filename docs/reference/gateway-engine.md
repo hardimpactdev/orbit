@@ -35,7 +35,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
-| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
+| `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
 | `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
@@ -80,6 +80,7 @@ A failed step records the Swamp chart's step name, such as `Withdraw site, remov
 
 | Step | Work |
 | --- | --- |
+| `current` | Under the Node hold, before any other step: the stored Caddyfiles still equal what the catalog renders now |
 | `csr-<i>`, `sign-<i>` | The leaves, as for `route.create` |
 | `site-<node>` | `route.publish_site` with the early leaves and a Caddyfile that serves the old and the new name side by side |
 | `probe-<i>` | The TLS handshake with each serving Node under the new name |
@@ -92,11 +93,15 @@ A failed step records the Swamp chart's step name, such as `Withdraw site, remov
 
 The lasting Caddyfile is both the rendered-from and the desired file of `withdraw-<node>`, so a sibling change since then refuses `owned_revision_conflict`. The action reloads Caddy and reads back that the old name is gone.
 
-A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times.
+A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `current`, `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times.
 
 One chain never mixes engines: a retry of an update that was bound to Swamp, or whose Swamp start was uncertain or timed out unbound, stays on Swamp, and `StartSwampRun` refuses a Swamp start of an engine-started chain with `route.update_engine_chain`. A retry resumes from the attempt that committed the cutover, past any later attempt. Under the Node hold, it refuses with `route.publication_stale` when the Caddyfile the catalog renders for that Node differs from the stored lasting one, because a sibling Route changed there.
 
 A first attempt captures its plan again under the Node hold, before any step is sent, and refuses the same way when its side-by-side or lasting Caddyfile differs from the stored one.
+
+Both checks are the `current` step, which every other step waits for. It renders whole Caddyfiles, so it runs as a Gateway step outside any transaction, not in the bind's write transaction: on a Node with a large Caddyfile that would hold SQLite's write lock for seconds. The bind takes the Node hold, and from its commit every other Route write on those Nodes is refused, so the step sees what the bind saw. A refusal fails the step with `route.publication_stale` before any order is sent.
+
+The Operation then fails with that code and frees its lock and Nodes, on a first attempt and on a retry after the cutover alike. No Route projection runs, so neither Route changes.
 
 The update is receipt-bound, as `instance.destroy` is. In one transaction the Gateway binds the steps and takes the Route's Operation lock. Neither a failure nor a cancel ends the run while an order it may have published has no terminal receipt; it sends no new order meanwhile. A Gateway step whose worker was lost after it was marked sent runs again at its next deadline or nudge.
 
