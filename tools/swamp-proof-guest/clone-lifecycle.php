@@ -89,6 +89,39 @@ if ($mode === 'configuration') {
         $result = ['sequence' => $message['seq'], 'subject' => $subject,
             'line' => array_intersect_key($line, array_flip(['operation', 'target', 'action', 'status', 'expires_ms']))];
     }
+} elseif ($mode === 'watch-reads' && ctype_digit($argv[2] ?? '') && ctype_digit($argv[3] ?? '')) {
+    // The signed reads to one Node's executor and their replies, as the bus carries them, one JSON line each as it comes: each
+    // order's nonce, expiry and Node budget, and each reply's status and work state. It answers nothing: the executor's own replies
+    // are the ones observed.
+    [$node, $seconds] = [(int) $argv[2], (int) $argv[3]];
+    $events = [];
+    $inboxes = [];
+    $now = static fn (): int => (int) floor(microtime(true) * 1000);
+    $watcher = EngineBus::connect(reconnect: false);
+    $watcher->subscribe("orbit.node.{$node}.reads", static function ($payload, $replyTo) use (&$events, &$inboxes, $now): void {
+        $fields = json_decode((string) base64_decode(explode('.', $payload->body, 2)[0], true), true) ?: [];
+        $inboxes[(string) $replyTo] = count($inboxes) + 1;
+        echo json_encode($events[] = ['event' => 'order', 'at_ms' => $now(), 'send' => $inboxes[(string) $replyTo], 'nonce' => $fields['nonce'] ?? null,
+            'action' => $fields['action'] ?? null, 'target' => $fields['target'] ?? null, 'expires_ms' => $fields['expires_ms'] ?? null,
+            'budget_ms' => $fields['input']['budget_ms'] ?? null], JSON_THROW_ON_ERROR), "\n";
+    });
+    $watcher->subscribe('_INBOX.>', static function ($payload) use (&$events, &$inboxes, $now): void {
+        if (! isset($inboxes[$payload->subject])) {
+            return;
+        }
+        $line = json_decode($payload->body, true) ?: [];
+        $output = is_string($line['stdout'] ?? null) ? (json_decode($line['stdout'], true) ?: []) : [];
+        echo json_encode($events[] = ['event' => 'reply', 'at_ms' => $now(), 'send' => $inboxes[$payload->subject], 'status' => $line['status'] ?? null,
+            'code' => $line['code'] ?? $line['reason'] ?? null, 'state' => $output['state'] ?? null, 'reason' => $output['reason'] ?? null],
+            JSON_THROW_ON_ERROR), "\n";
+    });
+    $watcher->ping();
+    echo "ready\n";
+    $until = microtime(true) + $seconds;
+    while (($left = $until - microtime(true)) > 0) {
+        $watcher->process(min(0.2, $left), reply: false);
+    }
+    $result = ['events' => count($events)];
 } else {
     throw new RuntimeException('Unknown clone proof guest action.');
 }

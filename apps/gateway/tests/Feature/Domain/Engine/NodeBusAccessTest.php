@@ -92,7 +92,8 @@ it('admits an active Node\'s WireGuard address with a one-hour user limited to t
         ->and($user['aud'])->toBe('ORBIT')
         ->and($user['name'])->toBe("node-{$id}")
         ->and($user['exp'] - $user['iat'])->toBe(3600)
-        ->and($user['nats']['sub']['allow'])->toBe(["_INBOX.node-{$id}.>"])
+        ->and($user['nats']['sub']['allow'])->toBe(["_INBOX.node-{$id}.>", "orbit.node.{$id}.reads"])
+        ->and($user['nats']['resp'])->toBe(['max' => 1, 'ttl' => 5_000_000_000])
         ->and($user['nats']['pub']['allow'])->toBe(['$JS.API.INFO', '$JS.API.STREAM.INFO.ORDERS', "\$JS.API.CONSUMER.INFO.ORDERS.node-{$id}",
             "\$JS.API.CONSUMER.MSG.NEXT.ORDERS.node-{$id}", "\$JS.ACK.ORDERS.node-{$id}.>", "orbit.receipts.{$id}",
             "\$JS.API.DIRECT.GET.KV_CONTENT.\$KV.CONTENT.n{$id}.>", "\$KV.NODES.n{$id}"]);

@@ -388,7 +388,7 @@ Nested-fleet clones start their inner fleet and operator tunnel at boot in paral
 
 ### Workspace work state
 
-The Gateway inspects container Git state (`ContainerWorkspaceRead`, `workspace-git-read.py`) over pinned SSH without running repository code to detect unpushed commits or dirty files before destroy or cancel.
+The Gateway inspects container Git state (`ContainerWorkspaceRead`, `workspace-git-read.py`) over pinned SSH without running repository code to detect unpushed commits or dirty files before destroy or cancel. A Node whose executor reports `instance.work_read` answers the same read as a [signed read](/reference/executor#signed-reads) instead, built from the same fixed Git calls; the answer is the same. The create-time baseline is still recorded over SSH.
 
 ### Destroy
 
