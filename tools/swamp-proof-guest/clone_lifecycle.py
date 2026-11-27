@@ -373,11 +373,11 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                             self.gateway_app + '/storage/logs', operation)
         return json.loads(answer or '{}')
 
-    def create(self, name, via, seed=False):
+    def create(self, name, via, seed=False, attempt=''):
         require(re.fullmatch('[a-z][a-z0-9-]{0,20}', name) and via in ('engine', 'swamp'), 'invalid clone case')
         advertised = self.set_capability(via == 'engine' or seed)
         started = time.monotonic()
-        admitted = self.admitted('POST', 'instances', {'project_id': self.project, 'node_id': self.node_id, 'name': name}, name + '-create')
+        admitted = self.admitted('POST', 'instances', {'project_id': self.project, 'node_id': self.node_id, 'name': name}, name + '-create' + attempt)
         operation, instance = int(admitted['id']), int(admitted['target_id'])
         if seed:
             self.default = instance
@@ -670,46 +670,71 @@ class SyncLane(CloneLane):
     """Task-copy syncs of one ready clone through the signed executor and through Swamp, read back inside the copy."""
     KINDS = ('instance.create', 'instance.destroy', 'tasks.sync')
 
+    def counts(self):
+        containers = [row['name'] for row in parsed('incus list', self.incus('list', '--project', POOL, '--format=json'))]
+        volumes = [row['name'] for row in parsed('incus volumes', self.incus('storage', 'volume', 'list', POOL, '--project', POOL, '--format=json'))]
+        return {'containers': sorted(containers), 'volumes': sorted(volumes), 'instances': self.db('SELECT count(*) AS total FROM instances')[0]['total']}
+
+    def create(self, name, via, seed=False, attempt=''):
+        try:
+            return super().create(name, via, seed, attempt)
+        except ProofFailure as error:
+            # The Swamp container phase can lose its mktemp file in the new container's /tmp while it boots
+            # (instance-container-phase.yml, "Move the app account to www-data"). Not this group's code: the fixture's default retries once.
+            failed = self.db(f"SELECT id, json_extract(state,'$.native_failure.detail') AS detail FROM operations WHERE kind='instance.create' "
+                             f"AND status='failed' ORDER BY id DESC LIMIT 1")
+            if not seed or attempt or not failed or "cannot stat '/tmp/" not in (failed[0]['detail'] or ''):
+                raise
+            self.record('default-create-boot-race', {'operation': failed[0]['id'], 'error': str(error)})
+            wait_for(lambda: not self.db(f"SELECT id FROM instances WHERE project_id={self.project}"), 'the failed default was not removed', 180, 2)
+            return super().create(name, via, seed, '-retry')
+
     def setup(self, repository, branch):
+        self.start_counts = None
         self.branch = branch
         self.groups = {}
         self.syncs = {}
         self.extensions = None
+        self.start_counts = self.counts()
+        self.record('start-counts', self.start_counts)
         super().setup(repository, branch)
-        # task:start and task:sync need the tasks extension; the fixture records what it found and puts it back in cleanup.
-        code, found, error = self.api('GET', 'extensions')
-        require(code == 200, f'extension list: HTTP {code} {error}')
-        self.extensions = {name: found[name] for name in ('ai-router', 'tasks', 'conn')}
-        # Tasks needs the AI router (TasksServiceProvider::dependencies): enable in that order, restore in reverse. Conn stays as found.
-        for name in ('ai-router', 'tasks'):
-            if not found[name]:
-                code, _row, error = self.api('POST', f'extensions/{name}/enable', {})
-                require(code == 200, f'{name} extension: HTTP {code} {error}')
+        # task:start and task:sync need the tasks extension. Fixture only: the nested fleet has no AI router, so the helper sets the stored
+        # state directly and cleanup restores exactly what it read; Conn is read and left alone.
+        self.extensions = {name: self.helper('extension', name, 'read')['enabled'] for name in ('tasks', 'conn')}
+        if not self.extensions['tasks']:
+            require(self.helper('extension', 'tasks', 'on')['enabled'], 'the tasks extension did not turn on')
         self.record('extensions-before', self.extensions)
 
     def cleanup(self):
-        # Groups first: a discarding cancel ends each group and removes its copy, so the Project can go.
-        if self.installed and not self.closed:
-            self.set_capability(True)
-            for name, group in self.groups.items():
-                admitted = self.admitted('POST', f'tasks/{group}/cancel', {'discard': True}, name + '-cancel')
-                self.terminal(int(admitted['id']), seconds=400)
-                instance = self.clones[name]['instance']
-                wait_for(lambda: self.runtime(instance) is None, f'copy {instance} outlived its cancelled group', 300, 2)
-                require(not any(self.resources(instance).values()), f'copy {instance} left Node resources after its cancelled group')
-                del self.clones[name]
+        # Groups first: a discarding cancel ends each group and removes its copy, so the Project can go. The extension state goes back
+        # while the guest helper still runs, then the base cleanup, then the fleet must be back at the counts the run started from.
         try:
-            super().cleanup()
+            if self.installed and not self.closed:
+                self.set_capability(True)
+                for name, group in list(self.groups.items()):
+                    admitted = self.admitted('POST', f'tasks/{group}/cancel', {'discard': True}, name + '-cancel')
+                    self.terminal(int(admitted['id']), seconds=400)
+                    instance = self.clones[name]['instance']
+                    wait_for(lambda: self.runtime(instance) is None, f'copy {instance} outlived its cancelled group', 300, 2)
+                    require(not any(self.resources(instance).values()), f'copy {instance} left Node resources after its cancelled group')
+                    del self.clones[name]
+                    del self.groups[name]
         finally:
-            for name in ('tasks', 'ai-router') if self.extensions is not None else ():
-                if not self.extensions[name] and self.api('GET', 'extensions')[1][name]:
-                    code, _row, error = self.api('POST', f'extensions/{name}/disable', {})
-                    require(code == 200, f'{name} extension restore: HTTP {code} {error}')
-            if self.extensions is not None:
-                after = self.api('GET', 'extensions')[1]
-                require({name: after[name] for name in self.extensions} == self.extensions, 'the extension state was not restored')
-                self.record('extensions-after', self.extensions)
-                self.extensions = None
+            try:
+                if self.extensions is not None:
+                    after = {name: self.helper('extension', name, 'off' if name == 'tasks' and not self.extensions[name] else 'read')['enabled']
+                             for name in self.extensions}
+                    require(after == self.extensions, 'the extension state was not restored')
+                    self.record('extensions-after', after)
+                    self.extensions = None
+            finally:
+                super().cleanup()
+        if self.start_counts is not None:
+            # Every destroy ends before the next run: the Node and Gateway are back at the counts this run started from.
+            back = wait_for(lambda: (lambda now: now if now == self.start_counts else None)(self.counts()),
+                            'the fleet did not return to its start counts', 300, 3)
+            self.record('end-counts', back)
+            self.start_counts = None
 
     def copy(self, name, sibling):
         self.create(sibling, 'engine')
