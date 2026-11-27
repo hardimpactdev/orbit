@@ -143,7 +143,8 @@ final readonly class TaskEnd
             ->whereNotNull('result->destroy_operation_id')->lazyById()->each(function (Operation $waiting): void {
                 DB::transaction(function () use ($waiting): void {
                     $cancel = Operation::query()->lockForUpdate()->findOrFail($waiting->id);
-                    $destroy = Operation::query()->find($cancel->result['destroy_operation_id'] ?? null);
+                    $id = $cancel->result['destroy_operation_id'] ?? null;
+                    $destroy = is_int($id) ? Operation::query()->find($id) : null;
                     if ($cancel->status->terminal() || $destroy === null || ! $destroy->status->terminal()) {
                         return;
                     }

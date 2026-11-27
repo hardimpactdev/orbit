@@ -44,7 +44,7 @@ final readonly class CancelOperationAction
             // A task copy's cancel has no run of its own to stop: its copy's destroy ends it, and a stop request would reach nothing.
             if (TaskEnd::waitsForDestroy($operation)) {
                 throw new ResourceOperationException('tasks.cancel_waits_for_destroy', 'This cancel ends when its task copy\'s destroy ends; it cannot be stopped.', 409,
-                    details: ['operation_id' => $operation->result['destroy_operation_id']]);
+                    details: ['operation_id' => $operation->result['destroy_operation_id'] ?? null]);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
                 && ! isset($operation->state['swamp_run_id']) && ($operation->attempts === 0 || (ExecutorWake::owns($operation) && ! isset($operation->state[ExecutorWake::PublishedAt])))
