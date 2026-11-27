@@ -207,9 +207,9 @@ fi
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys", async () => {
+Deno.test("repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys, before any write", async () => {
     const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
-    const repair = tasks.find((task) => task.name === "Repair a missing or different repository signing key")!;
+    const repair = tasks.find((task) => task.name === "Verify a missing or different repository signing key")!;
     const block = repair.block as Array<Record<string, unknown>>;
     const trust = block.find((task) => task.name === "Require exactly the recorded primary key")!;
     const condition = (trust["ansible.builtin.assert"] as { that: string }).that;
@@ -224,9 +224,14 @@ Deno.test("repository trust requires exactly one primary fingerprint, not a matc
             "ansible.builtin.assert": { that: `not (${condition})`, quiet: true },
         })),
     ]);
-    const trustIndex = block.indexOf(trust);
-    const publishIndex = block.findIndex((task) => task.name === "Publish only the verified repository key");
-    assertEquals(publishIndex > trustIndex, true);
+    // Verification writes nothing; the preference, then the key, follow it, so a key that fails leaves the Node's files as they were.
+    const writes = (task: Record<string, unknown>) => ["ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.command"].some((module) => module in task)
+        && !String((task["ansible.builtin.command"] as { argv?: string[] } | undefined)?.argv ?? "").includes("--show-keys");
+    assertEquals(block.filter(writes), []);
+    const at = (name: string) => tasks.findIndex((task) => task.name === name);
+    const verify = at("Verify a missing or different repository signing key");
+    assertEquals(verify >= 0 && tasks.slice(0, verify).filter((task) => writes(task)).length, 0);
+    assertEquals(verify < at("Hold the repository to its owned Tools before publishing it") && at("Hold the repository to its owned Tools before publishing it") < at("Publish only the verified repository key"), true);
 });
 
 Deno.test("role phases accept generated extra vars without shadowing each role's intent", async () => {

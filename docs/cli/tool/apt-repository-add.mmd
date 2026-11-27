@@ -20,7 +20,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to Node 12, which runs the apt manager; no other apt write holds Node 12
   %%> - no other repository of Node 12 has one of its URIs and suites (`tool.repository_conflict`)
-  %%> - a repository that Tools reference keeps its definition (`tool.repository_conflict`); the same definition republishes it
+  %%> - a name keeps its definition until its removal succeeds (`tool.repository_conflict`); the same definition republishes it
   %%> - file mode takes the definition only from the catalog (`tool.not_in_catalog`, `tool.file_override`)
   GW->>SW: Start the Tools phase<br/>with only this repository
   GW-->>CLI: 202 Accepted<br/>task #5140
@@ -38,7 +38,7 @@ sequenceDiagram
     SW--xGW: Report rex failed<br/>error_code
     Note over GW: rex: failed with the code
     %%> Retry:
-    %%> - run the same command again; it is the one recovery
+    %%> - run the same command again, or converge the Node; both run this publication
     %%> - a run that never started leaves the repository as it was; a timed-out one leaves it failed
   end
   loop every 2 s until terminal

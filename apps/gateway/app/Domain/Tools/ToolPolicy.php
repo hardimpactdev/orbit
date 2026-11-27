@@ -39,6 +39,13 @@ final readonly class ToolPolicy
         } catch (ParseException) {
             $this->invalid();
         }
+
+        return $this->fromDocument($document, $path);
+    }
+
+    /** A catalog document as activation reads it; catalog export checks its own document with the same rules. */
+    public function fromDocument(mixed $document, ?string $path): ActiveToolPolicy
+    {
         if (! is_array($document) || array_diff(array_keys($document), ['schema', 'repositories', 'packages']) !== []
             || ($document['schema'] ?? null) !== 1 || ! is_array($document['packages'] ?? null) || ! array_is_list($document['packages'])
             || (isset($document['repositories']) && (! is_array($document['repositories']) || ! array_is_list($document['repositories'])))) {

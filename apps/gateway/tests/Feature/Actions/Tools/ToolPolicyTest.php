@@ -41,6 +41,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\TestOrbitHome;
 
@@ -1631,6 +1632,54 @@ it('orders a version by the reading a decision made and a link by what the Tool 
     expect($tool->refresh()->installed_version)->toBe($history === 'O2' ? null : '1.0');
 })->with(['an update that read the admitted version' => ['O1'], 'a reinstall that read absence' => ['O2'],
     'an older update that found a sibling record' => ['O3'], 'a convergence that captured the adopted link' => ['O4']]);
+
+/** A request to the public API from a Node with access to `$node`. */
+function policyApi(Node $node, string $method, string $uri, array $body = []): TestResponse
+{
+    $control = SwampNodeFixture::ensure();
+    $control->accessibleNodes()->syncWithoutDetaching([$node->id]);
+
+    return test()->withServerVariables(['REMOTE_ADDR' => $control->wireguard_ip])->json($method, '/api/v1/'.$uri, $body);
+}
+
+it('never lets a receipt read on time or late change the repository a migrated Tool references', function (int $late): void {
+    policySwamp();
+    $h = policyPrecedingHistories()['O4'];
+    $open = Operation::query()->findOrFail($h['open']['operation']);
+    $tool = Tool::query()->findOrFail($h['tool_id']);
+    $node = Node::query()->findOrFail($h['node_id']);
+    $repository = $tool->apt_repository_id;
+    // The convergence's plan predates the reference (it carries no repository_id); its report records the version and nothing else.
+    policyReadRun($open, 'succeeded', [], $late, policyConvergeJobs($open, [['id' => $tool->id, 'status' => 'installed', 'installed_version' => '1.5']]));
+
+    expect($tool->refresh()->only(['installed_version', 'apt_repository_id']))->toBe(['installed_version' => '1.5', 'apt_repository_id' => $repository]);
+    policyApi($node, 'GET', "apt-repositories/{$repository}")->assertOk()->assertJsonPath('data.tool_count', 1);
+    policyApi($node, 'DELETE', "apt-repositories/{$repository}")->assertStatus(409)->assertJsonPath('error.code', 'tool.repository_in_use');
+})->with(['read on time' => [-2], 'read late' => [2]]);
+
+it('never lets an older direct or convergence receipt undo the repository a newer admitted update set', function (string $kind): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $repository = policyRepository($node);
+    $tree = policyTool($node, 'tree', '1.10');
+    $older = policyLapsed(Operation::query()->findOrFail(($kind === 'tool.converge'
+        ? policyApi($node, 'POST', "nodes/{$node->id}/tools/converge", ['tool_ids' => [$tree->id]])
+        : policyApi($node, 'POST', "tools/{$tree->id}/update", []))->assertAccepted()->json('data.id')));
+    policyApi($node, 'POST', "tools/{$tree->id}/update", ['repository' => 'proof'])->assertAccepted();
+    expect($tree->refresh()->apt_repository_id)->toBe($repository->id);
+
+    if ($kind === 'tool.converge') {
+        policyReadRun($older, 'succeeded', [], 2, policyConvergeJobs($older, [['id' => $tree->id, 'status' => 'installed', 'installed_version' => '1.10']]));
+    } else {
+        policyReadRun($older, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => '1.0']],
+            'Apply the package' => ['succeeded'], 'Check apt package' => ['succeeded'],
+            'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.10']], 'Assert package state' => ['succeeded']], 2);
+    }
+
+    expect($tree->refresh()->apt_repository_id)->toBe($repository->id);
+    policyApi($node, 'GET', "apt-repositories/{$repository->id}")->assertOk()->assertJsonPath('data.tool_count', 1);
+    policyApi($node, 'DELETE', "apt-repositories/{$repository->id}")->assertStatus(409)->assertJsonPath('error.code', 'tool.repository_in_use');
+})->with(['tool.update', 'tool.converge']);
 
 it('keeps removal authority after a start that provably was never sent, on either side of the upgrade', function (string $history): void {
     policySwamp();

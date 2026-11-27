@@ -28,6 +28,17 @@ final class AptRepositories
     }
 
     /**
+     * In file mode the catalog defines each repository; the Node's record of that name must hold the same definition, or the write or
+     * convergence would act on a source the catalog no longer describes.
+     */
+    public static function assertCatalog(ActiveToolPolicy $active, AptRepository $record): void
+    {
+        if ($active->mode === 'file' && ! self::same($active->repository($record->name), $record->definition)) {
+            throw new ResourceOperationException('tool.repository_conflict', 'The catalog defines this repository differently from the Node: rename it in the catalog, or remove and add it.', 409);
+        }
+    }
+
+    /**
      * Refuses a definition that shares a URI and suite with another repository of the Node.
      *
      * @param  array<string, mixed>  $definition

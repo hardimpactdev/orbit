@@ -1949,7 +1949,7 @@ cases:
   context: dns-domains
   expected: false
 - file: tasks/node-converge-tool-repository.yml
-  task: Repair a missing or different repository signing key
+  task: Verify a missing or different repository signing key
   field: when
   context: gpg-primary
   expected: false

@@ -286,16 +286,14 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
 
             return;
         }
-        // The repository the write was admitted with, while it still exists.
-        $admitted = $input['repository_id'] ?? null;
-        $repositoryId = is_int($admitted) && AptRepository::query()->whereKey($admitted)->exists() ? $admitted : null;
-        // A first install's record is made here; a late receipt never brings back a Tool removed since.
+        // A first install's record is made here, with the repository it was admitted with; a late receipt never brings back a Tool
+        // removed since. A receipt never changes the Tool's repository: only an admission sets it.
         if ($tool === null && $record !== null && ! $late) {
             $tool = $this->createTool($operation, $record);
         }
         // Only Orbit's own verified write acquires the package: a success that found it present and left it unchanged observes it, so a
         // preceding-release receipt read after the upgrade never acquires a package Orbit never wrote (docs/reference/tools.md#ownership).
-        $tool?->receive($operation->id, ['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'failed_operation' => null, 'error_code' => null],
+        $tool?->receive($operation->id, ['status' => ToolStatus::Installed, 'failed_operation' => null, 'error_code' => null],
             owned: $evidence['acquired'] ? true : null, version: ValidatedData::nullableString($result['installed_coordinate'] ?? null), observed: true);
     }
 
@@ -358,7 +356,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             'node_id' => $operation->node_id, 'tool_manager_id' => $record->id,
             'package' => $operation->input['package'], 'version_constraint' => $operation->input['version_constraint'],
             'desired_version' => $operation->input['desired_version'] ?? null,
-            'apt_repository_id' => null,
+            'apt_repository_id' => is_int($admitted = $operation->input['repository_id'] ?? null) && AptRepository::query()->whereKey($admitted)->exists() ? $admitted : null,
             'status' => ToolStatus::Installing,
         ]);
     }

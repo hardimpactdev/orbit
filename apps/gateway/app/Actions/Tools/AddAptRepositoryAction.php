@@ -53,11 +53,11 @@ final readonly class AddAptRepositoryAction
             $this->intent->assertIdle($node->id, [ToolManagerName::Apt->scope()->value]);
             AptRepositories::assertDistinct($node->id, $definition);
             $record = AptRepository::query()->where('node_id', $node->id)->where('name', $name)->lockForUpdate()->first();
-            if ($record !== null && ! AptRepositories::same($record->definition, $definition) && $record->tools()->exists()) {
-                throw new ResourceOperationException('tool.repository_conflict', 'Tools reference this repository: remove them before changing its definition.', 409);
+            // A name keeps its definition on the Node until its removal succeeds, so the record always names what may be on disk.
+            if ($record !== null && ! AptRepositories::same($record->definition, $definition)) {
+                throw new ResourceOperationException('tool.repository_conflict', 'The Node has this repository with another definition: remove it, then add it again.', 409);
             }
-            $previous = $record === null ? null : ['status' => $record->status->value, 'error_code' => $record->error_code, 'definition' => $record->definition,
-                'operation_id' => $record->operation_id];
+            $previous = $record === null ? null : ['status' => $record->status->value, 'error_code' => $record->error_code, 'operation_id' => $record->operation_id];
             $record ??= new AptRepository(['node_id' => $node->id, 'name' => $name]);
             $record->fill(['definition' => $definition, 'status' => AptRepositoryStatus::Adding, 'error_code' => null])->save();
             // The preferences the run writes before the source: the repository's owned members keep their pin, every other package of its

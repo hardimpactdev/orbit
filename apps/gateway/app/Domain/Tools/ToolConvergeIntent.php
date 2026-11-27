@@ -90,8 +90,8 @@ final readonly class ToolConvergeIntent
     }
 
     /**
-     * The Node's record of the repository a planned Tool names. In file mode the catalog defines it: a record missing or holding another
-     * definition takes the catalog's and waits for this convergence to publish it.
+     * The Node's record of the repository a planned Tool names. In file mode the catalog defines it: a missing record takes the catalog's
+     * definition and waits for this convergence to publish it, and a record of that name with another definition refuses the convergence.
      */
     private function repositoryRecord(Node $node, string $name, ActiveToolPolicy $active): AptRepository
     {
@@ -100,13 +100,15 @@ final readonly class ToolConvergeIntent
             return $record ?? throw new ResourceOperationException('tool.repository_missing', 'A Tool names an apt repository the Node does not have.', 409);
         }
         $definition = $active->repository($name) ?? throw new ResourceOperationException('tool.not_in_catalog', 'The apt repository is not in the active Tool catalog.', 409);
-        if ($record === null || ! AptRepositories::same($record->definition, $definition)) {
-            AptRepositories::assertDistinct($node->id, $definition);
-            $record ??= new AptRepository(['node_id' => $node->id, 'name' => $name]);
-            $record->fill(['definition' => $definition, 'status' => AptRepositoryStatus::Failed, 'error_code' => 'tool.repository_unconfirmed'])->save();
-        }
+        if ($record !== null) {
+            AptRepositories::assertCatalog($active, $record);
 
-        return $record;
+            return $record;
+        }
+        AptRepositories::assertDistinct($node->id, $definition);
+
+        return AptRepository::query()->create(['node_id' => $node->id, 'name' => $name, 'definition' => $definition, 'status' => AptRepositoryStatus::Failed,
+            'error_code' => 'tool.repository_unconfirmed']);
     }
 
     /**

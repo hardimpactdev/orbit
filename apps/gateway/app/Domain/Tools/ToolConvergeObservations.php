@@ -6,7 +6,6 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -74,9 +73,7 @@ final readonly class ToolConvergeObservations
             $state = ['status' => $installed ? ToolStatus::Installed : ToolStatus::Failed,
                 'failed_operation' => $installed ? null : ($repair ? ToolOperation::Update : ToolOperation::Install),
                 'error_code' => $installed ? null : (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed'))];
-            if ($installed) {
-                $state['apt_repository_id'] = is_int($plan['repository_id'] ?? null) && AptRepository::query()->whereKey($plan['repository_id'])->exists() ? $plan['repository_id'] : null;
-            }
+            // An observation never changes the Tool's repository: only an admission sets it.
             $tool->receive($operation->id, $state, owned: $installed && array_key_exists('owned', $plan) ? true : null,
                 version: ValidatedData::nullableString($observation['installed_version']), observed: is_string($observation['installed_version']));
             if ($installed) {

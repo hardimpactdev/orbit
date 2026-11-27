@@ -63,11 +63,15 @@ packages:
 
 Export before switching so you have a copy of the current policy and memberships.
 
-1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json` to preserve membership, desired coordinates, observations, and the rollout eligibility of configured host Conn Servers.
+1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json`: it preserves membership, desired coordinates, observations, apt repository records, and host Conn Server rollout eligibility.
 2. To enter file mode with existing Tools, use `orbit tool:mode --export=catalog --json`. Write its `document` to `tools.yaml` on the Gateway, then run `orbit tool:mode:set file --catalog=/absolute/path/tools.yaml`. Omit `--catalog` to use the shipped file.
-3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates for the existing memberships and keeps observed versions separate. Each membership keeps the repository it references.
+3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates for the existing memberships and keeps observed versions separate.
 
-A catalog cannot express different desired coordinates for the same manager and package across Nodes, different definitions under one repository name, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation. Activation also refuses missing or different coordinates, a repository a Node defines differently from the catalog, a membership whose repository the catalog drops or renames (`tool.repository_conflict`), and any active or retained Tool execution hold.
+Leaving file mode, each membership takes the repository the catalog names for it. Its Node must have that repository exactly as the catalog defines it. Otherwise the switch changes nothing and refuses with `tool.mode_conflict`, with `reason` `repository_missing` or `different_repository` and the Tool and repository named.
+
+A catalog cannot express different desired coordinates for the same manager and package across Nodes, different definitions under one repository name, two repository names on one URI and suite, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation.
+
+Export includes every repository record, also one no Tool references, and checks its document with the rules activation applies, so an export activates unchanged. Activation also refuses missing or different coordinates, a repository a Node defines differently from the catalog, a membership whose repository the catalog drops or renames (`tool.repository_conflict`), and any active or retained Tool execution hold.
 
 A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
 
@@ -213,21 +217,27 @@ A signed apt repository is a record of its own on one Node, with its own lifecyc
 
 The add runs an Operation that holds the repository's preference to the owned Tools that reference it, verifies the downloaded key's primary fingerprint, writes `/etc/apt/keyrings/orbit-<name>.gpg` and `/etc/apt/sources.list.d/orbit-<name>.sources`, and reads the repository's package index. The preference `/etc/apt/preferences.d/orbit-<name>.pref` gives priority `990` to owned packages and `1` to every other package from its origins. apt matches `Pin: origin` against the URI's host as written: an IPv6 literal without its brackets and not shortened, so `[0:0:0:0:0:0:0:1]` stays `0:0:0:0:0:0:0:1`. Orbit writes it that way.
 
-A repository is `adding`, `ready`, `removing`, or `failed` with its error code. It is usable only when its own add succeeded: that success is the confirmation, and no other event grants or removes it. Running the add again with the same name publishes it again. That is the one recovery, for a failed or unconfirmed repository and for a key rotation. An add or removal that never ran leaves the repository as it was. One that timed out leaves it `failed`.
+A repository is `adding`, `ready`, `removing`, or `failed` with its error code. It is usable only after a publication of it succeeded: its own add, or a convergence that published it, which runs the same verified publication. No other event grants or removes it. To recover a failed or unconfirmed repository, run `tool:apt-repository-add` with the same name and definition, or converge the Node. An add or removal that never ran leaves the repository as it was. One that timed out leaves it `failed`.
 
-One URI and suite belongs to one repository per Node: apt stops every read when two source files give one entry different `Signed-By` keyrings. The add refuses with `tool.repository_conflict` (409) a URI and suite that another repository of the Node has, and a different definition under a name that Tools reference. Remove those Tools first, or use a new name.
+A repository's definition does not change under its name on a Node. Adding the same name with the same definition publishes it again; adding it with another definition is refused with `tool.repository_conflict` (409), whether or not Tools reference it, and so is a convergence that would publish another definition under the name. To change a definition, remove the repository, then add it. A record keeps its definition through a failed add or a failed removal, so it always names what may be on disk.
 
-`tool:install`, `tool:adopt`, and `tool:update` take `repository` as the name of a repository of that Node. They refuse `tool.repository_missing` (422) when it does not exist and `tool.repository_not_ready` (409) when it is not ready. A Tool write never publishes or changes a repository. It writes only the per-package preference: the held one before its package write, then the confirmed one that adds the package once Orbit verified it from the repository. A Tool keeps the repository it references; change it by removing and installing the Tool again (`tool.repository_conflict`). `tool:apt-repository-remove` refuses with `tool.repository_in_use` while any Tool references the repository, then removes its source, keyring, and preference.
+One URI and suite belongs to one repository per Node: apt stops every read when two source files give one entry different `Signed-By` keyrings. The add refuses with `tool.repository_conflict` a URI and suite that another repository of the Node has, also one whose add or removal failed: its record reserves them until a removal succeeds. The publication reads and verifies the key before it writes anything, so a key that fails to fetch or verify leaves the preference, keyring and source as they were.
+
+`tool:install`, `tool:adopt`, and `tool:update` take `repository` as the name of a repository of that Node. They refuse `tool.repository_missing` (422) when it does not exist and `tool.repository_not_ready` (409) when it is not ready. A Tool write never publishes or changes a repository. It writes only the per-package preference: the held one before its package write, then the confirmed one that adds the package once Orbit verified it from the repository. A Tool keeps the repository it references; change it by removing and installing the Tool again (`tool.repository_conflict`). Only an admitted install, adoption, update or convergence sets the reference; no package receipt or observation, on time or late, changes it.
+
+`tool:apt-repository-remove` refuses with `tool.repository_in_use` while any Tool references the repository, then removes its source, keyring, and preference.
 
 Only the newest Operation admitted to publish or remove a repository decides its state. An add, a removal, and each convergence that publishes it take that place at admission. A report of older work read later changes nothing.
 
-In file mode, the catalog defines each repository. The add takes only the catalog's definition (`tool.not_in_catalog`, `tool.file_override`). A convergence publishes each catalog repository its enrolled Tools reference, as that repository's own add, before the packages: the outcome makes it `ready` or `failed`. A Node record without the catalog's definition takes it and waits for that publication. A Node converge publishes a repository that is not ready whatever digest the Tools phase recorded. Export writes each repository the memberships reference once, and refuses one that two Nodes define differently.
+A convergence publishes each repository its enrolled Tools reference before the packages, in database mode and in file mode, as that repository's own add: the outcome makes it `ready` or `failed`. A Node converge publishes a repository that is not ready whatever digest the Tools phase recorded.
+
+In file mode, the catalog defines each repository. The add takes only the catalog's definition (`tool.not_in_catalog`, `tool.file_override`). A Node without a record of a catalog repository gets one with the catalog's definition, which the convergence publishes. When the catalog defines a name differently from the Node's record, install, update, adoption and convergence refuse with `tool.repository_conflict`: rename the entry in the catalog, or remove the repository and add it again.
 
 Repository errors: `tool.repository_invalid`, `tool.repository_missing`, `tool.repository_not_ready`, `tool.repository_conflict`, `tool.repository_in_use`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, `tool.repository_remove_failed`, and `tool.repository_adoption_mismatch`.
 
 ### Upgrade from the preceding release
 
-The upgrade keeps every apt repository record with its name and definition, and every Tool's reference to it, and marks each one `failed` with `tool.repository_unconfirmed`. It reads no history to decide whether a repository is on the Node as recorded. Run `tool:apt-repository-add` once for each with its definition; until then no Tool write from it is admitted.
+The upgrade keeps every apt repository record with its name and definition, and every Tool's reference to it, and marks each one `failed` with `tool.repository_unconfirmed`. It reads no history to decide whether a repository is on the Node as recorded. Run `tool:apt-repository-add` for each with its definition, or converge the Node, which publishes the repositories its Tools reference; until one of them succeeds no Tool write from the repository is admitted.
 
 The upgrade replays the preceding release's Tool Operations in order for what Tool ownership needs.
 
@@ -255,7 +265,7 @@ A convergence keeps its other phases. A full one, which the preceding release ma
 
 A request the current admission would only record ends as that membership-only removal. One it refuses ends failed with the refusal's code, such as `tool.package_protected` or `tool.repository_not_ready`, and runs nothing. A refused first install also drops the `installing` record its own admission made. A replay of the request's idempotency key returns that outcome.
 
-Work whose start may have been sent is settled by the upgraded Gateway when its end is read. Its report changes no repository: only the repository's own add does.
+Work whose start may have been sent is settled by the upgraded Gateway when its end is read. Its report changes no repository and no Tool's reference: only a publication this release admitted decides a repository.
 
 A removal among it ran under the preceding release, which removed whatever it found, so its end is read under that authority. A removal the preceding release expired with its run unsettled has its authority set aside, as the Gateway does at expiry, unless newer work changed it since.
 

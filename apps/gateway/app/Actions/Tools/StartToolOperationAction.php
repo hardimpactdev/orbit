@@ -252,10 +252,15 @@ final readonly class StartToolOperationAction
                     $this->refuse('tool.manager_unavailable');
                 }
 
-                $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, app(ToolPolicy::class)->active());
-                // A write needs its repository ready; a removal repins the remaining members of the one the Tool references, whatever its state.
+                $policy = app(ToolPolicy::class)->active();
+                $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, $policy);
+                // A write needs its repository ready and, in file mode, as the catalog defines it; a removal repins the remaining members of
+                // the one the Tool references, whatever its state.
                 $repositoryRecord = $relinquish || $definition->repository === null ? null
                     : ($verb === 'remove' ? $tool?->aptRepository : AptRepositories::usable($nodeId, $definition->repository));
+                if ($repositoryRecord !== null && $verb !== 'remove') {
+                    AptRepositories::assertCatalog($policy, $repositoryRecord);
+                }
                 $repositoryPackages = $repositoryRecord === null ? [] : $this->definitions->repositoryPackages($repositoryRecord->id,
                     Tool::query()->with('manager')->where('node_id', $nodeId)->where('apt_repository_id', $repositoryRecord->id)->get(), $package, $verb === 'remove');
 

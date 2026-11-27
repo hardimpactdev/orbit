@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolPolicy;
+use App\Models\AptRepository;
 use App\Models\ConnServerNode;
 use App\Models\Tool;
 use Illuminate\Support\Facades\DB;
@@ -69,7 +70,18 @@ final readonly class ManageToolPolicyAction
                         $this->conflict('different_coordinate', $tool->id);
                     }
                 }
-                $tool->update(['desired_version' => $current->version, 'version_constraint' => $current->constraint]);
+                $changes = ['desired_version' => $current->version, 'version_constraint' => $current->constraint];
+                // Leaving file mode carries the catalog's repository reference onto the membership, only when the Node has that repository
+                // exactly as the catalog defines it; anything else refuses the whole switch.
+                if ($before->mode === 'file' && $mode === 'database' && $current->repository !== null) {
+                    $record = AptRepository::query()->where('node_id', $tool->node_id)->where('name', $current->repository)->first()
+                        ?? $this->conflict('repository_missing', $tool->id, $current->repository);
+                    if (! AptRepositories::same($record->definition, $before->repository($current->repository))) {
+                        $this->conflict('different_repository', $tool->id, $current->repository);
+                    }
+                    $changes['apt_repository_id'] = $record->id;
+                }
+                $tool->update($changes);
             }
             $snapshotId = DB::table('tool_policy_snapshots')->insertGetId([
                 'document' => json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'created_at' => now(),
@@ -111,14 +123,20 @@ final readonly class ManageToolPolicyAction
         $conn = ConnServerNode::query()->orderBy('node_id')->get(['node_id', 'tool_withdrawn'])
             ->map(static fn (ConnServerNode $server): array => ['node_id' => $server->node_id, 'withdrawn' => $server->tool_withdrawn])->all();
 
-        return ['schema' => 1, ...$this->state($policy), 'memberships' => $rows, 'conn_server_rollout' => $conn,
-            'catalog' => $policy->mode === 'file' ? $this->catalog($policy, []) : null];
+        // Every apt repository record, also one no Tool references yet.
+        $repositories = AptRepository::query()->orderBy('node_id')->orderBy('name')->get()
+            ->map(static fn (AptRepository $repository): array => ['node_id' => $repository->node_id, 'name' => $repository->name,
+                'definition' => $repository->definition, 'status' => $repository->status->value, 'error_code' => $repository->error_code])->all();
+
+        return ['schema' => 1, ...$this->state($policy), 'memberships' => $rows, 'repositories' => $repositories, 'conn_server_rollout' => $conn,
+            'catalog' => $policy->mode === 'file' ? $this->catalog($policy, [], records: false) : null];
     }
 
     /** @param list<Tool> $tools
+     * @param  bool  $records  whether every Node's repository record joins the document (an export), or only the active file's own
      * @return array<string, mixed>
      */
-    private function catalog(ActiveToolPolicy $policy, array $tools): array
+    private function catalog(ActiveToolPolicy $policy, array $tools, bool $records = true): array
     {
         $entries = $policy->packages;
         $repositories = $policy->repositories;
@@ -135,11 +153,12 @@ final readonly class ManageToolPolicyAction
                 $this->conflict('per_node_divergence', $tool->id);
             }
             $entries[$key] = $definition;
-            // A catalog defines each repository once: every Node's record a membership references must agree.
-            $repository = $tool->aptRepository;
-            if ($repository !== null) {
+        }
+        // A catalog defines each repository once: every Node's record of a name, referenced or not, must agree with it.
+        if ($records) {
+            foreach (AptRepository::query()->orderBy('node_id')->orderBy('name')->get() as $repository) {
                 if (isset($repositories[$repository->name]) && ! AptRepositories::same($repositories[$repository->name], $repository->definition)) {
-                    $this->conflict('per_node_divergence', $tool->id);
+                    $this->conflict('per_node_divergence', null, $repository->name);
                 }
                 $repositories[$repository->name] = $repository->definition;
             }
@@ -152,7 +171,20 @@ final readonly class ManageToolPolicyAction
             $packages[] = ['manager' => $manager, 'package' => $package, ...$definition->toArray()];
         }
 
-        return ['schema' => 1, 'repositories' => array_values($repositories), 'packages' => $packages];
+        $document = ['schema' => 1, 'repositories' => array_values($repositories), 'packages' => $packages];
+        // The export is a catalog activation accepts: the same rules, two names on one URI and suite included.
+        try {
+            AptRepositories::assertDistinctAmong($document['repositories']);
+        } catch (ResourceOperationException) {
+            $this->conflict('repository_conflict', null);
+        }
+        try {
+            $this->policy->fromDocument($document, null);
+        } catch (ResourceOperationException) {
+            $this->conflict('catalog_invalid', null);
+        }
+
+        return $document;
     }
 
     private function definition(ActiveToolPolicy $policy, Tool $tool): ToolDefinition
@@ -164,9 +196,9 @@ final readonly class ManageToolPolicyAction
         return new ToolDefinition($tool->desired_version, $tool->version_constraint, $tool->aptRepository?->name);
     }
 
-    private function conflict(string $reason, int $toolId): never
+    private function conflict(string $reason, ?int $toolId, ?string $repository = null): never
     {
         throw new ResourceOperationException('tool.mode_conflict', 'The Tool policy cannot be represented without losing desired state.', 409,
-            details: ['reason' => $reason, 'tool_id' => $toolId]);
+            details: ['reason' => $reason, 'tool_id' => $toolId, ...($repository === null ? [] : ['repository' => $repository])]);
     }
 }

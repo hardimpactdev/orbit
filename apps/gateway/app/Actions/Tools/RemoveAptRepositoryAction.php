@@ -40,7 +40,7 @@ final readonly class RemoveAptRepositoryAction
                 throw new ResourceOperationException('tool.repository_in_use', 'Tools reference this apt repository: remove them first.', 409);
             }
             $this->intent->assertIdle($node->id, [ToolManagerName::Apt->scope()->value]);
-            $previous = ['status' => $record->status->value, 'error_code' => $record->error_code, 'definition' => $record->definition, 'operation_id' => $record->operation_id];
+            $previous = ['status' => $record->status->value, 'error_code' => $record->error_code, 'operation_id' => $record->operation_id];
             $record->update(['status' => AptRepositoryStatus::Removing, 'error_code' => null]);
             $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => [], 'repositories' => [], 'tools_seconds' => 500,
                 'removed_repositories' => [$record->name], 'ssh' => $this->ssh->forNode($node)];

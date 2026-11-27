@@ -46,4 +46,4 @@ orbit tool:apt-repository-add --node=NODE_ID --name=rex --definition='{"uris":["
 orbit tool:install rex --node=NODE_ID --manager=apt --repository=rex
 ```
 
-To move to the stable suite once it has a published InRelease, remove the repository's Tools, add it again with `"suites":["stable"]`, and install them again. Adding the same name and definition again republishes the repository: that is the recovery for a failed or unconfirmed one, and for a key rotation under the same definition. Removing the last Tool leaves the repository; `tool:apt-repository-remove` removes it once no Tool references it.
+To move to the stable suite once it has a published InRelease, remove the repository's Tools and the repository, add it again with `"suites":["stable"]`, and install them again. A name never takes another definition. Adding the same name and definition again, or converging the Node, republishes the repository: that is the recovery for a failed or unconfirmed one, and for a key rotation under the same definition. Removing the last Tool leaves the repository; `tool:apt-repository-remove` removes it once no Tool references it.

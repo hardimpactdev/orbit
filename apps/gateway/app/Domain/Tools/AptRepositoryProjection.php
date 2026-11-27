@@ -50,7 +50,7 @@ final readonly class AptRepositoryProjection implements DirectOperationLateResul
         AptRepositoryOutcomes::record(ValidatedData::integer($operation->node_id), $operation->id, [$this->outcome($operation, $status === 'succeeded', $result)]);
     }
 
-    /** Nothing reached the Node: the repository is as it was before this request, its definition and deciding Operation included. */
+    /** Nothing reached the Node: the repository is as it was before this request, its deciding Operation included. */
     public function neverRan(Operation $operation): void
     {
         $record = AptRepository::query()->whereKey($operation->input['repository_id'] ?? null)->where('operation_id', $operation->id)->lockForUpdate()->first();
@@ -64,7 +64,7 @@ final readonly class AptRepositoryProjection implements DirectOperationLateResul
             return;
         }
         $record->update(['status' => AptRepositoryStatus::from(ValidatedData::string($previous['status'])), 'error_code' => ValidatedData::nullableString($previous['error_code'] ?? null),
-            'definition' => ValidatedData::object($previous['definition'] ?? $record->definition), 'operation_id' => is_int($previous['operation_id'] ?? null) ? $previous['operation_id'] : null]);
+            'operation_id' => is_int($previous['operation_id'] ?? null) ? $previous['operation_id'] : null]);
     }
 
     /** The run may still be changing the Node: the repository is failed until the command runs again. */
