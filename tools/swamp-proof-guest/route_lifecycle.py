@@ -10,7 +10,7 @@ import threading
 import traceback
 import time
 
-from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, TERMINAL, CloneLane, ProofFailure, ProofInfrastructure, require, wait_for
+from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, POOL, TERMINAL, CloneLane, ProofFailure, ProofInfrastructure, require, wait_for
 
 VPN_NODE = 1
 GRACE_MS = 31_000
@@ -141,13 +141,32 @@ class RouteLane(CloneLane):
                                   capture_output=True, text=True, timeout=8)
         return response.stdout or '000'
 
+    def serve_known(self, route):
+        """A known-good answer behind the sibling Route: a static page from a responder on the clone's web port, which the fixture
+        starts in the disposable clone and which goes with the clone. The package fixture serves no application of its own."""
+        token = f"{self.prefix}-route-{route['route']}"
+        script = 'mkdir -p /run/orbit-proof-health && printf "%s" "$1" > /run/orbit-proof-health/index.html && ' \
+                 'systemd-run --unit orbit-proof-health python3 -m http.server 8080 --bind 0.0.0.0 --directory /run/orbit-proof-health'
+        self.incus('exec', f"instance-{route['instance']}", '--project', POOL, '--', 'sh', '-c', script, 'sh', token)
+        route['token'] = token
+        wait_for(lambda: self.body(route['domain'], self.node_ip) == ('200', token), f"the sibling responder on {route['domain']} did not answer", 30, interval=1)
+
+    def body(self, domain, address):
+        response = subprocess.run(['curl', '--noproxy', '*', '--silent', '--write-out', '\n%{http_code}', '--max-time', '5', '--cacert', self.ca_path,
+                                   '--resolve', f'{domain}:443:{address}', f'https://{domain}/'], capture_output=True, text=True, timeout=8)
+        text, _, code = response.stdout.rpartition('\n')
+        return code or '000', text
+
     def healthy(self, name):
-        """The sibling keeps its site, leaf and DNS answer, completes a TLS handshake with the nested Orbit root (the engine's own
-        sibling probe), and answers the HTTP status it answered when it was created."""
+        """The sibling keeps its site, leaf and DNS answer, and at the address its DNS answer names, trusting only the nested root,
+        answers exactly the known page the fixture serves behind it."""
         route = self.routes_made[name]
+        if 'token' not in route:
+            self.serve_known(route)
         state = self.state(route['domain'], route['scope'])
-        require(self.present(state) and state['https'] == route['https'], f'sibling Route {name} is not healthy: {state}')
-        return state
+        answer = self.body(route['domain'], state['dns_address'] or self.node_ip)
+        require(self.present(state) and answer == ('200', route['token']), f'sibling Route {name} is not healthy: {state} {answer[0]}')
+        return {**state, 'known_page': answer[0]}
 
     @traced
     def route_create(self, name, clone, web_root=None):
@@ -369,8 +388,11 @@ class RouteLane(CloneLane):
             self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
     @traced
-    def route_clone_destroy(self, name, via, sibling, route):
-        """A clone that owns one private development Route: its withdrawal, then the signed container removal, on one engine."""
+    def route_clone_destroy(self, name, via, sibling, route, fault=None):
+        """A clone that owns one private development Route: its withdrawal, then the signed container removal, on one engine.
+        With `boundary`, the withdrawal's receipt is dropped, so the run stops between the withdrawal on the Node and the
+        container removal: the fixture reads the live state there, while the clone still exists."""
+        require(fault in (None, 'boundary') and (fault is None or via == 'engine'), 'invalid clone destroy case')
         instance, domain, scope = self.clones[name]['instance'], self.routes_made[route]['domain'], self.routes_made[route]['scope']
         sibling_before = self.healthy(sibling)
         self.set_capability(via == 'engine')
@@ -378,7 +400,10 @@ class RouteLane(CloneLane):
         before = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
         require(self.present(before['route']) and before['resources']['incus'] == ['Running'], f'Route-owning clone {instance} is not live')
         started = time.monotonic()
-        if via == 'engine':
+        boundary = None
+        if fault == 'boundary':
+            admitted, boundary = self.withdrawal_boundary(instance, name, domain, scope, sibling)
+        elif via == 'engine':
             admitted = self.cli_destroy(['instance:destroy', str(instance), '--yes', '--force'], 'instance.destroy', instance)
         else:
             admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
@@ -386,7 +411,7 @@ class RouteLane(CloneLane):
         sibling_during = self.healthy(sibling)
         terminal = self.terminal(operation, seconds=300)
         elapsed = round((time.monotonic() - started) * 1000)
-        cli = self.cli_end(operation) if via == 'engine' else None
+        cli = self.cli_end(operation) if via == 'engine' and fault is None else None
         summary = self.operation(operation, via)
         removal = self.removal(operation)
         after = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
@@ -396,7 +421,7 @@ class RouteLane(CloneLane):
                 f'Destroy {operation} did not withdraw the Route, free its holds and remove the clone')
         result = {'instance': instance, 'domain': domain, 'operation': summary, 'removal': removal, 'before': before, 'after': after,
                   'sibling': {'before': sibling_before, 'during': sibling_during, 'after': self.healthy(sibling)}, 'request_through_terminal_ms': elapsed,
-                  'cli': cli}
+                  'cli': cli, 'boundary': boundary}
         if via == 'engine':
             steps = {step['name']: step for step in summary['steps']}
             require(all(step['status'] == 'done' for step in steps.values())
@@ -409,6 +434,34 @@ class RouteLane(CloneLane):
             require(not summary['steps'], f'Swamp destroy {operation} ran engine steps')
         self.clones[name]['destroy_result'] = result
         self.record(name + '-route-clone-destroy', result)
+
+    def withdrawal_boundary(self, instance, name, domain, scope, sibling):
+        step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'
+        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        try:
+            admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
+            operation = int(admitted['id'])
+
+            def published():
+                rows = [row for row in self.steps(operation) if row['name'] == step]
+                return rows[0] if rows and rows[0]['first_sent_ms'] else None
+
+            wait_for(published, f'Destroy {operation} did not publish its withdrawal', 60, interval=0.25)
+            self.systemctl('gateway', 'stop', 'orbit-gateway-engine.service')
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
+                               f'Destroy {operation} did not leave its withdrawal receipt', 30)
+            state, resources = self.state(domain, scope), self.resources(instance)
+            steps = {row['name']: row['status'] for row in self.steps(operation)}
+            require(self.absent(state) and resources['incus'] == ['Running'] and steps.get('remove') == 'pending'
+                    and self.runtime(instance) is not None,
+                    f'Destroy {operation} did not stand between the withdrawal and the removal: {state} {resources["incus"]} {steps}')
+            capture = {'state_with_clone_present': state, 'container': resources['incus'], 'steps': steps, 'dropped': dropped,
+                       'sibling': self.healthy(sibling)}
+            return admitted, capture
+        finally:
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
     def route_compare(self, engine, swamp, kind='route'):
         source = self.routes_made if kind == 'route' else self.clones

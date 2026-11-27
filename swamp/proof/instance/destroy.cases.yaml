@@ -42,8 +42,11 @@ cases:
       - route_create: {name: neighbour, clone: sibling}
       - route_create: {name: owned, clone: owner}
       - route_create: {name: legacy-route, clone: legacy}
+      - clone_create: {name: held, via: engine}
+      - route_create: {name: held-route, clone: held}
       - route_clone_destroy: {name: owner, via: engine, sibling: neighbour, route: owned}
       - route_clone_destroy: {name: legacy, via: swamp, sibling: neighbour, route: legacy-route}
+      - route_clone_destroy: {name: held, via: engine, sibling: neighbour, route: held-route, fault: boundary}
     expect:
       - route_compare: {engine: owner, swamp: legacy, kind: clone}
       - clone_cleanup: {}
