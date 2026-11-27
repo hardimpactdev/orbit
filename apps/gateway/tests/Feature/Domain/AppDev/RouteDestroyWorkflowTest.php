@@ -12,6 +12,7 @@ use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteWorkloadPreparation;
 use App\Domain\Routes\RouteDestroyEngineFlow;
+use App\Domain\Routes\RouteFileGuards;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -244,7 +245,7 @@ it('records the whole-file digests the engine guards with, and builds its steps 
     [$operation] = destroyAdmission($route);
 
     expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
-        'records' => hash('sha256', $before['dns']['records']), 'catalog' => hash('sha256', $before['dns']['catalog'])]);
+        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
     $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
     expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
