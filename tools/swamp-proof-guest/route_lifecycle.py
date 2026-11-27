@@ -6,6 +6,7 @@ import functools
 import json
 import shlex
 import subprocess
+import threading
 import traceback
 import time
 
@@ -196,18 +197,26 @@ class RouteLane(CloneLane):
 
     @traced
     def route_destroy(self, name, via, sibling, fault=None):
-        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial') and (fault is None or via == 'engine'), 'invalid route destroy case')
+        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial', 'feature')
+                and (fault is None or (fault == 'feature') == (via == 'swamp')), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
         sibling_before = self.healthy(sibling)
-        self.set_dns(via == 'engine')
+        # A Swamp case either lacks the action (dns family off) or keeps it and lacks only the guarded input (`feature`).
+        self.set_dns(via == 'engine' or fault == 'feature')
         scope = self.routes_made[name]['scope']
         before = self.state(domain, scope)
         require(self.present(before), f'Route {domain} is not live before its removal')
         path, key = f'routes/{route}', name + '-route-destroy'
         failed = self.partial_withdrawal(name, path, key, sibling) if fault == 'partial' else None
         started = time.monotonic()
+        cli = report = None
         if fault == 'receipt':
             admitted, interrupted = self.dropped_withdraw(path, key, domain, scope, sibling)
+        elif fault == 'feature':
+            admitted, interrupted, report = self.without_feature(path, key)
+        elif via == 'engine':
+            # The clean removal goes through the candidate CLI: its request, and the Operation its result names.
+            admitted, interrupted, cli = self.cli_destroy(['route:destroy', str(route), '--yes'], 'route.destroy', route), None, True
         else:
             admitted, interrupted = self.admitted('DELETE', path, {}, key), None
         operation = int(admitted['id'])
@@ -215,6 +224,7 @@ class RouteLane(CloneLane):
         sibling_during = self.healthy(sibling)
         self.terminal(operation, seconds=240)
         elapsed = round((time.monotonic() - started) * 1000)
+        cli = self.cli_end(operation) if cli else None
         summary = self.operation(operation, via)
         after = self.state(domain, scope)
         require(self.absent(after) and not self.db(f'SELECT id FROM routes WHERE id={route}') and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
@@ -222,7 +232,8 @@ class RouteLane(CloneLane):
         sibling_after = self.healthy(sibling)
         result = {'route': route, 'domain': domain, 'operation': summary, 'before': before, 'after': after, 'fault': fault,
                   'sibling': {'domain': self.routes_made[sibling]['domain'], 'before': sibling_before, 'during': sibling_during, 'after': sibling_after},
-                  'request_through_terminal_ms': elapsed, 'partial_failure': failed, 'interrupted': interrupted, 'in_grace': grace}
+                  'request_through_terminal_ms': elapsed, 'partial_failure': failed, 'interrupted': interrupted, 'in_grace': grace,
+                  'cli': cli, 'report_without_feature': report}
         if via == 'engine':
             steps = {step['name']: step for step in summary['steps']}
             require(all(step['status'] == 'done' for step in steps.values()) and {'dns-0', 'grace', f'withdraw-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
@@ -240,6 +251,42 @@ class RouteLane(CloneLane):
             require(not summary['steps'], f'fallback route.destroy {operation} ran engine steps')
         self.routes_made[name]['destroy_result'] = result
         self.record(name + '-route-destroy', result)
+
+    def cli_destroy(self, words, kind, target):
+        """Starts a destroy through the candidate CLI, which waits for the end: the run goes on beside it, and `cli_end` checks
+        that the Operation its JSON result names is the one recorded for the target."""
+        known = {row['id'] for row in self.db(f"SELECT id FROM operations WHERE kind='{kind}' AND target_id={int(target)}")}
+        self.cli_answer = {}
+        self.cli_thread = threading.Thread(target=lambda: self.cli_answer.update(self.run.fleet.cli(words, timeout=300)), daemon=True)
+        self.cli_thread.start()
+
+        def started():
+            rows = [row['id'] for row in self.db(f"SELECT id FROM operations WHERE kind='{kind}' AND target_id={int(target)}") if row['id'] not in known]
+            return rows[0] if rows else None
+
+        return {'id': wait_for(started, f'{words[0]} did not start an Operation', 30, interval=0.25)}
+
+    def cli_end(self, operation):
+        self.cli_thread.join(320)
+        answer = self.cli_answer
+        found = answer.get('json') if isinstance(answer.get('json'), dict) else {}
+        data = found.get('data') if isinstance(found.get('data'), dict) else found
+        require(answer.get('rc') == 0 and data.get('id') == operation and data.get('status') == 'succeeded',
+                f'the CLI did not return the terminal Operation {operation} (exit {answer.get("rc")}, id {data.get("id")}, status {data.get("status")})')
+        return {'args': answer['args'], 'rc': answer['rc'], 'secs': answer['secs'], 'operation': data.get('id'), 'status': data.get('status')}
+
+    def without_feature(self, path, key):
+        """The VPN Node reports dns.publish_records but not its guarded input: admission must take the whole removal to Swamp."""
+        self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
+        wait_for(lambda: 'dns.guarded_records' in self.helper('capabilities', VPN_NODE)['features'], 'the VPN Node did not report again', 20)
+        report = self.helper('report-without-feature', VPN_NODE, 'dns.guarded_records')
+        require('dns.publish_records' in report['actions'] and 'dns.guarded_records' not in report['features'],
+                'the VPN Node report still lists the guarded DNS input')
+        try:
+            admitted = self.admitted('DELETE', path, {}, key)
+        finally:
+            self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
+        return admitted, None, report
 
     def dns_done(self, operation):
         def done():
@@ -331,11 +378,15 @@ class RouteLane(CloneLane):
         before = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
         require(self.present(before['route']) and before['resources']['incus'] == ['Running'], f'Route-owning clone {instance} is not live')
         started = time.monotonic()
-        admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
+        if via == 'engine':
+            admitted = self.cli_destroy(['instance:destroy', str(instance), '--yes', '--force'], 'instance.destroy', instance)
+        else:
+            admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
         operation = int(admitted['id'])
         sibling_during = self.healthy(sibling)
         terminal = self.terminal(operation, seconds=300)
         elapsed = round((time.monotonic() - started) * 1000)
+        cli = self.cli_end(operation) if via == 'engine' else None
         summary = self.operation(operation, via)
         removal = self.removal(operation)
         after = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
@@ -344,7 +395,8 @@ class RouteLane(CloneLane):
                 and not self.db(f"SELECT id FROM routes WHERE domain='{domain}'") and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'Destroy {operation} did not withdraw the Route, free its holds and remove the clone')
         result = {'instance': instance, 'domain': domain, 'operation': summary, 'removal': removal, 'before': before, 'after': after,
-                  'sibling': {'before': sibling_before, 'during': sibling_during, 'after': self.healthy(sibling)}, 'request_through_terminal_ms': elapsed}
+                  'sibling': {'before': sibling_before, 'during': sibling_during, 'after': self.healthy(sibling)}, 'request_through_terminal_ms': elapsed,
+                  'cli': cli}
         if via == 'engine':
             steps = {step['name']: step for step in summary['steps']}
             require(all(step['status'] == 'done' for step in steps.values())

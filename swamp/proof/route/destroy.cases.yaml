@@ -10,7 +10,7 @@ cases:
     summary: Withdraw additional web-root sites (the only Routes route:destroy removes from a live Instance) on the signed executor, with the 31 s grace, a dropped withdrawal receipt, a withdrawal refused after the DNS answers were withdrawn and its forward retry, and a Swamp fallback when the VPN Node lacks the guarded DNS input; a sibling Route on the same Node answers throughout.
     exclusive: true
     fails_on_base: true
-    timeout: 1500
+    timeout: 1700
     setup:
       - route_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
     act:
@@ -26,6 +26,8 @@ cases:
       - route_destroy: {name: retry, via: engine, sibling: neighbour, fault: partial}
       - route_create: {name: fallback, clone: target, web_root: tests}
       - route_destroy: {name: fallback, via: swamp, sibling: neighbour}
+      - route_create: {name: nofeature, clone: target, web_root: tests}
+      - route_destroy: {name: nofeature, via: swamp, sibling: neighbour, fault: feature}
     expect:
       - route_compare: {engine: signed, swamp: fallback}
       - clone_cleanup: {}
@@ -33,5 +35,5 @@ uncovered:
   "path:withdraw": "One Route Node. A Route served by two Nodes, a leaf-only Node, and a shared PHP-FPM pool kept for another Route are not covered."
   "path:dns": "One VPN Node, which is the Gateway in the nested fleet. Two VPN Nodes and a domain inside the TLD (no DNS step) are not covered."
   "path:failed": "The partial failure is a refused Caddy withdrawal (owned_revision_conflict) after the DNS step applied. A Caddy or PHP-FPM reload failure after a write is not covered."
-  "path:swamp": "Fallback is shown for a VPN Node without the dns family (no dns.publish_records, no dns.guarded_records). An executor that reports the action without the feature needs an older executor build and is not covered."
+  "path:swamp": "Fallback is shown for a VPN Node without dns.publish_records, and for one that reports the action without dns.guarded_records (its report rewritten as an older executor's, until its next report)."
   "path:refused": "Public Routes, Process proxies, --offline, LAN rules and an Ingress edge take Swamp at admission; their refusals are covered by Gateway tests only."
