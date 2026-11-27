@@ -55,3 +55,14 @@ Deno.test("a failed Linux Homebrew removal still makes the prefix readable, and 
     assertEquals(unprepared["Make the Homebrew prefix readable"].status, "skipped");
     assertEquals([brew["Remove the package"].status, brew["Make the Homebrew prefix readable"].status, brew["Assert package state"].status], ["failed", "succeeded", "failed"]);
 });
+
+Deno.test("a Linux Homebrew removal whose package step was skipped skips the repair, and the run succeeds", () => {
+    const ran = runWorkflow("workflow-operation-tool-remove-209.yaml", "tool.remove", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null, package_owned: true,
+    }, {
+        "Prepare package commands": { outputs: { remove_repository: false, readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, remove: false } },
+        "Decode package state": { outputs: { compliant: true, absent: true, present: false } },
+    }, () => ({}));
+    assertEquals([ran["Remove the package"].status, ran["Make the Homebrew prefix readable"].status, ran["Assert package state"].status], ["skipped", "skipped", "succeeded"]);
+});

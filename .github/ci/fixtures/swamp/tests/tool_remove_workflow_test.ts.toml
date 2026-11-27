@@ -4,6 +4,7 @@ cases = [
   "a removal step that succeeded is checked as before",
   "a Linux Homebrew removal makes the prefix readable after its package step, and an apt removal does not",
   "a failed Linux Homebrew removal still makes the prefix readable, and the run keeps the failure",
+  "a Linux Homebrew removal whose package step was skipped skips the repair, and the run succeeds",
 ]
 file = "swamp/tests/tool_remove_workflow_test.ts"
 cost = 1

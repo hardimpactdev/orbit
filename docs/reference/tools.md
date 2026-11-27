@@ -171,7 +171,9 @@ Adoption requires a single installed version, no adoption block, and constraint 
 
 The [Node agent](/reference/node-agent#packages) observer reads `/home/linuxbrew/.linuxbrew` with no capability, so it sees only what others can read. Orbit applies one rule after each Linux brew install, update or removal, and in every Tools phase of a Node converge. Each entry under the prefix that others cannot read becomes readable for group and others, and each such directory also becomes searchable, as Homebrew sets them up by default.
 
-The rule touches only entries that lack those bits and keeps owner and write bits, so a second run changes nothing. It changes only entries that belong to the prefix: it does not descend into another file system mounted inside it, and it skips a file with more than one hard link. A direct Linux brew write or removal applies it after its package step whatever that step did, and a failed step still fails the run. The Tools phase reports a change only when it changed an entry. macOS prefixes are left as they are.
+The rule touches only entries that lack those bits and keeps owner and write bits, so a second run changes nothing. It changes only entries that belong to the prefix: it does not descend into another file system mounted inside it, and it skips a file with more than one hard link.
+
+A direct Linux brew write or removal applies the rule after its package step succeeded or failed, never when that step was skipped. A failed step still fails the run. The Tools phase reports a change only when it changed an entry. macOS prefixes are left as they are.
 
 ### Homebrew casks
 

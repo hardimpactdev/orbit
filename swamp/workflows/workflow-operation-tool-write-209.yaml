@@ -73,9 +73,10 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-apply-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ ["timeout","900"] + steps["Choose package action"].outputs.write }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-apply-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Make the Homebrew prefix readable
     labels: {role: swamp}
-    # Whatever the package step did: a failed one can leave files behind, and the run keeps its failure. The rule changes nothing twice.
+    # After the package step succeeded or failed: a failed one can leave files behind, and the run keeps its failure. A skipped package
+    # step (a refusal or a no-op) skips the repair too.
     dependsOn: [{step: Apply the package, condition: {type: always}}]
-    guard: ${{ !("Prepare package commands" in steps) || steps["Prepare package commands"].status != "succeeded" || steps["Prepare package commands"].outputs.readable == null }}
+    guard: ${{ !("Apply the package" in steps) || steps["Apply the package"].status == "skipped" || !("Prepare package commands" in steps) || steps["Prepare package commands"].status != "succeeded" || steps["Prepare package commands"].outputs.readable == null }}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tool-brew-readable-" + string(inputs.node_id) }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 305, argv: '${{ ["timeout","300"] + steps["Prepare package commands"].outputs.readable }}'}, globalArgs: {name: '${{ "tool-brew-readable-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Check apt package

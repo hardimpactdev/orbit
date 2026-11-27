@@ -81,3 +81,14 @@ Deno.test("a failed Linux Homebrew write still makes the prefix readable, and th
     assertEquals(unprepared["Make the Homebrew prefix readable"].status, "skipped");
     assertEquals([brew["Apply the package"].status, brew["Make the Homebrew prefix readable"].status, brew["Assert package state"].status], ["failed", "succeeded", "failed"]);
 });
+
+Deno.test("a Linux Homebrew write whose package step was skipped skips the repair, and the run succeeds", () => {
+    const ran = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, {
+        "Prepare package commands": { outputs: { readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, mutate: false } },
+        "Decode package state": { outputs: { compliant: true, present: true } },
+    }, () => ({}));
+    assertEquals([ran["Apply the package"].status, ran["Make the Homebrew prefix readable"].status, ran["Assert package state"].status], ["skipped", "skipped", "succeeded"]);
+});
