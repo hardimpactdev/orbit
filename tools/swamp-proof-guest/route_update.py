@@ -180,7 +180,7 @@ raise SystemExit(1)'''
         self.set_route_family(via == 'engine')
         before = {'old': self.state(old, scope), 'new': self.state(new, scope)}
         require(self.in_tld(before['old']) and self.gone(before['new']), f'Route {old} is not live alone before its update')
-        key = name + '-route-update'
+        key = f'{name}-{to}-route-update'
         failed = self.failed_after_cutover(route, old, new, key, sibling) if fault == 'partial' else None
         started = time.monotonic()
         cli = interrupted = None
