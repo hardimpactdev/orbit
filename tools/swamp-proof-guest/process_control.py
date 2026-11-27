@@ -59,7 +59,8 @@ class ProcessLane(CloneLane):
         return {'row': self.process_row(fixture['id']), 'node': live}
 
     def latest(self, kind, target):
-        rows = self.db(f"SELECT id FROM operations WHERE kind='{kind}' AND target_id='{target}' ORDER BY id DESC LIMIT 1")
+        match = f"json_extract(input,'$.id')='{target}'" if kind.startswith('schedule.') else f"target_id='{target}'"
+        rows = self.db(f"SELECT id FROM operations WHERE kind='{kind}' AND {match} ORDER BY id DESC LIMIT 1")
         return int(rows[0]['id']) if rows else 0
 
     # Fixtures ----------------------------------------------------------------------------------------------------------------
@@ -85,7 +86,7 @@ class ProcessLane(CloneLane):
         self.record(f'fixture-{name}', {'process': process, 'unit': unit, 'create_operation': operation, **self.state(name)})
         return process
 
-    def schedule(self, name, calendar):
+    def schedule(self, name, calendar, retained=False):
         args = ['schedule:create', f'{self.prefix}-{name}', '--node=' + str(self.node_id), '--calendar=' + calendar,
                 '--command=/bin/true', '--no-start', '--idempotency-key=' + self.prefix + '-create-' + name]
         created = self.cli(*args, timeout=300)
@@ -93,6 +94,19 @@ class ProcessLane(CloneLane):
         rows = self.db(f"SELECT id,trigger FROM schedules WHERE name='{self.prefix}-{name}'")
         require(len(rows) == 1, f'schedule:create {name} did not record one Schedule')
         self.schedules[name] = {'id': rows[0]['id'], 'trigger': rows[0]['trigger'], 'unit': f'orbit-schedule-{rows[0]["id"]}.timer'}
+        if retained:
+            # Fixture only: the public schedule:create makes a native cron Schedule; a host Node timer is a retained row from before
+            # ADR 0244. The lane turns its own new row into one and writes its disabled timer pair on the Node, after checking both
+            # names are free there.
+            unit = self.schedules[name]['unit']
+            base = '/etc/systemd/system/' + unit[:-len('.timer')]
+            self.guest(self.node, 'sh', '-c', 'test ! -e "$1.timer" && test ! -e "$1.service"', 'sh', base)
+            self.put(self.node, base + '.service', '[Service]\nType=oneshot\nExecStart=/bin/true\n')
+            self.put(self.node, base + '.timer', f'[Timer]\nOnCalendar={calendar}\n\n[Install]\nWantedBy=timers.target\n')
+            self.systemctl(self.node, 'daemon-reload')
+            self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '/home/orbit/.orbit/gateway.sqlite',
+                       f"UPDATE schedules SET trigger='node', status='disabled', desired_timer_state='disabled' WHERE id='{rows[0]['id']}'")
+            self.schedules[name].update(trigger='node', files=[base + '.timer', base + '.service'])
         self.record(f'fixture-{name}', {**self.schedules[name], 'row': self.schedule_row(rows[0]['id'])})
         return rows[0]['id']
 
@@ -155,15 +169,16 @@ class ProcessLane(CloneLane):
             started = time.monotonic()
             admitted = self.admitted('POST', path + '/stop', {}, key)
             operation = int(admitted['id'])
-            wait_for(lambda: (rows := self.steps(operation)) and rows[0]['first_order_expires_ms'] and rows, f'Stop {operation} did not publish', 10)
-            queued = wait_for(lambda: self.helper('pending-order', self.node_id, operation, target, 'converge', self.PRESENT),
-                              f'Stop {operation} had no signed order on JetStream', 8)
-            removal = self.api('DELETE', path, {}, key + '-remove')
-            second = self.api('POST', path + '/start', {}, key + '-start')
+            # The order expires seconds after its send: the engine stops and the Node resumes at once, and the fence is probed after.
+            wait_for(lambda: (rows := self.steps(operation)) and rows[0]['first_order_expires_ms'] and rows, f'Stop {operation} did not publish', 10, 0.1)
             self.systemctl('gateway', 'stop', ENGINE_UNIT)
+            queued = self.helper('pending-order', self.node_id, operation, target, 'converge', self.PRESENT)
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, target, 'converge', self.PRESENT),
                                f'Stop {operation} left no receipt to drop', 20)
+            require(not dropped.get('kept'), f'Stop {operation}: the Node answered {dropped.get("status")} {dropped.get("code")}, not a success to drop')
+            removal = self.api('DELETE', path, {}, key + '-remove')
+            second = self.api('POST', path + '/start', {}, key + '-start')
             node_stopped = self.unit(fixture['unit'])
             fenced = self.admitted('POST', path + '/stop', {}, key)
             busy_after_node = self.api('DELETE', path, {}, key + '-remove-after')
@@ -179,7 +194,7 @@ class ProcessLane(CloneLane):
         summary = self.operation(operation, 'engine')
         journal = summary['journal']
         require(summary['steps'][0]['sends'] >= 2 and sum(item['record'] == 'open' for item in journal) == 1
-                and [item['outcome']['status'] for item in journal if item['record'] == 'done'] == ['done'],
+                and [item['outcome']['status'] for item in journal if item['record'] == 'done'] == ['applied'],
                 f'Stop {operation} did not replay one execution on a second send')
         self.record('replay', {'operation': summary, 'queued_signed_order': queued, 'dropped': dropped,
                                'fenced_while_outstanding': {'process_destroy': removal[2], 'process_start': second[2],
@@ -264,6 +279,10 @@ class ProcessLane(CloneLane):
             if self.schedule_row(fixture['id']) is not None:
                 answer = self.cli('schedule:destroy', fixture['id'], '--yes', '--idempotency-key=' + self.prefix + '-cleanup-' + name, timeout=300)
                 require(answer['rc'] == 0, f'cleanup of Schedule {fixture["id"]}: exit {answer["rc"]}')
+        for fixture in self.schedules.values():
+            for path in fixture.get('files', []):
+                self.guest(self.node, 'rm', '-f', path)
+        self.systemctl(self.node, 'daemon-reload')
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'processes_removed': [f['id'] for f in self.processes.values()],

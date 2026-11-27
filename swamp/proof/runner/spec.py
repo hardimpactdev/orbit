@@ -57,7 +57,7 @@ STEPS = {
     'sync_compare': (('expect',), {'engine', 'swamp'}, set()),
     'process_fixture': (('setup',), set(), set()),
     'process_create': (('act',), {'name'}, {'runtime', 'start'}),
-    'schedule_create': (('act',), {'name', 'calendar'}, set()),
+    'schedule_create': (('act',), {'name', 'calendar'}, {'retained'}),
     'process_control': (('act',), {'name', 'via'}, {'sibling', 'on_demand'}),
     'process_replay': (('act',), {'name'}, set()),
     'process_retry': (('act',), {'name'}, set()),

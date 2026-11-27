@@ -80,8 +80,10 @@ if ($mode === 'configuration') {
             echo "null\n";
             exit;
         }
-        if (! $isOrder && ! in_array($line['status'], ['done', 'output'], true)) {
-            throw new RuntimeException('The queued receipt of this proof step is not a success.');
+        if (! $isOrder && ! in_array($line['status'], ['done', 'output', 'applied'], true)) {
+            // Not dropped: the caller reports the receipt's own status and code.
+            echo json_encode(['kept' => true, 'status' => $line['status'], 'code' => $line['code'] ?? $line['reason'] ?? null], JSON_THROW_ON_ERROR), "\n";
+            exit;
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
             throw new RuntimeException('The proof receipt was not dropped.');

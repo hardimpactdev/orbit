@@ -6,8 +6,8 @@ baseline: [operations]
 cases:
   - id: signed-and-swamp-process-control
     batch: fresh-fleet
-    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp", "path:refused"]
-    summary: Stop and start a host systemd Process and a host Docker Process through the signed executor, enable a Node timer there, replay a dropped stop receipt behind the Process fence, retry a start that failed on a missing unit, run the same shapes on Swamp with the family absent, and keep a native cron Schedule on Swamp; a sibling Process stays as it was.
+    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp"]
+    summary: Stop and start a host systemd Process and a host Docker Process through the signed executor, replay a dropped stop receipt behind the Process fence, retry a start that failed on a missing unit, and run the same shape on Swamp with the family absent; a sibling Process stays as it was.
     exclusive: true
     fails_on_base: true
     timeout: 1800
@@ -18,22 +18,17 @@ cases:
       - process_create: {name: unit, start: true}
       - process_create: {name: box, runtime: docker, start: true}
       - process_create: {name: legacy, start: true}
-      - schedule_create: {name: timer, calendar: "*-*-* 03:00:00"}
-      - schedule_create: {name: legacytimer, calendar: "*-*-* 04:00:00"}
-      - schedule_create: {name: cron, calendar: "0 3 * * *"}
       - process_control: {name: unit, via: engine, sibling: sibling}
       - process_control: {name: box, via: engine, sibling: sibling}
-      - schedule_enable: {name: timer, via: engine}
       - process_replay: {name: unit}
       - process_retry: {name: unit}
       - process_control: {name: legacy, via: swamp, sibling: sibling}
-      - schedule_enable: {name: legacytimer, via: swamp}
-      - process_refused: {name: cron, kind: schedule.enable}
     expect:
       - process_compare: {}
       - process_cleanup: {}
 uncovered:
-  "path:engine": "Host systemd and host Docker Processes and a host Node timer on app-dev. An on-demand host Process (boot policy disabled while running) is covered by Gateway and executor tests only: the public process:create makes no on-demand host Process."
-  "path:refused": "A native cron Schedule stays on Swamp here. A Node's host Horizon Process (drain-waiting stop), an Instance-container (Incus) Process, a Gateway release container and a production_control timer are refused at admission by Gateway tests only: the nested fleet has no Node Horizon Process row and no Instance container in this case."
+  "path:engine": "Host systemd and host Docker Processes on app-dev. An on-demand host Process (boot policy disabled while running) is covered by Gateway and executor tests only: the public process:create makes no on-demand host Process."
+  "schedule:enable": "Not proven on the fleet. The public schedule:enable admits only an Instance Schedule (schedule.target_invalid for a Node Schedule), and the engine admits only a retained host Node-timer row with no container, which the nested fleet has no public way to make: schedule:create makes a native cron Schedule. Gateway and executor tests cover the Node-timer branch and the native cron refusal."
+  "path:refused": "A host Horizon Process (drain-waiting stop), an Instance-container (Incus) Process, a Gateway release container and a production_control timer are refused at admission by Gateway tests only: the nested fleet has no Node Horizon Process row and no Instance container in this case."
   "path:receipt-lost": "The fault drops the stop receipt; lost receipts of start and enable are covered by Gateway and executor tests."
   "path:step-failed": "The failure is a missing unit file (process.unit_missing); apply and read-back failures are covered by executor tests."
