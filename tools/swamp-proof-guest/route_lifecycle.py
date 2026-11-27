@@ -27,6 +27,8 @@ GRACE_MS = 31_000
 RECORDS = '/etc/dnsmasq.d/orbit-records.conf'
 CADDYFILE = '/etc/caddy/Caddyfile'
 LEAVES = '/etc/caddy/orbit-certificates'
+# Names no Route withdrawal may change: the Gateway's `.orbit` services and a name under each Instance suffix the VPN Node answers.
+UNAFFECTED_NAMES = ('gateway.orbit', 'reverb.orbit', 'swamp.orbit', 'review-check.nested-prod', 'review-check.nested-dev')
 DNS_QUERY = '''import json, socket, struct, sys
 name, server = sys.argv[1], sys.argv[2]
 query = struct.pack('>HHHHHH', 0x5a5a, 0x0100, 1, 0, 0, 0) + b''.join(bytes([len(part)]) + part.encode() for part in name.split('.')) + b'\\0' + struct.pack('>HH', 1, 1)
@@ -226,7 +228,7 @@ class RouteLane(CloneLane):
 
     @traced
     def route_destroy(self, name, via, sibling, fault=None):
-        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial', 'feature')
+        require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'partial', 'feature', 'restart', 'cancel')
                 and (fault is None or (fault == 'feature') == (via == 'swamp')), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
         sibling_before = self.healthy(sibling)
@@ -235,8 +237,10 @@ class RouteLane(CloneLane):
         scope = self.routes_made[name]['scope']
         before = self.state(domain, scope)
         require(self.present(before), f'Route {domain} is not live before its removal')
+        names_before = self.served_names(domain)
         path, key = f'routes/{route}', name + '-route-destroy'
         failed = self.partial_withdrawal(name, path, key, sibling) if fault == 'partial' else None
+        cancelled = self.cancelled_in_grace(path, key, domain, scope, route, sibling) if fault == 'cancel' else None
         started = time.monotonic()
         cli = report = None
         if fault == 'receipt':
@@ -249,7 +253,8 @@ class RouteLane(CloneLane):
         else:
             admitted, interrupted = self.admitted('DELETE', path, {}, key), None
         operation = int(admitted['id'])
-        grace = self.in_grace(operation, domain, scope) if via == 'engine' and fault is None else None
+        grace = self.in_grace(operation, domain, scope) if via == 'engine' and fault in (None, 'restart', 'cancel') else None
+        restarted = self.restart_in_grace(operation) if fault == 'restart' else None
         sibling_during = self.healthy(sibling)
         self.terminal(operation, seconds=240)
         elapsed = round((time.monotonic() - started) * 1000)
@@ -259,10 +264,13 @@ class RouteLane(CloneLane):
         require(self.absent(after) and not self.db(f'SELECT id FROM routes WHERE id={route}') and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'route.destroy {operation} left the Route, its answers or its holds: {after}')
         sibling_after = self.healthy(sibling)
+        names_after = self.served_names(domain)
+        require(names_after == names_before, f'route.destroy {operation} changed another name the VPN Node answers: {names_before} -> {names_after}')
         result = {'route': route, 'domain': domain, 'operation': summary, 'before': before, 'after': after, 'fault': fault,
                   'sibling': {'domain': self.routes_made[sibling]['domain'], 'before': sibling_before, 'during': sibling_during, 'after': sibling_after},
                   'request_through_terminal_ms': elapsed, 'partial_failure': failed, 'interrupted': interrupted, 'in_grace': grace,
-                  'cli': cli, 'report_without_feature': report}
+                  'cli': cli, 'report_without_feature': report, 'restarted': restarted, 'cancelled_first': cancelled,
+                  'served_names': {'before': names_before, 'after': names_after}}
         if via == 'engine':
             steps = {step['name']: step for step in summary['steps']}
             require(all(step['status'] == 'done' for step in steps.values()) and {'dns-0', 'grace', f'withdraw-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
@@ -270,6 +278,10 @@ class RouteLane(CloneLane):
             grace_ms = steps[f'withdraw-{self.node_id}']['first_sent_ms'] - steps['dns-0']['done_ms']
             require(grace_ms >= GRACE_MS, f'route.destroy {operation} withdrew the site {grace_ms} ms after the DNS receipt')
             result['grace_ms'] = grace_ms
+            if fault == 'restart':
+                # Resumed from the stored DNS receipt time: not from zero after the restart, and the withdrawal sent once.
+                require(grace_ms < GRACE_MS + 5_000 and steps[f'withdraw-{self.node_id}']['sends'] == 1,
+                        f'route.destroy {operation} did not resume the grace after the restart: {grace_ms} ms, {steps[f"withdraw-{self.node_id}"]["sends"]} sends')
             result['journal'] = self.engine_receipts(summary, operation)
             if fault == 'receipt':
                 withdraw = steps[f'withdraw-{self.node_id}']
@@ -316,6 +328,57 @@ class RouteLane(CloneLane):
         finally:
             self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
         return admitted, None, report
+
+    def served_names(self, withdrawn):
+        """`dig +short` against the VPN Node for the fixed unaffected names and every other Route's name in its records: the engine
+        rewrites the whole records and catalog files, so each must answer, and answer the same before and after."""
+        code = '''import re, sys
+names = set()
+for line in open(sys.argv[1]):
+    found = re.match(r"host-record=([^,]+),", line) or re.match(r"address=/([^/.][^/]*)/", line)
+    if found and found.group(1) != sys.argv[2]:
+        names.add(found.group(1))
+print("\\n".join(sorted(names)))'''
+        names = sorted({*UNAFFECTED_NAMES, *self.guest('gateway', 'python3', '-c', code, RECORDS, withdrawn).split()})
+        answers = {name: self.guest('gateway', 'dig', '+short', '+time=3', '+tries=1', f'@{self.gateway_address}', name).split() for name in names}
+        require(all(answers.values()), f'a name the VPN Node serves did not answer: {answers}')
+        return answers
+
+    def restart_in_grace(self, operation):
+        """Restarts orbit-gateway-engine 12 s into the grace: the step's time and deadline must survive it."""
+        done = self.dns_done(operation)['dns-0']['done_ms']
+        time.sleep(max(0.0, (done + 12_000) / 1000 - time.time()))
+        restart_ms = round(time.time() * 1000)
+        self.systemctl('gateway', 'restart', 'orbit-gateway-engine.service')
+        withdraw = next(row for row in self.steps(operation) if row['name'] == f'withdraw-{self.node_id}')
+        require(withdraw['first_sent_ms'] is None and self.systemctl('gateway', 'is-active', 'orbit-gateway-engine.service') == 'active',
+                f'route.destroy {operation} withdrew before the grace ended, or the engine did not come back')
+        grace = next(row for row in self.steps(operation) if row['name'] == 'grace')
+        current = self.db(f'SELECT current_step FROM operations WHERE id={operation}')[0]['current_step']
+        require(current == 'grace', f'route.destroy {operation} reports {current} as its current step during the grace')
+        return {'dns_done_ms': done, 'restart_ms': restart_ms, 'restart_after_dns_ms': restart_ms - done, 'grace_row_after_restart': grace,
+                'current_step_after_restart': current}
+
+    def cancelled_in_grace(self, path, key, domain, scope, route, sibling):
+        """A cancel 10 s into the grace: the Operation ends cancelled, nothing is withdrawn from the Route Node, and nothing is
+        later either. The DNS answers stay withdrawn and the Route is kept; the case then destroys it again."""
+        operation = int(self.admitted('DELETE', path, {}, key + '-cancel')['id'])
+        done = self.dns_done(operation)['dns-0']['done_ms']
+        sibling_in_grace = self.healthy(sibling)
+        time.sleep(max(0.0, (done + 10_000) / 1000 - time.time()))
+        code, row, error = self.api('POST', f'operations/{operation}/cancel', {}, key + '-cancel-request')
+        require(code in (200, 202), f'cancel of {operation}: HTTP {code} {error}')
+        terminal = self.terminal(operation, expect='cancelled', seconds=60)
+        cancelled_ms = round(time.time() * 1000)
+        # Past the grace the withdrawal would have run: it must still not have.
+        time.sleep(max(0.0, (done + GRACE_MS + 5_000) / 1000 - time.time()))
+        left = self.state(domain, scope)
+        steps = {step['name']: step for step in self.steps(operation)}
+        require(steps[f'withdraw-{self.node_id}']['first_sent_ms'] is None and left['caddy_lines'] > 0 and left['leaf_paths'] == 1 and left['dns_answers'] == 0
+                and self.db(f'SELECT id FROM routes WHERE id={route}') and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
+                f'route.destroy {operation} withdrew after its cancel, or kept the Route Nodes held: {left}')
+        return {'operation': operation, 'status': terminal['status'], 'error_code': terminal.get('error_code'), 'dns_done_ms': done,
+                'cancel_after_dns_ms': cancelled_ms - done, 'steps': steps, 'left_after_grace': left, 'sibling_in_grace': sibling_in_grace}
 
     def dns_done(self, operation):
         def done():

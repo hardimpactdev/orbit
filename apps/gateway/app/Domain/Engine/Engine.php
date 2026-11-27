@@ -141,8 +141,7 @@ final readonly class Engine
         $stalled = OperationEngineStep::query()->where('operation_id', $operation->id)
             ->where(static fn ($query) => $query->where('status', 'pending')
                 ->when(self::requiresReceipt($operation), static fn ($query) => $query->orWhereIn('status', ['done', 'failed']))
-                ->orWhere(static fn ($sent) => $sent->where('status', 'sent')->where('resend_at_ms', '<', $now - self::NudgeGraceMs))
-                ->orWhere(static fn ($waiting) => $waiting->where('status', 'waiting')->where('resend_at_ms', '<', $now - self::NudgeGraceMs)))
+                ->orWhere(static fn ($sent) => $sent->where('status', 'sent')->where('resend_at_ms', '<', $now - self::NudgeGraceMs)))
             ->exists();
         if (! $stalled) {
             return;
@@ -271,8 +270,9 @@ final readonly class Engine
     {
         $sends = [];
         $locals = [];
+        $waits = [];
         $end = null;
-        $operation = DB::transaction(function () use ($operationId, $deadline, &$sends, &$locals, &$end): ?Operation {
+        $operation = DB::transaction(function () use ($operationId, $deadline, &$sends, &$locals, &$waits, &$end): ?Operation {
             $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
             if ($operation === null || ! self::owns($operation) || $operation->status->terminal()) {
                 return null;
@@ -285,6 +285,10 @@ final readonly class Engine
             }
             $now = self::nowMs();
             $steps = self::steps($operationId, lock: true);
+            $definition = $this->kinds->definition($operation->kind);
+            // A waiting Gateway step's time, from the steps as recorded now: null when it may run at once.
+            $until = static fn (OperationEngineStep $step): ?int => $step->node_id === 0 && $definition instanceof EngineWait
+                ? $definition->waitUntilMs($operation, $step->name, new EngineRun($operationId, $steps, 0, null)) : null;
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
             $cancel = $operation->cancel_requested_at !== null;
@@ -316,15 +320,23 @@ final readonly class Engine
 
                     continue;
                 }
-                // A timed Gateway step (EngineStepNotYet) runs again once its deadline delivers at its time.
-                $ready = ($step->status === 'pending' && array_all($step->after, $done))
-                    || ($step->status === 'waiting' && $now >= ($step->resend_at_ms ?? PHP_INT_MAX));
+                $ready = $step->status === 'pending' && array_all($step->after, $done);
                 // A receipt-bound run's Gateway step whose worker was lost after it was marked sent runs again: each is idempotent.
-                $overdue = $deadline && $step->status === 'sent' && ($step->node_id > 0 || $receiptBound) && $now >= ($step->resend_at_ms ?? PHP_INT_MAX);
+                $overdue = $deadline && $step->status === 'sent' && $now >= ($step->resend_at_ms ?? PHP_INT_MAX)
+                    && ($step->node_id > 0 || $receiptBound || $until($step) !== null);
                 if (! $ready && ! $overdue) {
                     continue;
                 }
-                if ($receiptBound && $step->node_id > 0 && ! self::withinReplayWindow($step, $now + ExecutorOrderSigner::StepExpiresAfterMs)) {
+                // A wait keeps its time on the step and its deadline on the bus: nothing holds a process, so a restart resumes
+                // what is left, and a cancel ends the run before the step runs.
+                $wait = $until($step);
+                if ($wait !== null && $wait > $now) {
+                    $step->update(['status' => 'sent', 'sends' => $step->sends + 1, 'first_sent_ms' => $step->first_sent_ms ?? $now, 'resend_at_ms' => $wait]);
+                    $waits[$step->name] = [$step->sends, $wait];
+
+                    continue;
+                }
+                if ($receiptBound && ! self::withinReplayWindow($step, $now + ExecutorOrderSigner::StepExpiresAfterMs)) {
                     $step->update(['resend_at_ms' => null]);
 
                     continue;
@@ -348,10 +360,11 @@ final readonly class Engine
             $state = $operation->state ?? [];
             if ($end !== null) {
                 $state['engine'] = [...ValidatedData::object($state['engine'] ?? []), 'finished_ms' => $now];
-                $sends = $locals = [];
+                $sends = $locals = $waits = [];
             }
             $state['native_progress'] = self::progress($operationId, $steps);
-            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (array_key_last($sends) ?? (end($locals) ?: $operation->current_step)) : null]);
+            // A started wait is the current step until it ends; an early event keeps it.
+            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (array_key_last($sends) ?? (end($locals) ?: (array_key_last($waits) ?? $operation->current_step))) : null]);
 
             return $operation;
         });
@@ -359,6 +372,14 @@ final readonly class Engine
             return;
         }
         $definition = $this->kinds->definition($operation->kind);
+        foreach ($waits as $name => [$attempt, $atMs]) {
+            try {
+                $this->bus->scheduleDeadline($operationId, $name, $attempt, $atMs);
+            } catch (Throwable $exception) {
+                // The step keeps its time: the reconciler's nudge runs it once that time has passed.
+                report($exception);
+            }
+        }
         if ($this->send($operation, $definition, $sends)) {
             $this->advance($operationId);
 
@@ -529,10 +550,6 @@ final readonly class Engine
     {
         try {
             $line = ['status' => 'output', 'stdout' => $definition->local($operation, $name, $this->run($operation->id))];
-        } catch (EngineStepNotYet $wait) {
-            $this->park($operation, $name, $wait->atMs);
-
-            return;
         } catch (Throwable $exception) {
             report($exception);
             $line = ['status' => 'failed', 'code' => 'engine.'.$name.'_failed'];
@@ -542,24 +559,6 @@ final readonly class Engine
             self::record($step, $line);
         });
         $this->advance($operation->id);
-    }
-
-    /** Parks a timed Gateway step until `$atMs` and schedules its deadline; the reconciler's nudge covers a lost schedule. */
-    private function park(Operation $operation, string $name, int $atMs): void
-    {
-        $step = DB::transaction(static function () use ($operation, $name, $atMs): OperationEngineStep {
-            $step = OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', $name)->lockForUpdate()->firstOrFail();
-            if ($step->status === 'sent') {
-                $step->update(['status' => 'waiting', 'resend_at_ms' => $atMs]);
-            }
-
-            return $step;
-        });
-        try {
-            $this->bus->scheduleDeadline($operation->id, $name, $step->sends, $atMs);
-        } catch (Throwable $exception) {
-            report($exception);
-        }
     }
 
     private function run(int $operationId): EngineRun

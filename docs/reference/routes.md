@@ -335,7 +335,7 @@ Every Caddy build renders from stored state: creation sets the publication flag 
 
 #### Withdrawal grace period
 
-Private DNS answers carry a 30-second TTL, so transitions wait 31 seconds after moving DNS before withdrawing the old site (releasing locks during the wait). `instance:destroy` skips the grace wait because the domain is being deleted permanently.
+Private DNS answers carry a 30-second TTL, so transitions wait 31 seconds after moving DNS before withdrawing the old site (releasing locks during the wait). `instance:destroy` skips the grace wait because the domain is being deleted permanently. On the [Gateway engine](/reference/gateway-engine#routedestroy), `route:destroy` measures the wait from the stored DNS receipt time: a restart during it waits only what is left, and a cancel during it withdraws nothing.
 
 ## Publish each service on its own hostname
 

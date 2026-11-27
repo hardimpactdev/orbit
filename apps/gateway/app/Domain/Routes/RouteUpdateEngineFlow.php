@@ -8,8 +8,8 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
-use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\EngineWait;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RouteWriteNodes;
@@ -35,7 +35,7 @@ use RuntimeException;
  * - `dns-<i>`: route.destroy's guarded `dns.publish_records` on each VPN Node ([self::guardedDnsInput]);
  * - `probe-<i>`: the TLS handshake with each serving Node under the new name;
  * - `cutover`: the Gateway commits the replacement authoritative and the old Route `retiring` ([self::cutover]);
- * - `grace`: the DNS grace, timed from the stored DNS receipts;
+ * - `grace`: the DNS grace, 31 s from the stored DNS receipts, as route.destroy's resumable wait ([EngineWait]);
  * - `final-<node>`: `route.publish_site` with the retire phase, the lasting Caddyfile and the late leaves, read back by the action;
  * - `withdraw-<node>`: route.destroy's `route.withdraw_site` for the old name and its leaves, over the lasting Caddyfile ([self::removalInput]);
  * - `sibling-<node>`: another Route on that Node still answers.
@@ -44,7 +44,7 @@ use RuntimeException;
  * post-cutover steps, from the plan and receipts that the chain's cutover Operation stored. A public Route, a publication
  * change, a LAN or Ingress rule and every URL write (`APP_URL` lines and whole `.env` files) start on Swamp.
  */
-final readonly class RouteUpdateEngineFlow implements EngineDefinition
+final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWait
 {
     public const string Kind = 'route.update';
 
@@ -52,7 +52,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     public const string RemovalAction = 'route.withdraw_site';
 
     /** TTL 30 s and 1 s: resolvers that honor the TTL stop asking for the old name before its site leaves. */
-    private const int GraceMs = 31_000;
+    private const int GraceMs = RouteDestroyEngineFlow::GraceMs;
 
     /** Each step prefix's chart label (NativeRouteUpdateProjection::StepCodes). */
     private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
@@ -418,19 +418,32 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         });
     }
 
-    /** The grace from the stored DNS receipts: until it ends the step waits without a worker; a resend or a retry never shortens it. */
+    /**
+     * The grace ends 31 s after the last stored DNS receipt: on a forward retry, the receipts of the chain's Operation that committed
+     * the cutover, so a resend or a retry never shortens it. The engine keeps that time on the step and schedules its deadline.
+     */
+    public function waitUntilMs(Operation $operation, string $step, EngineRun $run): ?int
+    {
+        $received = self::lastDns(self::source($operation, $run)['run']);
+
+        return $step === 'grace' && $received > 0 ? $received + self::GraceMs : null;
+    }
+
+    /** Runs once the engine found the grace over ([waitUntilMs]): it records how long after the DNS receipt that was. */
     private static function grace(EngineRun $chain): string
     {
-        $received = max(array_map(static fn (OperationEngineStep $step): int => (int) $step->done_ms,
-            array_filter($chain->steps, static fn (OperationEngineStep $step): bool => str_starts_with($step->name, 'dns-') && $step->status === 'done')) ?: [0]);
+        $received = self::lastDns($chain);
         if ($received === 0) {
             throw new RuntimeException('route.dns_grace_failed: no stored DNS receipt');
         }
-        if (Engine::nowMs() < $received + self::GraceMs) {
-            throw new EngineStepNotYet($received + self::GraceMs);
-        }
 
-        return 'grace ended '.($received + self::GraceMs);
+        return 'waited '.(Engine::nowMs() - $received).' ms after the DNS receipt';
+    }
+
+    private static function lastDns(EngineRun $chain): int
+    {
+        return max(array_map(static fn (OperationEngineStep $step): int => (int) $step->done_ms,
+            array_filter($chain->steps, static fn (OperationEngineStep $step): bool => str_starts_with($step->name, 'dns-') && $step->status === 'done')) ?: [0]);
     }
 
     /**
