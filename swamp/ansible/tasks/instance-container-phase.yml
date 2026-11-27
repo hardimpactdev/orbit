@@ -636,9 +636,11 @@
   tags: [container, clone, start, processes, seed]
   when: phase in ['container', 'clone', 'start', 'processes', 'seed'] and not start_skips_boot | default(false) | bool
   # The file from the intent, root's and 0755, written only when it is missing or differs; then it runs (InstanceImage::appAccount).
+  # The container may still be booting: its tmp.mount puts a new tmpfs over /tmp, which hides a file written there, so the scratch
+  # copy sits beside the file instead, and goes on any exit.
   ansible.builtin.command:
     argv: >-
-      {{ as_root + ['sh', '-c', 'set -e; t=$(mktemp); cat >"$t"; cmp -s "$t" "$0" || install -D -o 0 -g 0 -m 0755 "$t" "$0"; rm -f "$t"; exec "$0"', container.app_account.path] }}
+      {{ as_root + ['sh', '-c', 'set -e; mkdir -p "${0%/*}"; t=$(mktemp "$0.XXXXXX"); trap \'rm -f "$t"\' EXIT; cat >"$t"; cmp -s "$t" "$0" || install -D -o 0 -g 0 -m 0755 "$t" "$0"; rm -f "$t"; exec "$0"', container.app_account.path] }}
     stdin: "{{ container.app_account.content }}"
     stdin_add_newline: false
   register: app_user_name
