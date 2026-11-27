@@ -90,8 +90,9 @@ def stage_executor(log=False):
         shutil.copyfile(Path(build) / 'target' / 'release' / 'orbit-executor', staged)
         compiler = subprocess.check_output(['rustc', '--version'], text=True, env=environment, timeout=15).strip()
     version = tomllib.loads((CHECKOUT / 'apps/agent/crates/executor/Cargo.toml').read_text())['package']['version']
+    delivery = tomllib.loads((CHECKOUT / 'apps/agent/Cargo.toml').read_text())['package']['version']
     manifest = {'build_head': head, 'agent_tree': source, 'executor_sha256': digest(staged), 'executor_version': version,
-                'rustc': compiler}
+                'agent_delivery_version': delivery, 'rustc': compiler}
     (STAGED / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
@@ -116,6 +117,8 @@ def wait_for(read, message, seconds, interval=0.25):
 
 class CloneLane:
     KINDS = ('instance.create', 'instance.destroy')
+    # The executor family the capability switch adds, an action it then reports, and one it must stop reporting without it.
+    FAMILY, PRESENT, ABSENT = 'instance', 'instance.clone', 'instance.destroy'
 
     def __init__(self, run, fleet_contract):
         self.run = run
@@ -172,6 +175,24 @@ class CloneLane:
         self.guest(node, 'sh', '-eu', '-c', 'umask 022; cat > "$1"', 'sh', path, stdin=content)
 
     def setup(self, repository, branch):
+        self.identify()
+        code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
+                                                             'repository_url': repository, 'default_branch': branch, 'root': '.'})
+        require(code == 201, f'disposable project admission: HTTP {code} {error}')
+        self.project = int(project['id'])
+        self.default = self.create('default', 'swamp', seed=True)['instance']
+        runtime = self.runtime(self.default)
+        require(runtime['seed_commit'], 'the disposable default did not take a seed')
+        default_refusal = self.api('DELETE', f'instances/{self.default}', {'force': True}, 'protected-default')
+        require(default_refusal[0] == 503 and default_refusal[2] == 'operation.kind_unavailable'
+                and self.runtime(self.default) == runtime, 'the protected default did not refuse destroy unchanged')
+        self.record('seed', {'project': self.project, 'instance': self.default, 'commit': runtime['seed_commit'],
+                             'source': repository, 'branch': branch, 'pool': POOL,
+                             'default_refusal': default_refusal[2],
+                             'driver': json.loads(self.incus('query', '/1.0/storage-pools/' + POOL))['driver']})
+
+    def identify(self):
+        """Install the executor built from this checkout and record that the nested Gateway and Node run exactly it."""
         require(self.run.target == self.node and all(self.run.fleet.nodes[role]['instance'] == 'nested-' + role for role in ('gateway', self.node)),
                 'the clone proof only runs on the disposable nested Gateway and app-dev')
         head = git('rev-parse', 'HEAD')
@@ -197,20 +218,6 @@ class CloneLane:
                                 'gateway_tree': git('rev-parse', 'HEAD:apps/gateway'), 'base': git('merge-base', 'HEAD', 'origin/main'),
                                 'node': self.node_id, 'installed_executor_sha256': executor_hashes[0], 'running_executor_sha256': executor_hashes[1],
                                 'nats': self.nats_identity, 'routes': self.routes, 'advertisement': live})
-        code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
-                                                             'repository_url': repository, 'default_branch': branch, 'root': '.'})
-        require(code == 201, f'disposable project admission: HTTP {code} {error}')
-        self.project = int(project['id'])
-        self.default = self.create('default', 'swamp', seed=True)['instance']
-        runtime = self.runtime(self.default)
-        require(runtime['seed_commit'], 'the disposable default did not take a seed')
-        default_refusal = self.api('DELETE', f'instances/{self.default}', {'force': True}, 'protected-default')
-        require(default_refusal[0] == 503 and default_refusal[2] == 'operation.kind_unavailable'
-                and self.runtime(self.default) == runtime, 'the protected default did not refuse destroy unchanged')
-        self.record('seed', {'project': self.project, 'instance': self.default, 'commit': runtime['seed_commit'],
-                             'source': repository, 'branch': branch, 'pool': POOL,
-                             'default_refusal': default_refusal[2],
-                             'driver': json.loads(self.incus('query', '/1.0/storage-pools/' + POOL))['driver']})
 
     def install(self, staged):
         gateway_paths = (GUEST_STATE, '/etc/nats/nats.conf', '/usr/local/bin/nats-server', '/var/lib/nats',
@@ -276,14 +283,14 @@ class CloneLane:
 
     def set_capability(self, enabled):
         if self.capability is not enabled:
-            self.put(self.node, '/etc/orbit/executor/enabled', ('instance\n' if enabled else '') + 'power\nproof\n')
+            self.put(self.node, '/etc/orbit/executor/enabled', (self.FAMILY + '\n' if enabled else '') + 'power\nproof\n')
             self.systemctl(self.node, 'restart', EXECUTOR_UNIT)
             self.capability = enabled
 
         def advertised():
             found = self.helper('capabilities', self.node_id)
             actions = found['actions']
-            return found if 'proof.noop' in actions and ('instance.clone' in actions) is enabled and (enabled or 'instance.destroy' not in actions) else None
+            return found if 'proof.noop' in actions and (self.PRESENT in actions) is enabled and (enabled or self.ABSENT not in actions) else None
 
         return wait_for(advertised, f'executor did not advertise the expected capability ({enabled})', 15)
 
