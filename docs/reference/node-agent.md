@@ -19,7 +19,8 @@ The agent binary also serves signed executor orders in a separate service mode. 
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
-- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10964.0` / agent `0.30.0`, which adds the signed workspace work read).
+- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10964.0` / agent `0.30.0`, which adds the signed workspace work read). This tree builds agent `0.32.0`.
+- **Process family:** Agent `0.31.0` adds the start, stop and Node-timer actions; `0.32.0` adds the restart actions ([the process family](/reference/executor#the-process-family)).
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 

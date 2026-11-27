@@ -110,10 +110,9 @@ The end goes through `ProcessControlProjection`, so the success rows and result 
 
 ### process.restart
 
-The engine restarts the shapes it starts and stops, with the same eligibility, lock and fence; everything else runs `operation-process-control`. The Node must report both `process.read_instance` and `process.restart`; a Node on an older agent takes the whole Swamp path. Two steps run on the Process's Node part (`<node>:process-<id>`):
+The engine restarts the shapes it starts and stops, with the same eligibility, lock and fence; everything else runs `operation-process-control`. The Node must report both `process.read_instance` and `process.restart`; a Node on an older agent takes the whole Swamp path. Two steps run on the Process's Node part (`<node>:process-<id>`).
 
-1. `read` sends `process.read_instance`, which answers the run in place without changing anything.
-2. `restart` waits for `read` and sends `process.restart` with that run pinned in its input, with the Process's boot policy (as for a start; disabled on demand) or the container's image. Every send of the step rebuilds the same input from the recorded `read` output.
+The `read` step sends `process.read_instance`, which answers the run in place without changing anything. The `restart` step waits for it and sends `process.restart` with that run pinned in its input. The input also carries the Process's boot policy, as for a start and disabled on demand, or the container's image. Every send of the step rebuilds the same input from the recorded `read` output.
 
 Each step settles only on an `output` receipt that is its evidence (`ProcessControlEngineFlow::evidence`): `{"instance": …}` for `read`, and `{"restarted": "now"|"already"|"recovered", "instance": <non-empty>}` for `restart`. Any other answer fails the step `engine.receipt_invalid`. A lost receipt is resent under the same step ID, and the Node's journal and the order's attempt file keep it to one restart ([the process family](/reference/executor#the-process-family)). A new Operation reads a new run and restarts once more.
 

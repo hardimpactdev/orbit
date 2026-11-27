@@ -149,6 +149,8 @@ Creating or starting a Process requires an active Instance and Node (`process.ta
 
 `process.start` and `process.stop` of a host systemd unit or a host Docker container can run on the Gateway engine as one signed `process.ensure_state` order. The projection is the same as on Swamp. A cancelled engine run records no error code, as on Swamp. Dev-server, production release, Instance-container, Gateway release-container and a Node's host Horizon units keep the Swamp workflow ([process.start and process.stop](/reference/gateway-engine#processstart-and-processstop)).
 
+`process.restart` of the same shapes runs as two orders: a read of the run in place, then a restart bound to that run. A lost receipt never restarts the Process twice. A Node whose agent does not report both actions keeps the Swamp workflow ([process.restart](/reference/gateway-engine#processrestart)).
+
 ### Update in place
 
 [`process:update`](/cli/process/update) (`PATCH /api/v1/processes/{process}`) updates only the fields you send, keeping the Process ID, name, owner, and desired state intact. Omitted fields keep their stored values; send `working_directory: null` to restore the default, or an empty map/list (`{}` / `[]`) to clear a collection. Switching runtimes returns `process.option_invalid` (422) if an omitted field from the old runtime would be discarded.
