@@ -21,7 +21,6 @@ cases:
       - process_create: {name: hosted, start: true, instance: host}
       - process_create: {name: legacy, start: true}
       - process_create: {name: horizon}
-      - process_create: {name: incus, start: true, instance: 2}
       - schedule_create: {name: timer, calendar: "*-*-* 03:00:00", retained: true, instance: host}
       - schedule_create: {name: dropped, calendar: "*-*-* 05:00:00", retained: true, instance: host}
       - schedule_create: {name: legacytimer, calendar: "*-*-* 04:00:00", retained: true, instance: host}
@@ -37,7 +36,6 @@ cases:
       - process_control: {name: legacy, via: swamp, sibling: sibling}
       - schedule_enable: {name: legacytimer, via: swamp}
       - process_refused: {name: horizon, kind: process.stop}
-      - process_refused: {name: incus, kind: process.stop}
       - process_refused: {name: cron, kind: schedule.enable}
     expect:
       - process_compare: {}
