@@ -76,6 +76,8 @@ A failure after the committed cutover is labelled `Withdraw the old site` or `Wa
 
 One chain never mixes engines: a retry of an update that was bound to Swamp, or whose Swamp start was uncertain or timed out unbound, stays on Swamp, and `StartSwampRun` refuses a Swamp start of an engine-started chain with `route.update_engine_chain`. A retry resumes from the attempt that committed the cutover, past any later attempt. Under the Node hold, it refuses with `route.publication_stale` when the Caddyfile the catalog renders for that Node differs from the stored lasting one, because a sibling Route changed there.
 
+A first attempt captures its plan again under the Node hold, before any step is sent, and refuses the same way when its side-by-side or lasting Caddyfile differs from the stored one.
+
 The update is receipt-bound, as `instance.destroy` is. In one transaction the Gateway binds the steps, takes the Route's Operation lock and holds the Nodes of its phases and its VPN Nodes. When another write holds one, the start fails with `route.publication_held`. Neither a failure nor a cancel ends the run while an order it may have published has no terminal receipt; it sends no new order meanwhile. A Gateway step whose worker was lost after it was marked sent runs again at its next deadline or nudge.
 
 Every `route.update` and `route.target_set` holds the Nodes of its phase plan at admission, so a Swamp-run rename and an engine-run update wait for each other in either order. The VPN Nodes are not held on Swamp, and the engine runs no DNS move yet.

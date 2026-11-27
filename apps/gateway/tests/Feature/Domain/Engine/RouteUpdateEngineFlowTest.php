@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
+use App\Actions\Routes\RouteMutationState;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineStepNotYet;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteUpdateInput;
 use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteUpdateEngineFlow;
@@ -290,7 +293,44 @@ it('resumes a stored lasting Caddyfile only while the catalog still renders it f
         return updateOperation(updateIntent(['retire' => [...updatePhase([], []), 'site_nodes' => []]]));
     };
 
-    RouteUpdateEngineFlow::holdNodes($resume($current));
-    expect(fn () => RouteUpdateEngineFlow::holdNodes($resume($current."sibling.orbit {\n}\n")))
+    RouteUpdateEngineFlow::assertCurrent($resume($current));
+    expect(fn () => RouteUpdateEngineFlow::assertCurrent($resume($current."sibling.orbit {\n}\n")))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
+});
+
+it('refuses a first attempt whose Node gained a sibling Route between admission and bind, from the real catalog', function (): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-root-certificate');
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'update-node', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key', 'ssh_host_fingerprint' => 'fixture']));
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $control = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'control', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '10.44.0.209', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-control-key']));
+    $control->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $site = function (string $slug, string $domain) use ($node): Route {
+        $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package',
+            'repository_url' => "https://github.com/example/{$slug}.git", 'default_branch' => 'main', 'root' => 'public']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $slug,
+            'checkout_path' => "/home/orbit/apps/{$slug}", 'status' => 'active', 'source_layout' => 'worktree', 'root' => 'public',
+            'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id,
+            'provenance' => 'explicit', 'publication' => 'private', 'domain' => $domain, 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+
+        return $route->refresh();
+    };
+    $route = $site('shop', 'shop.fixture.test');
+    $candidate = app(RouteMutationState::class)->reserve($route, 'store.fixture.test');
+    $input = ['mode' => 'replace_domain', 'domain' => 'store.fixture.test', 'publication' => 'private', 'web_root' => null,
+        'candidate_route_id' => $candidate->id, 'allow_generated' => false];
+    $capture = app(NativeRouteUpdateInput::class)->capture($route->refresh()->load('targets.instance.node'), $input);
+    $operation = Operation::query()->forceCreate(['kind' => 'route.update', 'status' => OperationStatus::Running, 'target_type' => 'route',
+        'target_id' => $route->id, 'node_id' => null, 'input' => [...$input, 'route_update' => $capture['intent']], 'state' => []]);
+    expect(RouteUpdateEngineFlow::plan($operation)['retire']['caddy'] ?? [])->not->toBe([]);
+
+    RouteUpdateEngineFlow::assertCurrent($operation);
+    $site('blog', 'blog.fixture.test');
+    expect(fn () => RouteUpdateEngineFlow::assertCurrent($operation))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
 });

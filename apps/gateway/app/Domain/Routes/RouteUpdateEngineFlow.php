@@ -260,10 +260,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         if (! app(RoutePublicationHolds::class)->holdEngine($operation, $nodes)) {
             throw new ResourceOperationException('route.publication_held', 'Another Route write holds a Node of this update.', 409);
         }
-        $resumed = self::cutoverOwner($operation);
-        if ($resumed !== null) {
-            self::assertLastingCurrent($resumed);
-        }
+
     }
 
     /**
@@ -306,6 +303,35 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         $owner = self::owner($operation);
         if (! $engine && $owner === 'engine') {
             throw new ResourceOperationException('route.update_engine_chain', 'This Route update began on the engine; its retry runs there or not at all.', 409);
+        }
+    }
+
+    /** Called under the Node hold that holdNodes took: the stored Caddyfiles this start would write are still current. */
+    public static function assertCurrent(Operation $operation): void
+    {
+        if ($operation->kind !== self::Kind) {
+            return;
+        }
+        $resumed = self::cutoverOwner($operation);
+        $resumed === null ? self::assertPlanCurrent($operation) : self::assertLastingCurrent($resumed);
+    }
+
+    /**
+     * Under the Node hold and before any step is sent, a first attempt's stored Caddyfiles (the side-by-side publication and
+     * the lasting file) must equal what the same request captures from the catalog now. A sibling Route published or withdrawn
+     * on one of its Nodes since admission makes them differ, and the start refuses before a write could drop or restore it.
+     */
+    private static function assertPlanCurrent(Operation $operation): void
+    {
+        $intent = self::intent($operation);
+        $source = Route::query()->with(['targets.instance.node', 'targets.instance.project'])->findOrFail($intent['route_id']);
+        $fresh = ValidatedData::object(ValidatedData::object(app(NativeRouteUpdateInput::class)->capture($source, $operation->input)['intent'] ?? [])['plan'] ?? []);
+        $caddy = static fn (array $plan, string $phase): array => array_column(RouteExecutionProof::objects(ValidatedData::object($plan[$phase] ?? [])['caddy'] ?? []), 'content', 'node_id');
+        $stored = self::plan($operation);
+        foreach (['publish', 'retire'] as $phase) {
+            if ($caddy($stored, $phase) !== $caddy($fresh, $phase)) {
+                throw new ResourceOperationException('route.publication_stale', 'A Route changed on this update\'s Nodes since its admission; run the update again.', 409);
+            }
         }
     }
 
@@ -513,7 +539,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     }
 
     /** @return array<string, mixed> */
-    private static function plan(Operation $operation): array
+    public static function plan(Operation $operation): array
     {
         return ValidatedData::object(ValidatedData::object($operation->input['route_update'] ?? [])['plan'] ?? []);
     }

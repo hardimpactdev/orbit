@@ -516,7 +516,7 @@ mod tests {
         fields["expires_ms"] = expiry.into();
         fields["input"] = serde_json::json!({});
         let keys = pinned(1);
-        let enabled = Enabled::parse("instance").expect("valid");
+        let enabled = Enabled::parse("instance\nroute\ndns\n").expect("valid");
         let node = "7".parse().expect("id");
         crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, _| true)
             .expect("valid sync order")
@@ -526,6 +526,26 @@ mod tests {
     fn a_copy_sync_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_after_restart() {
         for (action, step) in [("instance.fetch_branch", "fetch"), ("instance.sync_base", "sync"), ("instance.clear_base", "clear"),
             ("instance.clear_base", "clear_after_failure")] {
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = sync_order(action, step, N1, NOW + 5000);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            let fresh = executor.handle(&sync_order(action, step, N2, NOW + 5000), NOW).expect("fresh order acts");
+            assert!(!fresh.repeat, "{action} {step}");
+            let again = executor.handle(&sync_order(action, step, N3, NOW + 5000), NOW).expect("lost receipt");
+            assert!(again.repeat, "{action} {step}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action} {step}");
+        }
+    }
+
+    #[test]
+    fn a_route_step_that_expired_before_its_lock_runs_once_on_a_fresh_nonce_after_restart() {
+        for (action, step) in [("tls.ensure_csr", "csr-0"), ("route.publish_site", "site-3"), ("dns.publish_records", "dns-0")] {
             let directory = tempfile::tempdir().expect("scratch");
             let path = directory.path().join("journal");
             let runs = Arc::new(AtomicUsize::new(0));

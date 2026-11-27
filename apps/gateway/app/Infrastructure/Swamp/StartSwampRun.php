@@ -98,6 +98,7 @@ final readonly class StartSwampRun
                             TaskSyncEngineFlow::assertCopyFree($operation);
                             $this->bind($operation, $runId, $lock);
                             RouteUpdateEngineFlow::holdNodes($operation);
+                            RouteUpdateEngineFlow::assertCurrent($operation);
                         });
                     } catch (UniqueConstraintViolationException $exception) {
                         throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);
