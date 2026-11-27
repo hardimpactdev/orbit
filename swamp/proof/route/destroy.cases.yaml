@@ -31,6 +31,26 @@ cases:
     expect:
       - route_compare: {engine: signed, swamp: fallback}
       - clone_cleanup: {}
+  - id: resumable-dns-grace
+    batch: fresh-fleet
+    covers: ["path:admitted", "path:dns", "path:grace", "path:withdraw", "path:sibling"]
+    summary: The 31 s DNS grace survives a restart of orbit-gateway-engine 12 s in, and the site is withdrawn once at ~31 s after the DNS receipt, not from zero; a cancel 10 s into the grace ends the removal cancelled with the site still served and never withdrawn, and the same command then removes it. A sibling Route on the same Node answers throughout, and every other name the VPN Node serves answers the same with `dig +short` before and after.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1200
+    setup:
+      - route_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - clone_create: {name: sibling, via: engine}
+      - clone_create: {name: target, via: engine}
+      - route_create: {name: neighbour, clone: sibling}
+      - route_create: {name: own, clone: target}
+      - route_create: {name: restarted, clone: target, web_root: tests}
+      - route_destroy: {name: restarted, via: engine, sibling: neighbour, fault: restart}
+      - route_create: {name: cancelled, clone: target, web_root: tests}
+      - route_destroy: {name: cancelled, via: engine, sibling: neighbour, fault: cancel}
+    expect:
+      - clone_cleanup: {}
 uncovered:
   "path:withdraw": "One Route Node. A Route served by two Nodes, a leaf-only Node, and a shared PHP-FPM pool kept for another Route are not covered."
   "path:dns": "One VPN Node, which is the Gateway in the nested fleet. Two VPN Nodes and a domain inside the TLD (no DNS step) are not covered."

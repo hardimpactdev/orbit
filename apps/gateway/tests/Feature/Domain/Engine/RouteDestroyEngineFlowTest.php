@@ -137,11 +137,17 @@ it('starts on the engine only when the Route Node reports the withdrawal and eac
     'a Route Node without the withdrawal' => [[1 => ['dns.publish_records'], 3 => ['route.publish_site']], [1 => ['dns.guarded_records']], false],
 ]);
 
-it('waits what is left of the 31 s grace after the DNS receipt, and fails without one', function (): void {
+it('ends the grace 31 s after the last DNS receipt, and fails it without one', function (): void {
+    $this->freezeTime();
     $flow = app(RouteDestroyEngineFlow::class);
-    $done = (new OperationEngineStep)->forceFill(['name' => 'dns-0', 'status' => 'done', 'done_ms' => (int) floor(microtime(true) * 1000) - 31_500]);
+    $at = static fn (string $name, int $ms): OperationEngineStep => (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'done', 'done_ms' => $ms]);
+    $now = (int) now()->getTimestampMs();
+    $run = new EngineRun(51, ['dns-0' => $at('dns-0', $now - 40_000), 'dns-1' => $at('dns-1', $now - 31_500)], 0, null);
 
-    expect($flow->local(routeDestroyOperation(), 'grace', new EngineRun(51, ['dns-0' => $done], 0, null)))->toBe('waited 0 ms')
+    expect($flow->waitUntilMs(routeDestroyOperation(), 'grace', $run))->toBe($now - 500)
+        ->and($flow->waitUntilMs(routeDestroyOperation(), 'withdraw-3', $run))->toBeNull()
+        ->and($flow->waitUntilMs(routeDestroyOperation(), 'grace', new EngineRun(51, [], 0, null)))->toBeNull()
+        ->and($flow->local(routeDestroyOperation(), 'grace', $run))->toBe('waited 31500 ms after the DNS receipt')
         ->and(fn () => $flow->local(routeDestroyOperation(), 'grace', new EngineRun(51, [], 0, null)))->toThrow(RuntimeException::class, 'route.dns_grace_failed');
 });
 
