@@ -7,6 +7,8 @@ namespace App\Domain\Engine;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Processes\ProcessControlEngineFlow;
+use App\Domain\Schedules\ScheduleEnableEngineFlow;
 use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -36,11 +38,11 @@ final readonly class Engine
      * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
      * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
      */
-    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind];
+    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, ...ProcessControlEngineFlow::Kinds, ScheduleEnableEngineFlow::Kind];
 
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
     private const array FencedSuccess = ['instance.destroy' => 'done', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
-        'instance.clear_base' => 'output'];
+        'instance.clear_base' => 'output', ProcessControlEngineFlow::Action => 'applied', ScheduleEnableEngineFlow::Action => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -160,14 +162,17 @@ final readonly class Engine
     }
 
     /**
-     * The Operation lock a receipt-bound kind holds until its end: the resource its orders change. A task copy's sync locks its
+     * The Operation lock a receipt-bound kind holds until its end: the resource its orders change. A Schedule's enable locks its UUID; a task copy's sync locks its
      * copy, so no removal or other writer of that Instance starts beside it; the group stays fenced by its running Operation.
      */
     public static function fenceKey(Operation $operation): string
     {
-        return $operation->kind === TaskSyncEngineFlow::Kind
-            ? OperationStore::lockKey('instance', ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0))
-            : OperationStore::lockKey($operation->target_type, $operation->target_id);
+        return match ($operation->kind) {
+            TaskSyncEngineFlow::Kind => OperationStore::lockKey('instance', ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0)),
+            // A Schedule's UUID, so the owner's other Schedules stay free (EngineTargetFence).
+            ScheduleEnableEngineFlow::Kind => EngineTargetFence::scheduleKey(ValidatedData::string(ValidatedData::object($operation->input)['id'] ?? null)),
+            default => OperationStore::lockKey($operation->target_type, $operation->target_id),
+        };
     }
 
     public static function requiresReceipt(Operation $operation): bool

@@ -228,6 +228,8 @@ Any blocker fails the Operation with `database.in_use` (409) without dropping an
 
 `database:server:destroy <slug>` refuses with `database.server_in_use` (409) while any connection points to the server. Otherwise it marks the server as removing (blocking new database creation), runs `docker rm --force` on the recorded container name, inspects afterward to confirm no container with that name remains, and deletes the server and Process records. Because removal deletes by name before inspecting, it does not verify container ownership first and can remove a same-name replacement container. The data volume stays on disk so data survives; remove the volume manually when you want to discard its data.
 
+While a [Gateway engine run](/reference/gateway-engine#processstart-and-processstop) holds the server's Process, the removal refuses `operation.target_busy` before it changes anything.
+
 A Node running a Database server cannot be removed; [Node removal](/reference/node-provisioning#remove-a-node) refuses with `node.has_database_servers`, even offline.
 
 ## Check a server with Doctor

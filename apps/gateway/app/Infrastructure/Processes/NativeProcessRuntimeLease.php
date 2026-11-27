@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Engine\EngineTargetFence;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
@@ -77,8 +79,10 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
             if ($relocatedKey !== $key) {
                 return $this->relocate($fresh, $operation, $wait, $relocations, $key, $lock);
             }
-            // Every synchronous Process mutation runs under this lease, so an open upgrade holds them all here.
+            // Every synchronous Process mutation runs under this lease, so an open upgrade holds them all here, and so does an
+            // engine run that holds the Process until its terminal receipt: nothing changes or removes it beside the outstanding order.
             ProcessOperationAdmission::assertNotUpgrading($fresh);
+            EngineTargetFence::free(OperationStore::lockKey('process', $fresh->id));
 
             return $operation($fresh);
         } finally {
