@@ -1347,6 +1347,15 @@ class CancelLane(SyncLane):
         return self.db(f"""SELECT id, kind, status, error_code, lock_key, created_at, started_at, finished_at,
             json_extract(result,'$.destroy_operation_id') AS destroy FROM operations WHERE id={operation}""")[0]
 
+    def snapshot(self, destroy, cancel, instance):
+        rows = self.db(f"""SELECT o.id, o.kind, o.status, o.error_code, o.lock_key, o.created_at, o.started_at, o.finished_at,
+            json_extract(o.result,'$.destroy_operation_id') AS destroy,
+            (SELECT count(*) FROM instance_runtimes WHERE instance_id={instance}) AS runtime FROM operations o WHERE o.id IN ({destroy},{cancel})""")
+        found = {row['id']: row for row in rows}
+        runtime = found[destroy].pop('runtime')
+        found[cancel].pop('runtime')
+        return found[destroy], found[cancel], runtime
+
     def cancels(self, group):
         return [row['id'] for row in self.db(f"SELECT id FROM operations WHERE kind='tasks.cancel' AND target_type='task_group' AND target_id={group} ORDER BY id")]
 
@@ -1451,12 +1460,12 @@ class CancelLane(SyncLane):
         seen = {}
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline and not ('cancel' in seen and 'cli' in seen):
-            # One pass reads in the order the ends must come, each read after the one before: the CLI's exit, then the copy, the destroy and
-            # the cancel. So a copy read as present beside a cancel read as ended is a real fault, and an exit is never seen before its cancel.
+            # The CLI's exit first, then the Node's container, then one database snapshot: the destroy's end, the cancel's end and the copy's
+            # runtime row commit in one transaction, so separate reads could split it. An exit is never seen before its cancel's end.
             exited = process.poll() is not None
-            gone = self.runtime(instance) is None and not self.resources(instance)['incus']
-            destroy_row = self.operation_times(destroy)
-            cancel_row = self.operation_times(cancel)
+            container = self.resources(instance)['incus']
+            destroy_row, cancel_row, runtime = self.snapshot(destroy, cancel, instance)
+            gone = runtime == 0 and not container
             now = self.at()
             if gone and 'gone' not in seen:
                 seen['gone'] = now
