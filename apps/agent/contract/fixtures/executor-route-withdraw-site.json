@@ -1,0 +1,41 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "foSrIoPB5RMMqMMKWphYVnuVl/dkqN9Vh0Lp4UMN0Qo=",
+    "fields": {
+        "action": "route.withdraw_site",
+        "node": "7",
+        "target": "7",
+        "operation": "42:withdraw-7",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "account": "orbit",
+            "domains": [
+                "shop.orbit"
+            ],
+            "leaves": [
+                "app-instance-12"
+            ],
+            "php": [
+                {
+                    "version": "8.4",
+                    "user": null,
+                    "content": {
+                        "blob": {
+                            "sha256": "9b75274d6487749ebbe93654dce93c622860f9d063b9e793fb4907c133106483"
+                        }
+                    }
+                }
+            ],
+            "caddy": {
+                "from_sha256": "e2ae49ab58842bbaad382bd483e0b921ec601ead203b33aacae6090c01839991",
+                "content": {
+                    "blob": {
+                        "sha256": "d361ae4d9d2946c678d01f8903955f79ea98cda258a97d13c03f8c0ae9aff896"
+                    }
+                }
+            }
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJyb3V0ZS53aXRoZHJhd19zaXRlIiwibm9kZSI6IjciLCJ0YXJnZXQiOiI3Iiwib3BlcmF0aW9uIjoiNDI6d2l0aGRyYXctNyIsIm5vbmNlIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCJleHBpcmVzX21zIjoxODAwMDAwMDA4MDAwLCJpbnB1dCI6eyJhY2NvdW50Ijoib3JiaXQiLCJkb21haW5zIjpbInNob3Aub3JiaXQiXSwibGVhdmVzIjpbImFwcC1pbnN0YW5jZS0xMiJdLCJwaHAiOlt7InZlcnNpb24iOiI4LjQiLCJ1c2VyIjpudWxsLCJjb250ZW50Ijp7ImJsb2IiOnsic2hhMjU2IjoiOWI3NTI3NGQ2NDg3NzQ5ZWJiZTkzNjU0ZGNlOTNjNjIyODYwZjlkMDYzYjllNzkzZmI0OTA3YzEzMzEwNjQ4MyJ9fX1dLCJjYWRkeSI6eyJmcm9tX3NoYTI1NiI6ImUyYWU0OWFiNTg4NDJiYmFhZDM4MmJkNDgzZTBiOTIxZWM2MDFlYWQyMDNiMzNhYWNhZTYwOTBjMDE4Mzk5OTEiLCJjb250ZW50Ijp7ImJsb2IiOnsic2hhMjU2IjoiZDM2MWFlNGQ5ZDI5NDZjNjc4ZDAxZjg5MDM5NTVmNzllYTk4Y2RhMjU4YTk3ZDEzYzAzZjhjMGFlOWFmZjg5NiJ9fX19fQ==.NejKjWj/7UB8OCTzPzbH7mbfKiDdTl0Fym6f0QL4/QwkPns+NbH6Bhimy47uIuHOKsNKPesxju6o7d7A/KKLCA=="
+}

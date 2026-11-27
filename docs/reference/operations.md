@@ -195,7 +195,7 @@ Route-writing Operations (`instance.create`, `instance.complete`, `instance.dest
 | `instance_slot` | Older removal of the same Instance slot (`id % 64`) on the Node is open |
 | `share_cap` | Eight shared writers hold one of the Nodes |
 
-Removals share Nodes with other removals and release their Route hold early right after `Withdraw the Route` via `operation:direct:route-release`. Waiting creates, clones, restores, and `route.create` Operations re-capture their Caddyfile from the current catalog when promoted by `PromoteRouteWrites`.
+Removals share Nodes with other removals and release their Route hold early right after `Withdraw the Route` via `operation:direct:route-release`. A removal whose admission rendered an engine plan (`route_engine`) holds its Nodes alone instead, because the engine writes whole files. Waiting creates, clones, restores, and `route.create` Operations re-capture their Caddyfile from the current catalog when promoted by `PromoteRouteWrites`.
 
 ## Errors
 

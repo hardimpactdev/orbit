@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::{ensure_csr, publish_site, Account, System};
+use crate::{ensure_csr, publish_site, withdraw_site, Account, System};
 
 /// A scratch root, recorded commands, and the current user standing in for root and `caddy`.
 struct Fake {
@@ -15,11 +15,15 @@ struct Fake {
     blobs: HashMap<String, Vec<u8>>,
     failing: Vec<&'static str>,
     inactive: bool,
+    /// What Caddy's admin API answers.
+    admin: String,
+    /// Whole commands that fail.
+    failing_argv: Vec<Vec<&'static str>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("scratch root"), commands: RefCell::default(), blobs: HashMap::new(), failing: Vec::new(), inactive: false }
+        Self { root: tempfile::tempdir().expect("scratch root"), commands: RefCell::default(), blobs: HashMap::new(), failing: Vec::new(), inactive: false, admin: String::new(), failing_argv: Vec::new() }
     }
 
     /// The current user and group: what a file the tests make gets.
@@ -59,7 +63,9 @@ impl System for Fake {
 
     fn run(&self, _seconds: u32, argv: &[String]) -> Result<String, String> {
         self.commands.borrow_mut().push(argv.to_vec());
-        if self.failing.iter().any(|needle| argv.iter().any(|arg| arg == needle)) {
+        if self.failing.iter().any(|needle| argv.iter().any(|arg| arg == needle))
+            || self.failing_argv.iter().any(|wanted| argv.iter().map(String::as_str).eq(wanted.iter().copied()))
+        {
             return Err("refused".to_owned());
         }
         match argv.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
@@ -73,6 +79,8 @@ impl System for Fake {
             }
             [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
+            ["/usr/bin/curl", ..] => Ok(self.admin.clone()),
+            ["/usr/bin/getent", "group", gid] if gid.chars().all(|c| c.is_ascii_digit()) => Ok(format!("staff:x:{gid}:\n")),
             [_, "is-active", ..] if self.inactive => Err("inactive".to_owned()),
             _ => Ok(String::new()),
         }
@@ -277,4 +285,220 @@ fn a_temporary_file_a_stopped_run_left_does_not_block_the_write() {
     publish_site(&fake, &input).expect("publication");
 
     assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), "shop.orbit {\n}\n");
+}
+
+fn sha256(text: &str) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(text.as_bytes()).iter().fold(String::with_capacity(64), |mut hex, byte| {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
+}
+
+const WITH: &str = "shop.orbit {\n}\nother.orbit {\n}\n";
+const WITHOUT: &str = "other.orbit {\n}\n";
+
+fn withdraw_input(fake: &mut Fake, from: &str) -> serde_json::Value {
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[orbit]\n[shop]\n");
+    json!({
+        "account": "orbit",
+        "domains": ["shop.orbit"],
+        "leaves": ["app-instance-7"],
+        "php": [{"version": "8.4", "user": null, "content": fake.blob("[orbit]\n")}],
+        "caddy": {"from_sha256": sha256(from), "content": fake.blob(WITHOUT)},
+    })
+}
+
+#[test]
+fn a_withdrawal_removes_the_site_and_leaf_then_a_repeat_changes_nothing_but_reloads() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    fake.write(&format!("{DIRECTORY}/cert.pem"), "LEAF");
+    fake.write("/home/orbit/.orbit/certificates/app-instance-7/current", "x");
+    fake.write("/etc/caddy/orbit-certificates/other-instance-8/current", "SIBLING");
+    fake.admin = r#"{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["other.orbit"]}]}]}}}}}"#.to_owned();
+    let input = withdraw_input(&mut fake, WITH);
+
+    let first = withdraw_site(&fake, &input).expect("withdrawn");
+    assert!(first >= 3, "Caddyfile, pool and leaf folders changed: {first}");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITHOUT);
+    assert!(!fake.path("/etc/caddy/orbit-certificates/app-instance-7").exists());
+    assert!(!fake.path("/home/orbit/.orbit/certificates/app-instance-7").exists());
+    assert!(fake.path("/etc/caddy/orbit-certificates/other-instance-8/current").exists(), "a sibling's leaf stays");
+
+    assert_eq!(withdraw_site(&fake, &input).expect("repeat"), 0);
+    assert_eq!(fake.reloads("caddy"), 2, "Caddy reloads on a repeat too, so a crash before the reload still goes live");
+    assert_eq!(fake.reloads("php8.4-fpm.service"), 2);
+}
+
+#[test]
+fn a_withdrawal_refuses_a_caddyfile_changed_outside_the_route_before_any_write() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", "shop.orbit {\n}\nother.orbit {\n}\nforeign.orbit {\n}\n");
+    fake.write(&format!("{DIRECTORY}/cert.pem"), "LEAF");
+    let input = withdraw_input(&mut fake, WITH);
+
+    assert_eq!(withdraw_site(&fake, &input).expect_err("refused").code, "owned_revision_conflict");
+    assert!(fake.path(&format!("{DIRECTORY}/cert.pem")).exists());
+    assert!(fake.commands.borrow().iter().all(|argv| argv[0] == "/usr/bin/getent"), "nothing but lookups runs for a refused withdrawal");
+}
+
+#[test]
+fn a_withdrawal_fails_its_read_back_while_caddy_still_serves_the_name() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    fake.admin = r#"{"routes":[{"match":[{"host":["shop.orbit"]}]}]}"#.to_owned();
+    let input = withdraw_input(&mut fake, WITH);
+
+    assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_unverified");
+}
+
+#[test]
+fn a_withdrawal_refuses_an_input_outside_its_shape() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let good = withdraw_input(&mut fake, WITH);
+    for (field, value) in [("leaves", json!(["../../etc"])), ("domains", json!([])), ("account", json!("Root")), ("extra", json!(true))] {
+        let mut input = good.clone();
+        input[field] = value;
+        assert_eq!(withdraw_site(&fake, &input).expect_err("refused").code, "route.input_invalid", "{field}");
+    }
+}
+
+#[test]
+fn the_gateway_signed_withdrawal_input_decodes_and_names_its_digests() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../contract/fixtures/executor-route-withdraw-site.json")).expect("shared fixture");
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[orbit]\n[shop]\n");
+    let input = &fixture["fields"]["input"];
+    assert_eq!(input["caddy"]["from_sha256"], sha256(WITH));
+    for content in [WITHOUT, "[orbit]\n"] {
+        fake.blobs.insert(sha256(content), content.as_bytes().to_vec());
+    }
+    withdraw_site(&fake, input).expect("the fixture withdraws");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITHOUT);
+}
+
+#[test]
+fn a_withdrawal_puts_the_previous_generation_back_when_a_pool_test_or_reload_or_caddy_reload_fails() {
+    for (failing, code) in [
+        (vec!["/usr/sbin/php-fpm8.4", "-t"], "route.pool_failed"),
+        (vec!["/usr/bin/systemctl", "reload", "php8.4-fpm.service"], "route.pool_failed"),
+        (vec!["/usr/bin/systemctl", "reload", "caddy"], "route.withdraw_failed"),
+    ] {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        fake.write(&format!("{DIRECTORY}/cert.pem"), "LEAF");
+        let input = withdraw_input(&mut fake, WITH);
+        fake.failing_argv = vec![failing.clone()];
+
+        assert_eq!(withdraw_site(&fake, &input).expect_err("failed").code, code, "{failing:?}");
+        assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH, "{failing:?}");
+        assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[orbit]\n[shop]\n", "{failing:?}");
+        assert!(fake.path(&format!("{DIRECTORY}/cert.pem")).exists(), "the leaf stays while its site may still serve: {failing:?}");
+    }
+}
+
+#[test]
+fn a_withdrawal_refuses_a_changed_scope_of_its_own_and_keeps_an_unrelated_one() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[orbit]\n[shop]\n");
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[orbit]\n[shop]\nchanged = 1\n");
+
+    assert_eq!(withdraw_site(&fake, &input).expect_err("refused").code, "owned_revision_conflict");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
+    assert!(fake.path("/etc/caddy/.orbit-publish.lock").exists(), "the check ran under the Node's publication lock");
+
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[foreign]\n[orbit]\n[shop]\n");
+    withdraw_site(&fake, &input).expect("withdrawn");
+    assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[foreign]\n[orbit]\n");
+}
+
+#[test]
+fn a_withdrawal_replaces_a_shared_pool_that_still_holds_its_rendered_from_state() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[orbit]\n[shop]\n");
+
+    withdraw_site(&fake, &input).expect("withdrawn");
+    assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[orbit]\n");
+}
+
+#[test]
+fn a_withdrawal_keeps_a_surviving_scope_whose_group_is_named_or_numeric_byte_for_byte() {
+    let gid = Fake::me().1;
+    let from = "[orbit]\ngroup = __ORBIT_NODE_GROUP__\n[shop]\ngroup = __ORBIT_NODE_GROUP__\n";
+    for (live, kept) in [
+        ("[orbit]\ngroup = staff\n[shop]\ngroup = staff\n".to_owned(), "[orbit]\ngroup = staff\n".to_owned()),
+        (format!("[orbit]\ngroup = {gid}\n[shop]\ngroup = staff\n"), format!("[orbit]\ngroup = {gid}\n")),
+    ] {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        let mut input = withdraw_input(&mut fake, WITH);
+        input["php"][0]["content"] = Fake::blob(&mut fake, "[orbit]\ngroup = __ORBIT_NODE_GROUP__\n");
+        input["php"][0]["from"] = Fake::blob(&mut fake, from);
+        fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", &live);
+
+        withdraw_site(&fake, &input).expect("withdrawn");
+        assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), kept);
+    }
+}
+
+#[test]
+fn a_withdrawal_leaves_an_absent_unchanged_scope_and_an_absent_pool_absent() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[seven]\n[nine]\n");
+    input["php"][0]["content"] = Fake::blob(&mut fake, "[seven]\n");
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[eleven]\n[nine]\n");
+
+    withdraw_site(&fake, &input).expect("withdrawn");
+    assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[eleven]\n");
+
+    fs::remove_file(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("remove");
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    withdraw_site(&fake, &input).expect("withdrawn again");
+    assert!(!fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf").exists(), "an absent pool is never created");
+}
+
+#[test]
+fn a_withdrawal_keeps_a_sibling_scope_byte_for_byte_across_the_render_separator() {
+    // The Gateway joins scopes with a blank line: removing [nine] changes only what follows [seven].
+    let from = "[seven]\ngroup = __ORBIT_NODE_GROUP__\n\n[nine]\ngroup = __ORBIT_NODE_GROUP__\n";
+    let desired = "[seven]\ngroup = __ORBIT_NODE_GROUP__\n";
+    for (live, kept) in [
+        ("[nine]\ngroup = staff\n", ""),
+        ("[seven]\ngroup = staff\n\n[nine]\ngroup = staff\n", "[seven]\ngroup = staff\n\n"),
+    ] {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        let mut input = withdraw_input(&mut fake, WITH);
+        input["php"][0]["from"] = Fake::blob(&mut fake, from);
+        input["php"][0]["content"] = Fake::blob(&mut fake, desired);
+        fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", live);
+
+        withdraw_site(&fake, &input).expect("withdrawn");
+        assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), kept, "{live:?}");
+    }
+}
+
+#[test]
+fn a_withdrawal_fails_before_any_change_when_a_guarded_pool_cannot_be_read() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[orbit]\n[shop]\n");
+    let pool = fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf");
+    fs::remove_file(&pool).expect("remove");
+    fs::create_dir_all(&pool).expect("a directory in the pool's place");
+
+    assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_failed");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
 }
