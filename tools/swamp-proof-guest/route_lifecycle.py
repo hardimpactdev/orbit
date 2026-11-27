@@ -2,8 +2,10 @@
 
 The VPN Node of the nested fleet is the Gateway (Node 1), so the lane also runs the executor there with the `dns` family,
 behind the guard that admits the Gateway's own `orbit` user to the bus."""
+import functools
 import json
 import subprocess
+import traceback
 import time
 
 from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, TERMINAL, CloneLane, ProofFailure, require, wait_for
@@ -21,6 +23,20 @@ sock.settimeout(3)
 sock.sendto(query, (server, 53))
 data = sock.recv(1024)
 print(json.dumps({'rcode': data[3] & 15, 'answers': struct.unpack('>H', data[6:8])[0]}))'''
+
+
+def traced(method):
+    """Keeps the location of an unexpected error (not a proof verdict) in the evidence; the runner reports only its type."""
+    @functools.wraps(method)
+    def step(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except ProofFailure:
+            raise
+        except Exception:
+            self.run.evidence_text(method.__name__ + '-error.txt', ''.join(traceback.format_exc(limit=8).splitlines(keepends=True)[-12:]))
+            raise
+    return step
 
 
 class RouteLane(CloneLane):
@@ -117,6 +133,7 @@ class RouteLane(CloneLane):
         require(self.present(state) and state['https'] == route['https'], f'sibling Route {name} is not healthy: {state}')
         return state
 
+    @traced
     def route_create(self, name, clone, web_root=None):
         """The clone's own Route, or with `web_root` another site of it: route:destroy removes only such a site, because the
         Instance's own Route goes with the Instance."""
@@ -162,6 +179,7 @@ class RouteLane(CloneLane):
                     f'step {step["name"]} of {operation} did not execute once in the Node journal: {mine}')
         return journal
 
+    @traced
     def route_destroy(self, name, via, sibling, fault=None):
         require(via in ('engine', 'swamp') and fault in (None, 'receipt', 'dns-conflict') and (fault is None or via == 'engine'), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
@@ -262,6 +280,7 @@ class RouteLane(CloneLane):
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
             self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
+    @traced
     def route_clone_destroy(self, name, via, sibling, route):
         """A clone that owns one private development Route: its withdrawal, then the signed container removal, on one engine."""
         instance, domain, scope = self.clones[name]['instance'], self.routes_made[route]['domain'], self.routes_made[route]['scope']
