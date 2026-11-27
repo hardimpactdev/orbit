@@ -41,6 +41,7 @@ final readonly class EngineKinds
         TaskSyncEngineFlow::Kind => TaskSyncEngineFlow::class,
         'process.start' => ProcessControlEngineFlow::class,
         'process.stop' => ProcessControlEngineFlow::class,
+        'process.restart' => ProcessControlEngineFlow::class,
         ScheduleEnableEngineFlow::Kind => ScheduleEnableEngineFlow::class,
     ];
 

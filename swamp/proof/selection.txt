@@ -357,9 +357,12 @@ swamp/extensions/behaviors/operations/tools/manifest.yaml  instance:clone
 swamp/proof/process/start.cases.yaml             process:start
 swamp/workflows/workflow-operation-process-start.yaml  instance:create process:start
 swamp/workflows/workflow-operation-process-stop.yaml   process:start
-apps/gateway/app/Domain/Processes/ProcessControl*.php  process:start
+apps/gateway/app/Domain/Processes/ProcessControl*.php  process:start process:restart
 apps/gateway/app/Domain/Schedules/ScheduleEnableEngineFlow.php  process:start
-apps/agent/crates/process/**                     process:start
+apps/agent/crates/process/**                     process:start process:restart
+# process:restart's cases prove the signed restart and its Swamp fallback.
+swamp/proof/process/restart.cases.yaml           process:restart
+swamp/workflows/workflow-operation-process-control.yaml  process:restart
 
 # The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change

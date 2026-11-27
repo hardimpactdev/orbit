@@ -57,7 +57,7 @@ final class ProcessEngineBus implements MachineBus
     public array $starts = [];
 
     /** @var list<string> */
-    public array $actions = ['process.ensure_state', 'schedule.ensure_timer'];
+    public array $actions = ['process.ensure_state', 'process.read_instance', 'process.restart', 'schedule.ensure_timer'];
 
     /** @var array<string, string> */
     public array $contents = [];
@@ -116,7 +116,7 @@ beforeEach(function (): void {
     Queue::fake();
     $pair = sodium_crypto_sign_keypair();
     config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($pair)),
-        'orbit.engine.kinds' => ['process.start', 'process.stop', 'schedule.enable']]);
+        'orbit.engine.kinds' => ['process.start', 'process.stop', 'process.restart', 'schedule.enable']]);
     $this->bus = new ProcessEngineBus;
     $this->app->instance(MachineBus::class, $this->bus);
     $this->node = Node::withoutEvents(fn (): Node => Node::query()->create([
@@ -595,3 +595,166 @@ it('refuses AI-router collector reconvergence before any collector write while i
         ->and($source->activation_pending)->toBeFalse()
         ->and($collector->refresh()->systemd_activation_pending)->toBeFalse();
 });
+
+it('restarts a host unit with a read and a restart bound to the read run, and projects what a Swamp restart projects', function (): void {
+    $process = ($this->process)();
+    $operation = ($this->operation)($process, 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    expect(OperationEngineStep::query()->where('operation_id', $operation->id)->orderBy('id')->pluck('action', 'name')->all())
+        ->toBe(['read' => 'process.read_instance', 'restart' => 'process.restart'])
+        ->and($operation->refresh()->lock_key)->toBe('process:'.$process->id);
+
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $name = "orbit-process-{$process->id}-web.service";
+    expect($this->bus->orders)->toHaveCount(1)
+        ->and($this->bus->payload(0))->toMatchArray(['action' => 'process.read_instance', 'target' => "{$this->node->id}:process-{$process->id}",
+            'operation' => "{$operation->id}:read", 'input' => ['process_id' => $process->id, 'runtime' => 'systemd', 'name' => $name]]);
+    ($this->receipt)($operation, 'read', ['status' => 'output', 'stdout' => '{"instance":"aaa"}']);
+
+    $restart = $this->bus->payload(1);
+    expect($restart['action'])->toBe('process.restart')
+        ->and($restart['operation'])->toBe("{$operation->id}:restart")
+        ->and($restart['input'])->toBe(['process_id' => $process->id, 'runtime' => 'systemd', 'name' => $name, 'instance' => 'aaa', 'boot' => 'enabled']);
+
+    // A lost receipt: the same step goes again with the same pinned run under a fresh nonce; the journal answers the first result.
+    $this->travel(121)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id, 'step' => 'restart']);
+    expect($this->bus->orders)->toHaveCount(3)
+        ->and($this->bus->payload(2)['input'])->toBe($restart['input'])
+        ->and($this->bus->payload(2)['operation'])->toBe($restart['operation'])
+        ->and($this->bus->payload(2)['nonce'])->not->toBe($restart['nonce'])
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->lock_key)->toBe('process:'.$process->id);
+    ($this->receipt)($operation, 'restart', ['status' => 'output', 'stdout' => '{"restarted":"now","instance":"bbb"}', 'repeat' => true]);
+
+    $swamp = ($this->operation)($other = ($this->process)(), 'process.restart');
+    $swamp->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'run-4']])->save();
+    app(ProcessControlProjection::class)->apply($swamp, ['run_id' => 'run-4', 'started_at' => '2026-11-26T13:00:00.000Z', 'finished_at' => '2026-11-26T13:00:01.000Z',
+        'status' => 'succeeded', 'error_code' => null]);
+    $operation->refresh();
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result)->toBe(['ready' => true, 'state' => 'active'])->toBe($swamp->refresh()->result)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($process->refresh()->desired_state->value)->toBe('running')->toBe($other->refresh()->desired_state->value)
+        ->and($process->status)->toBe(LifecycleStatus::Active)->toBe($other->status)
+        ->and($this->bus->orders)->toHaveCount(3);
+});
+
+it('pins the container run and keeps an on-demand unit disabled at boot on a restart', function (): void {
+    $run = fn (Operation $operation): EngineRun => new EngineRun($operation->id, ['read' => new OperationEngineStep(['name' => 'read', 'output' => '{"instance":"c1@T1"}'])], 0, null);
+    $container = ($this->operation)($docker = ($this->process)(runtime: 'docker'), 'process.restart');
+    $unit = ($this->operation)(($this->process)(), 'process.restart', ['on_demand' => true]);
+
+    expect(app(ProcessControlEngineFlow::class)->input($container, 'restart', $run($container)))
+        ->toBe(['process_id' => $docker->id, 'runtime' => 'docker', 'name' => "orbit-process-{$docker->id}-web", 'instance' => 'c1@T1', 'image' => 'redis:7'])
+        ->and(app(ProcessControlEngineFlow::class)->input($unit, 'restart', $run($unit)))->toMatchArray(['instance' => 'c1@T1', 'boot' => 'disabled'])
+        ->and(fn () => app(ProcessControlEngineFlow::class)->input($unit, 'converge', $run($unit)))->toThrow(LogicException::class);
+});
+
+it('settles a restart step only on its evidence', function (string $step, string $stdout, bool $valid): void {
+    expect(app(ProcessControlEngineFlow::class)->evidence(new Operation, $step, $stdout))->toBe($valid);
+})->with([
+    'read' => ['read', '{"instance":"aaa"}', true],
+    'read of a stopped unit' => ['read', '{"instance":""}', true],
+    'read without a run' => ['read', '{}', false],
+    'restart now' => ['restart', '{"restarted":"now","instance":"bbb"}', true],
+    'restart recovered after a lost result' => ['restart', '{"restarted":"recovered","instance":"bbb"}', true],
+    'restart already' => ['restart', '{"restarted":"already","instance":"bbb"}', true],
+    'restart to no run' => ['restart', '{"restarted":"now","instance":""}', false],
+    'restart that says nothing' => ['restart', '{"instance":"bbb"}', false],
+    'not JSON' => ['restart', 'ok', false],
+]);
+
+it('fails a restart whose receipt is not its evidence and keeps the Process failed as Swamp does', function (): void {
+    $operation = ($this->operation)(($this->process)(), 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, 'read', ['status' => 'applied', 'changes' => 0]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'read')->sole()->error_code)->toBe('engine.receipt_invalid')
+        ->and($this->bus->orders)->toHaveCount(1);
+});
+
+it('names the Swamp step each failed restart phase stands for', function (string $runtime, string $step, string $code, string $swampStep): void {
+    $operation = ($this->operation)(($this->process)(runtime: $runtime), 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    if ($step === 'restart') {
+        ($this->receipt)($operation, 'read', ['status' => 'output', 'stdout' => '{"instance":"aaa"}']);
+    }
+    ($this->receipt)($operation, $step, ['status' => 'failed', 'code' => $code]);
+
+    expect($operation->refresh()->failed_step)->toBe($swampStep)
+        ->and($operation->error_code)->toBe('operation.native_failed')
+        ->and($operation->lock_key)->toBeNull();
+})->with([
+    'unit missing at the read' => ['systemd', 'read', 'process.unit_missing', 'Set boot policy'],
+    'container missing at the read' => ['docker', 'read', 'process.container_missing', 'Restart the container'],
+    'unit boot policy' => ['systemd', 'restart', 'process.boot_failed', 'Set boot policy'],
+    'unit restart or its read before it' => ['systemd', 'restart', 'process.apply_failed', 'Restart the Process'],
+    'interrupted attempt never resolved' => ['systemd', 'restart', 'process.restart_unresolved', 'Restart the Process'],
+    'unit read-back' => ['systemd', 'restart', 'process.read_failed', 'Check the unit'],
+    'unit still on the pinned run' => ['systemd', 'restart', 'process.restart_unverified', 'Verify the state'],
+    'container restart' => ['docker', 'restart', 'process.apply_failed', 'Restart the container'],
+    'container assert' => ['docker', 'restart', 'process.state_mismatch', 'Verify the state'],
+]);
+
+it('takes the whole Swamp path for a restart the engine does not cover or a Node without the restart actions', function (array $input, ?array $command = null): void {
+    $operation = ($this->operation)(($this->process)($command ?? ['php', 'artisan', 'queue:work']), 'process.restart', $input);
+
+    expect(fn () => app(ProcessControlEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class)
+        ->and(app(EngineKinds::class)->routes($operation))->toBeFalse();
+})->with([
+    'host Horizon (its stop waits for the drain)' => [[], ['php', 'artisan', 'horizon']],
+    'Vite dev Process' => [['variant' => 'vite', 'vite' => ['path' => '/x', 'instance_id' => 3], 'vite_plan' => ['listener' => ['port' => 5173]]]],
+    'production release layout' => [['directory' => '/home/orbit/apps/shop/current']],
+    'unit in an Instance container' => [['container' => ['instance_id' => 12, 'project' => 'orbit-instances', 'name' => 'instance-12']]],
+]);
+
+it('routes a restart only when the kind is on and the Node reports both restart actions', function (): void {
+    $operation = ($this->operation)(($this->process)(), 'process.restart');
+    expect(app(EngineKinds::class)->routes($operation))->toBeTrue();
+
+    // An agent from before the restart reports the process family's start and stop action only.
+    $this->bus->actions = ['process.ensure_state', 'schedule.ensure_timer'];
+    expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
+    $this->bus->actions = ['process.ensure_state', 'process.read_instance'];
+    expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
+    $this->bus->actions = ['process.read_instance', 'process.restart'];
+    config(['orbit.engine.kinds' => ['process.start', 'process.stop']]);
+    expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
+});
+
+it('fences a restarting Process against every other verb until its terminal receipt', function (): void {
+    $process = ($this->process)();
+    $operation = ($this->operation)($process, 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    expect(Engine::receiptBound('process.restart'))->toBeTrue()
+        ->and(fn () => app(ProcessOperationAdmission::class)->execute($process, 'stop'))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    ($this->receipt)($operation, 'read', ['status' => 'output', 'stdout' => '{"instance":"aaa"}']);
+    ($this->receipt)($operation, 'restart', ['status' => 'output', 'stdout' => '{"restarted":"now","instance":"bbb"}']);
+    expect($operation->refresh()->lock_key)->toBeNull();
+    EngineTargetFence::free('process:'.$process->id);
+});
+
+it('settles restarts on the outputs the executor serializes, in any member order', function (string $runtime, string $answer): void {
+    $outputs = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/executor-process-restart-output.json')), true, flags: JSON_THROW_ON_ERROR);
+    $process = ($this->process)(runtime: $runtime);
+    $operation = ($this->operation)($process, 'process.restart');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, 'read', ['status' => 'output', 'stdout' => $outputs['read']]);
+    expect($this->bus->payload(1)['input']['instance'])->toBe('aaa');
+    ($this->receipt)($operation, 'restart', ['status' => 'output', 'stdout' => $outputs[$answer]]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result)->toBe(['ready' => true, 'state' => $runtime === 'docker' ? 'running' : 'active'])
+        ->and(app(ProcessControlEngineFlow::class)->evidence($operation, 'restart', json_encode(array_reverse(json_decode($outputs[$answer], true)), JSON_THROW_ON_ERROR)))->toBeTrue();
+})->with([
+    'unit now' => ['systemd', 'now'], 'unit already' => ['systemd', 'already'], 'unit recovered' => ['systemd', 'recovered'],
+    'container now' => ['docker', 'now'], 'container already' => ['docker', 'already'], 'container recovered' => ['docker', 'recovered'],
+]);

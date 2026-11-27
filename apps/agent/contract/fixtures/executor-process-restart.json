@@ -1,0 +1,20 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "pMpBS4NZbw/XoloZ5pxUNZZ5GRTK3AS40a+2LYqvIvw=",
+    "fields": {
+        "action": "process.restart",
+        "node": "7",
+        "target": "7:process-417",
+        "operation": "42:restart",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "process_id": 417,
+            "runtime": "systemd",
+            "name": "orbit-process-417-web.service",
+            "instance": "0f6e2bd1c3a54e7f9b8d2c1a0e9f8d7c",
+            "boot": "enabled"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJwcm9jZXNzLnJlc3RhcnQiLCJub2RlIjoiNyIsInRhcmdldCI6Ijc6cHJvY2Vzcy00MTciLCJvcGVyYXRpb24iOiI0MjpyZXN0YXJ0Iiwibm9uY2UiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMSIsImV4cGlyZXNfbXMiOjE4MDAwMDAwMDgwMDAsImlucHV0Ijp7InByb2Nlc3NfaWQiOjQxNywicnVudGltZSI6InN5c3RlbWQiLCJuYW1lIjoib3JiaXQtcHJvY2Vzcy00MTctd2ViLnNlcnZpY2UiLCJpbnN0YW5jZSI6IjBmNmUyYmQxYzNhNTRlN2Y5YjhkMmMxYTBlOWY4ZDdjIiwiYm9vdCI6ImVuYWJsZWQifX0=.Jz8XT9wjT1oPIF/ILpvM/YGE55omDwq+TOtMhkuac+kevX/ODZGjpJkwJRV/wkFfwjcFkXADtNIYD+YMVn4nCA=="
+}

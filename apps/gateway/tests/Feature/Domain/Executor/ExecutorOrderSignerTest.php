@@ -65,6 +65,8 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
     'workspace read' => ['executor-instance-work-read.json', ExecutorOrderSigner::ReadExpiresAfterMs],
     'Process state' => ['executor-process-ensure-state.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'Schedule timer' => ['executor-schedule-ensure-timer.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'Process run read' => ['executor-process-read-instance.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'Process restart' => ['executor-process-restart.json', ExecutorOrderSigner::StepExpiresAfterMs],
 ]);
 
 it('signs a read with no Operation, for its target, expiring with the request that waits for it', function (): void {
