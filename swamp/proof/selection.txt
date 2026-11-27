@@ -50,6 +50,15 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# The workspace work read that gates instance:destroy's Remove (docs/cli/instance/container/work-read-engine.mmd): the signed
+# executor read, today's SSH reader and the Conn calls that use them. Case work-read-before-remove.
+swamp/proof/instance/destroy.cases.yaml                             instance:destroy
+apps/gateway/app/Infrastructure/Instances/ContainerWorkspaceRead.php  instance:destroy
+apps/gateway/app/Domain/Engine/NodeReadBus.php                      instance:destroy
+apps/gateway/app/Infrastructure/Engine/DeadlineRequest.php          instance:destroy
+apps/gateway/extensions/conn/src/Domain/ConnInstanceWorkState.php   instance:destroy
+apps/agent/crates/instance/src/work.rs                              instance:destroy
+
 # instance:migrate, until the last checkout Instance has moved. Its cases are the refusals of the CLI and of the admission; its
 # Swamp code stays uncovered until a proof Node has the Instance pool.
 swamp/proof/instance/migrate.cases.yaml                             instance:migrate
