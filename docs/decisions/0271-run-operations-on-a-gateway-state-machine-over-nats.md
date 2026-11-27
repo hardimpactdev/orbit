@@ -1,7 +1,7 @@
 ---
 title: "ADR 0271: Run operations on a Gateway state machine over NATS"
 sidebarTitle: "0271 Gateway state machine"
-description: "In progress. The Gateway runs an Operation as an event-driven state machine of typed primitives. The executor (`orbit-agent execute`) runs each primitive on its Node and reaches the Gateway over NATS JetStream, which carries orders, receipts and content. Operation kinds move off Swamp one at a time. This changes ADR 0267's transport, its action granularity and its split with Swamp."
+description: "In progress. The Gateway runs an Operation as an event-driven state machine of typed primitives. The executor (`orbit-agent execute`) runs each primitive on its Node and reaches the Gateway over NATS JetStream, which carries orders, receipts and content. Operation kinds move off Swamp one at a time. This changes ADR 0267's transport, its action granularity, its recipe for a new action and its split with Swamp. Actions that hold a whole Swamp phase are rewritten as compositions of primitives before another kind moves."
 ---
 
 # ADR 0271: Run operations on a Gateway state machine over NATS
@@ -36,7 +36,9 @@ The spike on the copy `executor-spike` (2026-11-18) tested a different split:
 
 The state machine adds no measurable time of its own: on the nested fleet, the serial Node work of a clone's container phase added up to its total. NATS JetStream carried a `route:create` at the same speed as the WebSocket (median 747 ms against 763 ms). With the resend tick off, JetStream and the executor's journal recovered every fault: an executor restart, a Node's NATS connection refused for 8 s, the Gateway's receipt consumer stopped for 8 s, a `nats-server` restart, and a 20 s step with a 5 s acknowledgement wait. Without NATS, an observer that was offline lost a receipt. `nats-server` used 14 MB idle and the executor 3 MB.
 
-The Node work of a container clone fitted 19 primitives, each on one resource. No Python or shell ran on the Node.
+The Node work of a container clone fitted 19 primitives, each on one resource. No Python or shell ran on the Node. The spike's list of those primitives was not kept, and the first ports after `firewall:allow` moved whole Swamp phases into one action each. The [catalogue](/reference/executor#the-catalogue) now holds the list.
+
+Small steps cost little. On the production Gateway and its development Node, the engine sends the next step 1–3 ms after a receipt arrives. A whole Node step that makes a signing request, from the order to its stored receipt, takes 93–107 ms warm (three `route.create` Operations on 2026-11-27; a fourth took 302 ms). A flow of 20 small steps on one Node therefore adds about 2 s at most over one large action, and steps on different targets run in parallel.
 
 ## Decision
 
@@ -46,7 +48,7 @@ The Gateway owns every migrated Operation kind from admission to its projection.
 
 - **N1. The Gateway orchestrates.** An Operation of a migrated kind is a state machine in the Gateway. No job or worker stays open while a Node works. Receipts drive every transition.
 - **N2. NATS JetStream is the machine bus.** Orders, receipts and content travel over NATS. Reverb stays the channel for people and apps: Conn and the web UI send commands over HTTP and receive progress over Reverb.
-- **N3. Typed primitives on one resource kind.** A primitive acts on one kind of resource that exists on any Linux host, such as a firewall rule, a file, a unit, an Incus instance or a dotenv file. It never acts on an Orbit concept such as an Instance or a Route. Where the resource allows it, the primitive is desired state: it reads the resource, changes only what differs, and answers how many changes it made. Orbit's knowledge (what, in which order, with which content) lives in the Gateway's PHP. No script is sent to a Node or written per flow.
+- **N3. Typed primitives on one resource kind.** A primitive acts on one kind of resource that exists on any Linux host, such as a firewall rule, a file, a unit, an Incus instance or a dotenv file. It never acts on an Orbit concept such as an Instance or a Route. Where the resource allows it, the primitive is desired state: it reads the resource, changes only what differs, and answers how many changes it made. Orbit's knowledge (what, in which order, with which content) lives in the Gateway's PHP. No script is sent to a Node or written per flow. The owner confirmed N3 on 2026-11-27 and made it explicit: the Gateway sends every name, path and content, the executor derives nothing about Orbit, and no primitive runs a command that an order carries. An action that ports one Operation, one step of an Operation or one Swamp phase breaks N3, also when the Gateway still orders the steps.
 - **N4. One kind at a time, per Operation.** A kind's port lands in one pull request, after its proof passes. While its other parts are still ported, each Operation of the kind runs entirely on the state machine when every part it needs is ported and every Node it touches reports the primitives. Otherwise that Operation runs entirely on Swamp. The Gateway switches a kind on (`ORBIT_ENGINE_KINDS`) only once it is proven that an Operation can run fully on the state machine. Only then does a separate change plan the removal of the kind's Swamp workflows. Swamp keeps every kind that has not moved. The owner amended N4 on 2026-11-19; it said before that a kind moves as a whole.
 - **N5. Two processes, both root.** The observer and the executor stay separate processes with separate NATS users. Only the executor publishes receipts. Both run as root, as Swamp's SSH does today. A separate decision may harden them, with an unprivileged observer and sealed receipts. These seams keep that a configuration change.
 - **N6. Content travels over NATS.** A file's bytes reach a Node through the NATS KV bucket `CONTENT`, keyed by Node and SHA-256. The signed order names only the hash. There is no HTTP side channel.
@@ -79,7 +81,28 @@ One `nats-server` runs on the Gateway host, reachable only over WireGuard. A Nod
 
 ### Primitives
 
-A primitive is one variant of the executor's action enum, with a typed input, a result bound and a target kind, as in ADR 0267's "Add an action". The Gateway's signer allowlist and the executor's enum come from one list, and a contract test fails when they differ. A new primitive needs a reason in its pull request that no existing primitive fits.
+A primitive is one variant of the executor's action enum, with a typed input, a result bound and a target kind. The Gateway's signer allowlist and the executor's enum come from one list, and a contract test fails when they differ.
+
+The [Executor](/reference/executor#primitives) page owns the rule in full: the five conditions every action meets, the catalogue of primitives, the three primitives that span more than one file or call, and the steps to add one. `ufw.ensure_rule` is the model. A port of a kind starts as a flow in the Gateway that composes primitives from the catalogue. It adds a primitive only for a resource the catalogue lacks, and its pull request states that resource. A task that touches the executor names the five conditions as a deliverable, so a review blocks an action that misses one.
+
+### Actions that predate the rule
+
+The ports from `route.create` on moved one Swamp phase or script into one Rust action. Those actions run in production and keep running until their replacement is proven. No other kind moves to the state machine, and no action is added in their shape, until this list is empty.
+
+| Order | Actions to replace | Kinds that change | Primitives they become |
+| --- | --- | --- | --- |
+| 1 | `route.publish_site`, `route.withdraw_site`, `dns.publish_records`; `tls.ensure_csr` is changed in place | `route.create`, `route.destroy`, `route.update`, and the Route steps of `instance.destroy` | `config.apply`, `file.ensure`, `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure`, `http.probe` |
+| 2 | `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, `instance.fetch_branch`, `instance.prepare`, `instance.start`, `instance.checkout`, `instance.t3`, `instance.club_key`, `instance.names`, `instance.stop`, `instance.fleet_ready` | `instance.create`, `instance.finalize` and `instance.fleet` | The `incus.*`, `file.*`, `json.ensure`, `dotenv.ensure`, `ca.trust.ensure`, `hostname.ensure`, `account.ensure`, `systemd.unit.*`, `http.probe`, `git.fetch`, `git.checkout` and `conn.*` primitives, and route rules in `ufw.ensure_rule` |
+| 3 | `instance.destroy` | `instance.destroy` | `incus.*` and `file.ensure` with absent, `ufw.ensure_rule` with absent for each rule the Gateway recorded, and `discard` for the freeze state of both engines |
+| 4 | `instance.sync_base`, `instance.clear_base`, `instance.work_read` | `tasks.sync` and the workspace read | `git.fetch`, `git.ref.ensure`, `git.worktree.read`, `file.ensure` |
+| 5 | `process.ensure_state`, `process.read_instance`, `process.restart`, `schedule.ensure_timer` | `process.start`, `process.stop`, `process.restart`, `schedule.enable` | `systemd.unit.ensure`, `systemd.unit.restart`, `docker.container.ensure`, `docker.container.restart` |
+
+Each rewrite follows the same four rules.
+
+- It lands per kind, in one pull request, with the kind's flow, tests, proof and engine chart. The chart is redrawn in that pull request, not before it.
+- The Operation's behaviour, error codes and projection stay the same. Only the steps and the actions change.
+- The old action is deleted in the pull request that moves its last kind off it. The capability check keeps an Operation on the old steps while a Node still runs an older agent.
+- The rewrite of `instance.t3` also retires the T3 names in the executor, the engine and their pages. The server in a development container is the Conn Server.
 
 ### What this changes
 
@@ -87,6 +110,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 - **ADR 0267 P1** (orders over the WebSocket): orders, receipts and content go over NATS. The observer's relay goes away.
 - **ADR 0267 P3** (the executor test): the test is one Node, idempotent by Operation, a fixed name and one resource kind. A primitive may run longer than seconds within its budget, with progress acknowledgements.
 - **ADR 0267 P4 and P8** (Swamp keeps multi-Node work; `instance.clone` is one action): the state machine runs migrated kinds, multi-Node ones included. The clone's Node part is a composition of primitives, not one action.
+- **ADR 0267 P7, its "Add an action" recipe and its shared rules** (a script or a shared rule moves into the executor as one Rust module and one action): a script's logic moves into the kind's flow in the Gateway. The executor gains a primitive only for a resource the catalogue lacks.
 - **The boundary "the Gateway is the center, Swamp does the work"** (ADR 0267, What this changes): for a migrated kind, the Gateway is the center and runs the work; the executor runs primitives; Swamp is not involved.
 
 ### Order of the moves
@@ -96,7 +120,9 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 3. `route:create` and `route:destroy`.
 4. The DNS writes and the short Node writes, such as Process control.
 5. `instance:create` and the other container flows.
-6. The converges (`node:role-add`, Node setup) last.
+6. The rewrite of the [actions that predate the rule](#actions-that-predate-the-rule), in the order of that list. Moves 3 to 5 landed with those actions, so this comes before any further kind.
+7. The remaining kinds, each as a composition of primitives.
+8. The converges (`node:role-add`, Node setup) last.
 
 ## Rejected alternatives
 
@@ -114,7 +140,8 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 - One system holds a migrated kind, in PHP, with no YAML or expression layer.
 - The Gateway owns run inspection for migrated kinds: per-step timing, receipts and errors in the Operation's steps.
 - The Gateway host runs one more service, `nats-server`. Nodes get no NATS credentials: the Gateway admits them by their WireGuard address.
-- A new kind of Node action is Rust code and an executor release. Mixed executor versions are handled by the capability check.
+- A kind whose resources are in the catalogue moves with a Gateway release alone: a flow in PHP, no Rust, no agent release and no pin. Only a new primitive is Rust code and an executor release. Mixed executor versions are handled by the capability check.
+- An Operation has more and smaller steps. Each costs about 0.1 s, which the measured step times in Context bound.
 - Swamp and the state machine run side by side until the last kind moves.
 - Secret output (such as a T3 session token) is in the receipt today. Sealing it to the Gateway's key is follow-up work before `instance:create` moves.
 

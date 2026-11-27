@@ -74,6 +74,8 @@ A brief states the problem and the outcome the group must reach. The implementer
 
 ### Group brief
 
+A group that adds or changes an executor action, or moves an Operation kind to the Gateway engine, carries a `review` deliverable for the five conditions in [Primitives](../../../docs/reference/executor.md#what-a-primitive-may-be), and puts that page in its read-first paths.
+
 The title states the outcome. Problem, Expected outcome and Guardrails are always there. Proof is there only when tests cannot show the outcome.
 
 ```markdown
