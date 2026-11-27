@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteWorkloadPreparation;
+use App\Domain\Routes\RouteDestroyEngineFlow;
+use App\Domain\Routes\RouteFileGuards;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -230,4 +235,61 @@ it('keeps Route withdrawal and convergence inside the confirmed AppProd release 
     foreach (['prepare', 'selected', 'restore'] as $phase) {
         expect($input[$phase])->toBe(['source_access' => null, 'served_roots' => null, 'runtime' => null, 'acl' => [], 'links' => []]);
     }
+});
+
+it('records the whole-file digests the engine guards with, and builds its steps from a real capture', function (): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'gone', 'gone');
+    $before = app(NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true);
+    [$operation] = destroyAdmission($route);
+
+    expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
+        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog'])]);
+    $flow = app(RouteDestroyEngineFlow::class);
+    $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
+    expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
+        ->and($flow->input($operation, "withdraw-{$node->id}", new EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
+        ->toBe(hash('sha256', $before['caddy']['content']));
+});
+
+it('records no engine digests while route.destroy is not an engine kind', function (): void {
+    config(['orbit.engine.kinds' => []]);
+    [$node] = destroyFleet();
+    [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
+
+    expect($operation->input['route_guards'])->toBe([]);
+});
+
+it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from the captured placement', function (bool $process): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'proxy', 'proxy');
+    if ($process) {
+        $managed = ManagedProcess::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'web', 'runtime' => 'docker',
+            'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['127.0.0.1:8080:8080/tcp']], 'desired_state' => 'running', 'status' => 'active']);
+        $route->customProxy()->update(['process_id' => $managed->id]);
+    }
+    [$operation] = destroyAdmission($route->refresh());
+
+    expect($operation->input['route_private_development'])->toBe(! $process);
+    if ($process) {
+        expect(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
+    } else {
+        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+    }
+})->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);
+
+it('keeps a private Route on the engine when an unrelated Ingress serves its cluster', function (): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'gone', 'gone');
+    $ingress = destroyNode('ingress', '10.44.0.11');
+    $ingress->update(['cluster_id' => $route->cluster_id]);
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $route->cluster_id]);
+    [$operation] = destroyAdmission($route->refresh());
+
+    expect($route->cluster->ingressAssignment)->not->toBeNull()
+        ->and($operation->input['route_private_development'])->toBeTrue()
+        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
 });

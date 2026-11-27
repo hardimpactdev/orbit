@@ -112,11 +112,18 @@ The executor implements these action families:
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
+| `route.withdraw_site` | `route` | Withdraws a Route from the Node: guarded Caddyfile and pools without it, leaf folders removed, Caddy reloaded, admin API read back |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
 | `process.ensure_state` | `process` | Converges one Process to running or stopped and its boot policy, then reads it back (see [the process family](#the-process-family)) |
 | `process.read_instance` | `process` | Reads the run a restart replaces: a unit's `InvocationID` or a container's ID and `State.StartedAt`; changes nothing |
 | `process.restart` | `process` | Restarts one Process at most once per order, only while it still runs the pinned run, then reads a new run back (see [the process family](#the-process-family)) |
 | `schedule.ensure_timer` | `process` | Enables and starts a Schedule's own Node timer, then reads back `UnitFileState`, `ActiveState` and the next elapse |
+
+`route.withdraw_site` holds Swamp's publication lock, `/etc/caddy/.orbit-publish.lock`. It replaces the live Caddyfile only when it still holds the bytes whose digest the Gateway rendered from, or already holds the desired bytes.
+
+It merges a shared pool by scope: a scope it changes must still hold its rendered-from or desired state, with the group as gid or name. It never creates an absent scope or pool. Any other content refuses `owned_revision_conflict` before a write. A failed pool test or reload, or Caddy reload, puts the previous files back. It reloads Caddy on every run, also on a repeat that changes nothing. It then reads `127.0.0.1:2019/config/` and fails `route.withdraw_unverified` while Caddy still names a withdrawn domain.
+
+An executor with the `dns` family reports the `dns.guarded_records` feature. `dns.publish_records` holds the Node's DNS lock, `/run/lock/orbit-dnsmasq.lock`. With it, each `dns.publish_records` file may carry `from_sha256`, the digest of the bytes the Gateway rendered from. A file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict`, and neither file is written.
 
 ### The instance family
 
@@ -141,7 +148,7 @@ When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor adverti
 
 ### The process family
 
-The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop), [`process.restart`](/reference/gateway-engine#processrestart) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0 (`NodeExecutorInput::FamilySince`); its restart actions come with agent 0.32.0, and the Gateway routes a restart only to a Node that reports them. App-prod does not enable the family yet. Its actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
+The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop), [`process.restart`](/reference/gateway-engine#processrestart) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0 (`NodeExecutorInput::FamilySince`); its restart actions come with agent 0.33.0, and the Gateway routes a restart only to a Node that reports them. App-prod does not enable the family yet. Its actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
 
 | Shape | Change | Read-back |
 | --- | --- | --- |

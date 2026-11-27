@@ -32,6 +32,9 @@ pub enum Action {
     /// Place one Node's part of a Route: access, environment, PHP-FPM pools, certificates and the Caddyfile (ADR 0271).
     /// Its target is the Node, so the Node's Route publications run one at a time.
     RoutePublishSite,
+    /// Withdraw one Node's part of a Route: pools and Caddyfile without it, its leaf folders removed, read back from Caddy
+    /// (ADR 0271). Its target is the Node, so it runs one at a time with the Node's Route publications.
+    RouteWithdrawSite,
     /// Place a VPN Node's private DNS records and catalog, then restart dnsmasq and the listener (ADR 0271). Its target
     /// is the Node, so the Node's DNS publications run one at a time.
     DnsPublishRecords,
@@ -101,7 +104,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -109,6 +112,7 @@ impl Action {
         Self::UfwEnsureRule,
         Self::TlsEnsureCsr,
         Self::RoutePublishSite,
+        Self::RouteWithdrawSite,
         Self::DnsPublishRecords,
         Self::InstanceClone,
         Self::InstancePrepare,
@@ -138,7 +142,7 @@ impl Action {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwEnsureRule => Family::Firewall,
-            Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
+            Self::TlsEnsureCsr | Self::RoutePublishSite | Self::RouteWithdrawSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
             Self::InstanceClone
             | Self::InstancePrepare
@@ -172,6 +176,7 @@ impl Action {
             | Self::UfwEnsureRule
             | Self::TlsEnsureCsr
             | Self::RoutePublishSite
+            | Self::RouteWithdrawSite
             | Self::DnsPublishRecords
             | Self::InstanceClone
             | Self::InstanceFetchBranch
@@ -201,10 +206,20 @@ impl Action {
 
     /// Whether a lost receipt keeps the Gateway's target fenced (ADR 0271): only a terminal result settles the step, so an
     /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
+    /// A Route withdrawal's DNS and site steps are fenced too: they run inside a receipt-bound removal.
     pub fn receipt_fenced(self) -> bool {
         matches!(
             self,
-            Self::InstanceDestroy | Self::InstanceFetchBranch | Self::InstanceSyncBase | Self::InstanceClearBase | Self::ProcessEnsureState | Self::ProcessReadInstance | Self::ProcessRestart | Self::ScheduleEnsureTimer
+            Self::InstanceDestroy
+                | Self::InstanceFetchBranch
+                | Self::InstanceSyncBase
+                | Self::InstanceClearBase
+                | Self::DnsPublishRecords
+                | Self::RouteWithdrawSite
+                | Self::ProcessEnsureState
+                | Self::ProcessReadInstance
+                | Self::ProcessRestart
+                | Self::ScheduleEnsureTimer
         )
     }
 
@@ -218,6 +233,7 @@ impl Action {
             Self::UfwEnsureRule => "ufw.ensure_rule",
             Self::TlsEnsureCsr => "tls.ensure_csr",
             Self::RoutePublishSite => "route.publish_site",
+            Self::RouteWithdrawSite => "route.withdraw_site",
             Self::DnsPublishRecords => "dns.publish_records",
             Self::InstanceClone => "instance.clone",
             Self::InstancePrepare => "instance.prepare",
@@ -260,6 +276,7 @@ impl FromStr for Action {
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
             "route.publish_site" => Ok(Self::RoutePublishSite),
+            "route.withdraw_site" => Ok(Self::RouteWithdrawSite),
             "dns.publish_records" => Ok(Self::DnsPublishRecords),
             "instance.clone" => Ok(Self::InstanceClone),
             "instance.prepare" => Ok(Self::InstancePrepare),

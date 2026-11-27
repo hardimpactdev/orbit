@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use super::{publish_records, System, CATALOG, RECORDS};
+use super::{catalog_sha256, publish_records, System, CATALOG, RECORDS};
 
 struct Fake {
     root: tempfile::TempDir,
@@ -131,4 +131,118 @@ fn refuses_missing_content_and_unknown_fields() {
     let extra = json!({"records": {"blob": {"sha256": "r"}}, "catalog": {"blob": {"sha256": "c"}}, "argv": ["sh"]});
     assert_eq!(publish_records(&fake, &extra).unwrap_err().code, "dns.input_invalid");
     assert!(fake.runs.borrow().is_empty());
+}
+
+fn digest(bytes: &[u8]) -> String {
+    super::sha256_hex(bytes)
+}
+
+#[test]
+fn a_guarded_file_is_replaced_only_from_the_rendered_bytes_and_kept_when_already_desired() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\naddress=/old.example/10.44.0.8\n").unwrap();
+    fs::write(fake.file(CATALOG), "{}\n").unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\naddress=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"old\":1}\n")},
+    });
+    // The catalog already holds the desired bytes, so its own guard is met by them.
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"address=/.test/10.44.0.7\n");
+    // A replay finds both desired and changes nothing, but still checks and restarts.
+    assert_eq!(publish_records(&fake, &input), Ok(0));
+    assert_eq!(fake.runs.borrow().iter().filter(|argv| argv[0] == "/usr/bin/systemctl").count(), 2);
+}
+
+#[test]
+fn a_guarded_file_changed_elsewhere_refuses_before_any_write() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/other.example/10.44.0.9\n").unwrap();
+    fs::write(fake.file(CATALOG), "{\"stale\":1}\n").unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"stale\":1}\n")},
+    });
+    assert_eq!(publish_records(&fake, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"address=/other.example/10.44.0.9\n");
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), b"{\"stale\":1}\n");
+    assert!(fake.runs.borrow().is_empty());
+}
+
+#[test]
+fn the_gateway_signed_guarded_input_decodes() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../contract/fixtures/executor-dns-guarded-records.json")).expect("shared fixture");
+    let mut fake = Fake::new();
+    fake.blobs = HashMap::from([(digest(b"address=/other.example/10.44.0.8\n"), b"address=/other.example/10.44.0.8\n".to_vec()), (digest(b"{}\n"), b"{}\n".to_vec())]);
+    fs::write(fake.file(RECORDS), "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n").unwrap();
+    fs::write(fake.file(CATALOG), "{\"shop.example\":1}\n").unwrap();
+    assert_eq!(publish_records(&fake, &fixture["fields"]["input"]), Ok(2));
+}
+
+/// The catalog Swamp's route withdrawal wrote on the nested VPN Node (ORB-6310 proof), and the Gateway's render of the same
+/// state: Swamp keeps its merge's key order and writes `{}` for the empty overrides, PHP writes `requesters` first and `[]`.
+const SWAMP_CATALOG: &[u8] = b"{\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":{}}\n";
+const GATEWAY_CATALOG: &[u8] = b"{\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":[]}\n";
+/// The canonical digest both sides compute; the Gateway's test (`RouteFileGuardsTest`) pins the same value.
+const CANONICAL_CATALOG_SHA256: &str = "141b5eab6c46db1a9c5e2615fc229b8b9bf0253d3f4079b95e6ce4470a03baba";
+
+#[test]
+fn a_catalog_swamp_rewrote_matches_the_canonical_digest_the_gateway_rendered_from() {
+    assert_eq!(catalog_sha256(SWAMP_CATALOG).as_deref(), Some(CANONICAL_CATALOG_SHA256));
+    assert_eq!(catalog_sha256(GATEWAY_CATALOG).as_deref(), Some(CANONICAL_CATALOG_SHA256));
+    // An already canonical file keeps its plain digest.
+    assert_eq!(catalog_sha256(b"{\"shop.example\":1}\n"), Some(digest(b"{\"shop.example\":1}\n")));
+    assert_eq!(catalog_sha256(b"not json"), None);
+
+    let mut fake = Fake::new();
+    fake.blobs.insert("c".to_owned(), b"{\"records\":{}}\n".to_vec());
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    fs::write(fake.file(CATALOG), SWAMP_CATALOG).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": CANONICAL_CATALOG_SHA256},
+    });
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), b"{\"records\":{}}\n");
+}
+
+#[test]
+fn a_catalog_with_another_answer_still_refuses() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    let foreign = String::from_utf8(SWAMP_CATALOG.to_vec()).unwrap().replace("\"swamp.orbit\":\"10.45.0.1\"", "\"swamp.orbit\":\"10.45.0.9\"");
+    fs::write(fake.file(CATALOG), &foreign).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": CANONICAL_CATALOG_SHA256},
+    });
+    assert_eq!(publish_records(&fake, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), foreign.as_bytes());
+}
+
+#[test]
+fn a_catalog_already_desired_in_swamps_form_is_kept_on_a_retry() {
+    // The desired catalog is the Gateway's render; Swamp wrote the same answers in its own form. The guard's original is stale.
+    let mut fake = Fake::new();
+    fake.blobs.insert("c".to_owned(), GATEWAY_CATALOG.to_vec());
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    fs::write(fake.file(CATALOG), SWAMP_CATALOG).unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"stale\":1}\n")},
+    });
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), GATEWAY_CATALOG);
+    assert_eq!(fake.runs.borrow().iter().filter(|argv| argv[0] == "/usr/bin/systemctl").count(), 1);
+
+    // Another answer is neither state and still refuses.
+    let other = Fake::new();
+    let mut blobs = other.blobs.clone();
+    blobs.insert("c".to_owned(), GATEWAY_CATALOG.to_vec());
+    let other = Fake { blobs, ..other };
+    fs::write(other.file(RECORDS), "address=/.test/10.44.0.7\n").unwrap();
+    let foreign = String::from_utf8(SWAMP_CATALOG.to_vec()).unwrap().replace("\"swamp.orbit\":\"10.45.0.1\"", "\"swamp.orbit\":\"10.45.0.9\"");
+    fs::write(other.file(CATALOG), &foreign).unwrap();
+    assert_eq!(publish_records(&other, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
 }

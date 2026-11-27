@@ -292,11 +292,12 @@ it('records the Schedule result Swamp records from the timer read-back', functio
     expect(app(EngineKinds::class)->routes($operation->replicate()))->toBeFalse();
 });
 
-it('gates the process family on an agent version this tree builds or older', function (): void {
+it('gates the process family on agent 0.31.0, which this tree builds or follows', function (): void {
     preg_match('/^\[package\]\nname = "orbit-agent"\nversion = "([0-9.]+)"/m', (string) file_get_contents(base_path('../agent/Cargo.toml')), $built);
 
-    // The family's later actions, such as the restart, are gated by the actions a Node reports, not by the family's version.
-    expect(version_compare(NodeExecutorInput::FamilySince['process'], $built[1] ?? '0', '<='))->toBeTrue();
+    // The family shipped in 0.31.0; a later agent with more actions keeps it, so the gate never moves past the released agent.
+    expect(NodeExecutorInput::FamilySince['process'])->toBe('0.31.0')
+        ->and(version_compare($built[1] ?? '0', NodeExecutorInput::FamilySince['process'], '>='))->toBeTrue();
 });
 
 it('enables the process family on app-dev only, from the agent that knows it', function (): void {

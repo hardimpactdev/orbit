@@ -39,13 +39,23 @@ if ($mode === 'configuration') {
         'executor_unit' => NodeExecutorInput::unit(true),
         'executor_keys' => implode("\n", config('orbit.executor.public_keys'))."\n",
         'executor_guard' => NodeBusAccess::guard(),
+        'executor_guard_gateway' => NodeBusAccess::guard('orbit'),
         'executor_bus' => json_encode(['url' => NodeBusAccess::url()], JSON_THROW_ON_ERROR),
         'routes' => config('orbit.engine.kinds'),
     ];
 } elseif ($mode === 'capabilities' && ctype_digit($argv[2] ?? '')) {
     $node = (int) $argv[2];
     $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
-    $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? []];
+    $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? [], 'features' => $report['features'] ?? []];
+} elseif ($mode === 'report-without-feature' && ctype_digit($argv[2] ?? '') && preg_match('/\A[a-z0-9_]+\.[a-z0-9_]+\z/', $argv[3] ?? '') === 1) {
+    // Fixture only: the Node's own report with its actions intact and one optional input (feature) left out, as an older
+    // executor would report it. The executor's next report, within 60 s or at its restart, puts the true one back.
+    $node = (int) $argv[2];
+    $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
+    $report['features'] = array_values(array_diff($report['features'] ?? [], [$argv[3]]));
+    $request('$KV.NODES.n'.$node, json_encode($report, JSON_THROW_ON_ERROR));
+    $read = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
+    $result = ['actions' => $read['actions'] ?? [], 'features' => $read['features'] ?? []];
 } elseif ($mode === 'extension' && in_array($argv[2] ?? '', ['tasks', 'conn'], true) && in_array($argv[3] ?? '', ['read', 'on', 'off'], true)) {
     // Fixture only: the nested fleet has no AI router (Valkey and CLIProxyAPI), so the proof sets the stored state directly, past the
     // dependency check of extension:enable, and restores exactly what it read. Model routing is not under test.

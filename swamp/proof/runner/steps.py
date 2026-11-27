@@ -1106,6 +1106,18 @@ def clone_fixture(run, args, lane='CloneLane', module='clone_lifecycle'):
     return []
 
 
+def route_fixture(run, args):
+    from clone_lifecycle import ProofFailure
+    from route_lifecycle import RouteLane
+
+    run.clone_lane = RouteLane(run, fleet_module)
+    try:
+        run.clone_lane.setup(**args)
+    except ProofFailure as error:
+        return [str(error)]
+    return []
+
+
 def clone_step(method):
     def step(run, args):
         from clone_lifecycle import ProofFailure, ProofInfrastructure
@@ -1149,6 +1161,8 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'executor_lost_result': executor_lost_result, 'executor_power': executor_power,
                   'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'), 'clone_work': clone_step('work'),
                   'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup'),
+                  'route_fixture': route_fixture, 'route_create': clone_step('route_create'), 'route_destroy': clone_step('route_destroy'),
+                  'route_clone_destroy': clone_step('route_clone_destroy'), 'route_compare': clone_step('route_compare'),
                   'sync_fixture': lambda run, args: clone_fixture(run, args, 'SyncLane'), 'sync_copy': clone_step('copy'),
                   'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare'),
                   'process_fixture': lambda run, args: clone_fixture(run, args, 'ProcessLane', 'process_control'),

@@ -1602,7 +1602,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "orbit-agent"
-version = "0.32.0"
+version = "0.33.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1725,6 +1725,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
@@ -1779,6 +1780,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

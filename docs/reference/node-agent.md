@@ -14,13 +14,13 @@ covers:
 
 # Node agent
 
-The agent binary also serves signed executor orders in a separate service mode. [Executor actions](/reference/executor#action-primitives), including `instance.destroy`, a task copy's `instance.sync_base` and the read-only `instance.work_read` [signed read](/reference/executor#signed-reads), are not observer commands.
+The agent binary also serves signed executor orders in a separate service mode. [Executor actions](/reference/executor#action-primitives), including `instance.destroy`, `route.withdraw_site`, a task copy's `instance.sync_base` and the read-only `instance.work_read` [signed read](/reference/executor#signed-reads), are not observer commands.
 
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
-- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10966.0` / agent `0.31.0`, which adds the signed Process state action `process.ensure_state`). This tree builds agent `0.32.0`.
-- **Process restart:** Agent `0.32.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
+- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10966.0` / agent `0.31.0`, which adds the signed Process state action `process.ensure_state`). This tree builds agent `0.33.0`.
+- **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
