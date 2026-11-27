@@ -1,0 +1,31 @@
+command: route:update
+chart: route/engine/update
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases:
+  - id: signed-route-domain-change
+    batch: fresh-fleet
+    covers: ["path:engine", "path:cutover", "path:withdraw", "path:sibling", "path:lost-receipt", "path:failed-after-cutover", "path:retry", "path:swamp"]
+    summary: Move a clone's own private Route to another name inside the Node's TLD on the signed executor (side-by-side site, probe, cutover, lasting Caddyfile, staging leaf withdrawn), again after a dropped receipt of the lasting Caddyfile, again after a withdrawal refused once the cutover committed and its forward retry, and through Swamp when the Route Node lacks the route family; a sibling Route on the same Node answers its known page throughout.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1800
+    setup:
+      - update_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - clone_create: {name: sibling, via: engine}
+      - clone_create: {name: target, via: engine}
+      - route_create: {name: neighbour, clone: sibling}
+      - route_create_tld: {name: own, clone: target}
+      - route_update: {name: own, to: signed, via: engine, sibling: neighbour}
+      - route_update: {name: own, to: dropped, via: engine, sibling: neighbour, fault: receipt}
+      - route_update: {name: own, to: retried, via: engine, sibling: neighbour, fault: partial}
+      - route_update: {name: own, to: fallback, via: swamp, sibling: neighbour}
+    expect:
+      - update_compare: {engine: signed, swamp: fallback}
+      - clone_cleanup: {}
+uncovered:
+  "path:engine": "One Route Node, a name inside its TLD, and a clone that serves `src` (no composer.json), so no URL write. A DNS move (a name outside the TLD) still takes Swamp at admission: its guarded input needs rendered-from digests that only route.destroy's admission captures. Public Routes, publication and web root changes, LAN rules, the Ingress edge and URL writes take Swamp at admission; Gateway tests cover those refusals."
+  "path:failed-after-cutover": "The failure is a withdrawal refused (owned_revision_conflict) after the lasting Caddyfile was installed. A failure before the cutover (a failed probe or publication, with the replacement never authoritative) is covered by Gateway tests only."
+  "path:swamp": "Fallback runs with the Route Node's whole route family absent. The refusal of a Swamp start of an engine-started chain (route.update_engine_chain) and the refusal of an engine start beside a Swamp Route writer (route.publication_held) are covered by Gateway tests only."

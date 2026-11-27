@@ -65,10 +65,12 @@ swamp/proof/instance/migrate.cases.yaml                             instance:mig
 
 # route:destroy on the signed executor, and the Route withdrawal of a clone's destroy. The Swamp withdrawal keeps its own lines below.
 swamp/proof/route/destroy.cases.yaml                                route:destroy
+swamp/proof/route/update.cases.yaml                                 route:update
 swamp/proof/instance/destroy.cases.yaml                             instance:destroy
 apps/gateway/app/Domain/Routes/RouteDestroyEngineFlow.php           route:destroy instance:destroy
+apps/gateway/app/Domain/Routes/RouteUpdateEngineFlow.php            route:update
 apps/gateway/app/Domain/Instances/InstanceDestroyEngineFlow.php     instance:destroy
-apps/agent/crates/route/**                                          route:destroy instance:destroy
+apps/agent/crates/route/**                                          route:destroy instance:destroy route:update
 apps/agent/crates/dns/**                                            route:destroy instance:destroy
 apps/cli/app/Commands/Instances/MigrateInstanceCommand.php         instance:migrate
 apps/gateway/app/Actions/Instances/StartInstanceMigrateAction.php  instance:migrate
