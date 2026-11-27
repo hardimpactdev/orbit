@@ -24,6 +24,9 @@ final readonly class NativeRouteRemovalCompletion
                 if ($row['replacement_of'] !== null) {
                     Route::query()->whereKey($row['replacement_of'])->update(['replaced_by_route_id' => null]);
                 }
+                // As DestroyRouteAction::beginRemoval: the Route leaves the authoritative states before its row goes, so a
+                // secondary (web-root) Route of an active Instance passes `routes_active_target_delete`.
+                Route::query()->whereKey($row['route_id'])->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
                 Route::query()->whereKey($row['route_id'])->delete();
             }
         }

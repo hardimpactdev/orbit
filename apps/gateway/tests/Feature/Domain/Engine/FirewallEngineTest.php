@@ -15,7 +15,6 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -307,10 +306,13 @@ it('records the end again when its projection failed the first time', function (
     $attributes = $rule->getAttributes();
     $rule->delete();
 
-    expect(fn () => ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]))->toThrow(ModelNotFoundException::class);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+    // The receipt is acknowledged: the projection's retry waits for its own deadline, not the message's redelivery.
+    ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['engine']['finish_attempts'])->toBe(1);
 
     FirewallRule::query()->insert($attributes);
+    $this->travel(3)->seconds();
     app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id, 'step' => 'ensure-0']);
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
 });

@@ -34,7 +34,13 @@ final class FailureStepBus implements MachineBus
 
     public function publishStart(int $operation): void {}
 
-    public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void {}
+    /** @var list<string> */
+    public array $deadlines = [];
+
+    public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void
+    {
+        $this->deadlines[] = "{$step}:{$sends}";
+    }
 
     public function nudge(int $operation, string $id): void {}
 
@@ -69,6 +75,11 @@ final class FailureStepDefinition implements EngineDefinition
 {
     public static ?string $finished = null;
 
+    /** How many more times the projection throws, and how many times it ran. */
+    public static int $throws = 0;
+
+    public static int $finishes = 0;
+
     public function __construct(private int $node) {}
 
     public function steps(Operation $operation): array
@@ -93,6 +104,12 @@ final class FailureStepDefinition implements EngineDefinition
 
     public function finish(Operation $operation, EngineRun $run): void
     {
+        self::$finishes++;
+        if (self::$throws > 0) {
+            self::$throws--;
+
+            throw new RuntimeException('projection refused');
+        }
         self::$finished = ($run->failed()?->name ?? 'none').':'.($run->succeeded() ? 'succeeded' : 'not succeeded');
         $operation->forceFill(['status' => $run->failed() === null ? OperationStatus::Succeeded : OperationStatus::Failed])->save();
     }
@@ -107,6 +124,8 @@ beforeEach(function (): void {
         'name' => 'app-dev', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit',
     ]));
     FailureStepDefinition::$finished = null;
+    FailureStepDefinition::$throws = 0;
+    FailureStepDefinition::$finishes = 0;
     $this->app->instance(InstanceCreateEngineFlow::class, new FailureStepDefinition($this->node->id));
     $this->operation = Operation::query()->forceCreate(['kind' => 'instance.create', 'status' => OperationStatus::Running, 'target_type' => 'instance',
         'target_id' => 7, 'node_id' => $this->node->id, 'input' => []]);
@@ -156,4 +175,45 @@ it('skips a failure step whose own steps never ran, and ends at once', function 
     expect($this->bus->sent)->toBe(['make'])
         ->and(OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', 'stop')->value('status'))->toBe('skipped')
         ->and(FailureStepDefinition::$finished)->toBe('make:not succeeded');
+});
+
+it('fails the Operation once after the bounded projection retries, and redelivers nothing after', function (): void {
+    FailureStepDefinition::$throws = PHP_INT_MAX;
+    ($this->receipt)('make', ['status' => 'applied', 'changes' => 1]);
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    // A redelivered receipt inside the backoff neither runs the projection nor throws to the consumer.
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    expect(FailureStepDefinition::$finishes)->toBe(1);
+    foreach ([1, 2] as $retry) {
+        $this->travel(10)->seconds();
+        app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+    }
+    $operation = $this->operation->refresh();
+
+    expect(FailureStepDefinition::$finishes)->toBe(3)
+        ->and(array_values(array_filter($this->bus->deadlines, static fn (string $d): bool => str_starts_with($d, 'projection:'))))->toBe(['projection:1', 'projection:2'])
+        ->and($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe(Engine::ProjectionFailed)
+        ->and($operation->failed_step)->toBe(Engine::ProjectionStep)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->state['engine']['finish_attempts'])->toBe(3);
+
+    $this->travel(60)->seconds();
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+
+    expect(FailureStepDefinition::$finishes)->toBe(3)
+        ->and($this->operation->refresh()->status)->toBe(OperationStatus::Failed);
+});
+
+it('recovers from a projection that fails once within the bound', function (): void {
+    FailureStepDefinition::$throws = 1;
+    ($this->receipt)('make', ['status' => 'applied', 'changes' => 1]);
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+    $this->travel(3)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $this->operation->id]);
+
+    expect(FailureStepDefinition::$finishes)->toBe(2)
+        ->and(FailureStepDefinition::$finished)->toBe('none:succeeded')
+        ->and($this->operation->refresh()->status)->toBe(OperationStatus::Succeeded);
 });

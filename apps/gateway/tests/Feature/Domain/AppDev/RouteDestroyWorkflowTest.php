@@ -293,3 +293,23 @@ it('keeps a private Route on the engine when an unrelated Ingress serves its clu
         ->and($operation->input['route_private_development'])->toBeTrue()
         ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
 });
+
+it('destroys a secondary web-root Route of an active Instance and keeps its authoritative Route', function (): void {
+    [$node] = destroyFleet();
+    $main = destroyFixture($node, 'active', 'live');
+    $instance = $main->targets()->firstOrFail()->instance;
+    $secondary = Route::query()->create(['kind' => 'app', 'node_id' => $node->id, 'project_id' => $instance->project_id, 'domain' => 'docs.live.outside.test',
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending', 'web_root' => 'public']);
+    $secondary->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $secondary->update(['status' => 'active', 'sites_published' => true]);
+    [$operation] = destroyAdmission($secondary);
+
+    $operation = app(NativeRouteRemovalProjection::class)->apply($operation, ['status' => 'succeeded', 'error_code' => null, 'run_id' => 'fixture-run',
+        'started_at' => now()->toIso8601ZuluString(), 'finished_at' => now()->toIso8601ZuluString(), 'result' => ['steps' => []]]);
+
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and(Route::query()->whereKey($secondary->id)->exists())->toBeFalse()
+        ->and($main->refresh()->status->value)->toBe('active')
+        ->and($main->targets()->pluck('instance_id')->all())->toBe([$instance->id])
+        ->and($instance->refresh()->status->value)->toBe('active');
+});
