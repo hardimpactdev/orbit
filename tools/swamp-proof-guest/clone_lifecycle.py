@@ -774,6 +774,8 @@ class SyncLane(CloneLane):
         # holds is missing here and each sync imports it (`bundled`). The work below is made on the older commit.
         self.work(instance, 'reset', '--quiet', '--hard', 'HEAD~3')
         self.work(instance, 'update-ref', f'refs/remotes/origin/{self.branch}', 'HEAD')
+        for line in self.work(instance, 'for-each-ref', '--contains', self.tip, '--format=%(refname)', 'refs/heads').splitlines():
+            self.work(instance, 'update-ref', line, 'HEAD')
         self.work(instance, 'branch', 'proof-local', 'HEAD~1')
         tracked = self.work(instance, 'ls-files').splitlines()[0]
         self.workfile(instance, 'proof-stashed.txt', 'stashed\n')
