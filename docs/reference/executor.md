@@ -218,15 +218,15 @@ An executor with the `dns` family reports the `dns.guarded_records` feature. `dn
 
 ### The host family
 
-The `host` family (`crates/host`) holds the host-resource primitives of the [catalogue](#the-catalogue). App-dev and vpn enable it from agent 0.36.0 (`NodeExecutorInput::FamilySince`), because the Route steps run there. No flow sends them yet: the Route rewrite moves `route.create`, `route.destroy` and `route.update` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node. The Gateway sends every path, owner, mode, unit, lock and digest. Content arrives as a blob.
+The `host` family (`crates/host`) holds the host-resource primitives of the [catalogue](#the-catalogue). App-dev and vpn enable it from agent 0.36.0 (`NodeExecutorInput::FamilySince`), because the Route steps run there. No flow sends them yet: the Route rewrite moves `route.create`, `route.destroy` and `route.update` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node. The Gateway sends every path, owner, mode, unit, lock and digest. Content arrives as a blob whose bytes must hash to its SHA-256 reference.
 
 | Primitive | Input | Work |
 | --- | --- | --- |
 | `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
-| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads the entry with `getfacl` and sets it only when it differs. A recursive entry is applied below on every run. |
-| `ca.trust.ensure` | A `<name>.crt` and a PEM certificate, or `absent` | Places the certificate in `/usr/local/share/ca-certificates/` and runs `update-ca-certificates` only on a change. |
-| `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped` | Enables, disables, starts or stops only what differs, then reads the unit back. |
+| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads each affected path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; answers the paths it changed |
+| `ca.trust.ensure` | A `<name>.crt`, a PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/`, and rebuilds the bundle until `/etc/ssl/certs/<name>.pem` matches |
+| `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped` | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
 | `config.apply` | Lock path, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 
@@ -238,11 +238,13 @@ A `file.ensure` file with `from_sha256` that holds neither that digest nor the d
 | --- | --- |
 | `caddy` (`config`, `user`) | `runuser -u <user> -- caddy validate --config <config> --adapter caddyfile` |
 | `php-fpm` (`version`, optional `fpm_config`, `ini_scan_dir`) | `php-fpm<version> -t`, with `--fpm-config` and `PHP_INI_SCAN_DIR` when given |
-| `dnsmasq` | `dnsmasq --test` |
+| `dnsmasq` (`conf_file`, `conf_dir`, `skip_suffixes`) | `dnsmasq --test --conf-file=<conf_file> --conf-dir=<conf_dir>,<suffixes>`, the configuration the service loads |
 
-A failed write or validation puts every file back to its exact prior bytes, owner and mode, or removes a new one (`config.write_failed`, `config.validate_failed`). A failed reload or restart puts the files back and loads the units again (`config.load_failed`). A scope-by-scope pool merge is the Gateway's: it renders the whole file.
+Paths have one spelling: no `.`, `..` or empty part. A file named twice, also through a linked folder, or as the lock refuses. Before a guarded file changes, its rendered-from bytes are kept beside it as `.<name>.previous` until the set loads, so a replay after a stop restores them, never an unvalidated candidate.
 
-An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends root, `caddy`, `0750`, `0640` and `/CN=Orbit`. A Route whose leaf Node lacks the feature runs on Swamp.
+A failed write or validation puts every file back to its exact prior bytes, owner and mode, or removes a new one (`config.write_failed`, `config.validate_failed`). A failed reload or restart puts the files back and loads again the units the run reached (`config.load_failed`). A restore or reload that fails during recovery answers `config.restore_failed`. A scope-by-scope pool merge is the Gateway's: it renders the whole file.
+
+An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `key`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends `<directory>/key.pem`, root, `caddy`, `0750`, `0640` and `/CN=Orbit`. It replaces only a key that openssl cannot read, puts an existing key's owner and mode right without touching its bytes, and writes a new key through a file it creates, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
 
 ### The instance family
 

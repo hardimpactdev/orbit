@@ -4,27 +4,32 @@
 use serde::Deserialize;
 
 use crate::fs;
-use crate::{invalid, parse, strings, BlobRef, Failure, Ids, System};
+use crate::{invalid, parse, strings, BlobRef, Failure, Owner, System};
 
 /// The folder `update-ca-certificates` reads local certificates from: part of the host, not of Orbit.
 const STORE: &str = "/usr/local/share/ca-certificates/";
 
+/// Where `update-ca-certificates` links each certificate it trusts, as `<name>.pem`: the effective trust, part of the host.
+const TRUSTED: &str = "/etc/ssl/certs/";
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 enum Input {
-    /// The certificate under `name` in the store.
-    Present { name: String, certificate: BlobRef },
+    /// The certificate under `name` in the store, with its owner and mode.
+    Present { name: String, certificate: BlobRef, owner: Owner },
     /// No certificate under `name`.
     Absent { name: String },
 }
 
-/// Places or removes the certificate, root-owned and mode 0644, and rebuilds the trust bundle only when it changed.
-/// Answers `1` on a change and `0` on a repeat.
+/// Places or removes the certificate and rebuilds the trust bundle when the store or the effective trust differs: a
+/// certificate is trusted only when the bundle's link for it reaches the placed file. Answers `1` on a change and `0` on
+/// a repeat.
 ///
 /// # Errors
 ///
-/// `host.input_invalid` for a name outside `<name>.crt`, `host.content_missing` for a blob the executor did not read, and
-/// `trust.ensure_failed` for anything that is not a PEM certificate or a failed write or rebuild.
+/// `host.input_invalid` for a name outside `<name>.crt` or an owner outside its shape, `host.content_missing` for a blob
+/// the executor did not read, and `trust.ensure_failed` for content openssl does not read as one certificate, a failed
+/// write or rebuild, or trust that does not match after the rebuild.
 pub fn trust_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: Input = parse(input)?;
     let name = match &input {
@@ -34,15 +39,27 @@ pub fn trust_ensure(system: &impl System, input: &serde_json::Value) -> Result<u
     if stem.is_empty() || !stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) || stem.starts_with('.') {
         return Err(invalid("name"));
     }
+    if let Input::Present { owner, .. } = &input {
+        if !owner.valid() {
+            return Err(invalid("owner"));
+        }
+    }
     let failed = |detail: String| Failure::new("trust.ensure_failed", detail);
     let dest = system.path(&format!("{STORE}{name}"));
-    let changed = match &input {
-        Input::Present { certificate, .. } => {
+    let link = system.path(&format!("{TRUSTED}{stem}.pem"));
+    let trusted = || std::fs::canonicalize(&link).is_ok_and(|target| std::fs::canonicalize(&dest).is_ok_and(|placed| placed == target));
+    let present = matches!(input, Input::Present { .. });
+    let mut changed = match &input {
+        Input::Present { certificate, owner, .. } => {
             let bytes = certificate.bytes(system)?;
-            if !bytes.starts_with(b"-----BEGIN CERTIFICATE-----") {
-                return Err(failed("not a PEM certificate".to_owned()));
-            }
-            fs::ensure(&dest, &bytes, Ids { uid: 0, gid: 0, mode: 0o644 }).map_err(|error| failed(error.to_string()))?
+            let ids = owner.ids(system, "trust.ensure_failed")?;
+            // openssl reads the candidate before it goes in place.
+            let candidate = dest.with_file_name(format!(".{name}.candidate"));
+            fs::replace(&candidate, &bytes, ids).map_err(|error| failed(error.to_string()))?;
+            let checked = system.run(30, &strings(&["/usr/bin/openssl", "x509", "-noout", "-in", &candidate.to_string_lossy()]));
+            let placed = checked.map_err(failed).and_then(|_| fs::ensure(&dest, &bytes, ids).map_err(|error| failed(error.to_string())));
+            let _ = std::fs::remove_file(&candidate);
+            placed?
         }
         Input::Absent { .. } => match std::fs::remove_file(&dest) {
             Ok(()) => true,
@@ -50,12 +67,18 @@ pub fn trust_ensure(system: &impl System, input: &serde_json::Value) -> Result<u
             Err(error) => return Err(failed(error.to_string())),
         },
     };
-    if changed {
+    let linked = std::fs::symlink_metadata(&link).is_ok();
+    if changed || (present && !trusted()) || (!present && linked) {
         let mut argv = strings(&["/usr/sbin/update-ca-certificates"]);
-        if matches!(input, Input::Absent { .. }) {
+        if !present {
             argv.push("--fresh".to_owned());
         }
         system.run(60, &argv).map_err(failed)?;
+        changed = true;
+    }
+    let held = if present { trusted() } else { std::fs::symlink_metadata(&link).is_err() };
+    if !held {
+        return Err(failed(format!("{name} trust read-back")));
     }
     Ok(u32::from(changed))
 }

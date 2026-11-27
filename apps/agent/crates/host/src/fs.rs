@@ -76,13 +76,28 @@ pub(crate) fn replace(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<
     result
 }
 
-/// Puts back what each replaced file held before; a file that did not exist is removed. Best effort: the failure the
-/// caller reports is the one that made it roll back.
-pub(crate) fn restore(replaced: &[(PathBuf, Previous)]) {
+/// Puts back what each replaced file held before; a file that did not exist is removed. Every file is tried; the answer
+/// names each one that could not be put back.
+pub(crate) fn restore(replaced: &[(PathBuf, Previous)]) -> Result<(), String> {
+    let mut failed = Vec::new();
     for (dest, previous) in replaced {
-        let _ = match &previous.content {
+        let result = match &previous.content {
             Some((bytes, ids)) => replace(dest, bytes, *ids),
-            None => fs::remove_file(dest),
+            None => match fs::remove_file(dest) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            },
         };
+        if let Err(error) = result {
+            failed.push(format!("{}: {error}", dest.display()));
+        }
     }
+    if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
+}
+
+/// The copy of a guarded file's last usable bytes, kept beside it from before its replacement until its set loads: a temporary
+/// name derived from the file's own.
+pub(crate) fn kept(dest: &Path) -> PathBuf {
+    let name = dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    dest.with_file_name(format!(".{name}.previous"))
 }

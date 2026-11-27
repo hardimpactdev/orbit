@@ -147,7 +147,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
 
     /**
      * @param  array<string, mixed>  $leaf
-     * @return array{directory: string, user: string, group: string, directory_mode: string, key_mode: string, subject: string, domain: string}
+     * @return array{directory: string, key: string, user: string, group: string, directory_mode: string, key_mode: string, subject: string, domain: string}
      */
     public static function csrInput(array $leaf): array
     {
@@ -158,7 +158,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
         }
 
         // The version folder is root:caddy 0750 and its key root:caddy 0640, so only Caddy reads it; the request's CN is `Orbit`.
-        return ['directory' => $directory, 'user' => 'root', 'group' => 'caddy', 'directory_mode' => '0750', 'key_mode' => '0640',
+        return ['directory' => $directory, 'key' => $directory.'/key.pem', 'user' => 'root', 'group' => 'caddy', 'directory_mode' => '0750', 'key_mode' => '0640',
             'subject' => '/CN=Orbit', 'domain' => $domain];
     }
 

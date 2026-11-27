@@ -17,6 +17,7 @@ use crate::fs::{self, Previous};
 use crate::{absolute, invalid, lock, parse, sha256, strings, BlobRef, Failure, Owner, System, DIGEST, NAME};
 
 static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]\.[0-9]{1,2}$").expect("a valid pattern"));
+static SUFFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\.[A-Za-z0-9_-]{1,32}$").expect("a valid pattern"));
 static UNIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9@_.:-]{1,200}\.service$").expect("a valid pattern"));
 
 #[derive(Debug, Deserialize)]
@@ -55,8 +56,14 @@ enum Validator {
         #[serde(default)]
         ini_scan_dir: Vec<String>,
     },
-    /// `dnsmasq --test`.
-    Dnsmasq,
+    /// `dnsmasq --test` of the configuration the service loads: its main file and its configuration folder, with the
+    /// suffixes the service skips there.
+    Dnsmasq {
+        conf_file: String,
+        conf_dir: String,
+        #[serde(default)]
+        skip_suffixes: Vec<String>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,7 +87,9 @@ impl Validator {
             Self::PhpFpm { version, fpm_config, ini_scan_dir } => {
                 VERSION.is_match(version) && fpm_config.as_deref().is_none_or(absolute) && ini_scan_dir.iter().all(|dir| absolute(dir) && !dir.contains(':'))
             }
-            Self::Dnsmasq => true,
+            Self::Dnsmasq { conf_file, conf_dir, skip_suffixes } => {
+                absolute(conf_file) && absolute(conf_dir) && !conf_dir.contains(',') && !conf_file.contains(',') && skip_suffixes.iter().all(|suffix| SUFFIX.is_match(suffix))
+            }
         }
     }
 
@@ -104,7 +113,10 @@ impl Validator {
                 }
                 argv
             }
-            Self::Dnsmasq => strings(&["/usr/sbin/dnsmasq", "--test"]),
+            Self::Dnsmasq { conf_file, conf_dir, skip_suffixes } => {
+                let folder = std::iter::once(conf_dir.as_str()).chain(skip_suffixes.iter().map(String::as_str)).collect::<Vec<_>>().join(",");
+                vec!["/usr/sbin/dnsmasq".to_owned(), "--test".to_owned(), format!("--conf-file={conf_file}"), format!("--conf-dir={folder}")]
+            }
         }
     }
 }
@@ -125,51 +137,92 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
     for file in &input.files {
         desired.push((file, file.content.bytes(system)?, file.owner.ids(system, "config.write_failed")?));
     }
+    // The same check through links: a folder reached by two names holds the same files.
+    let mut places: Vec<PathBuf> = input.files.iter().map(|file| file.path.as_str()).chain([input.lock.as_str()]).map(|path| resolved(&system.path(path))).collect();
+    places.sort_unstable();
+    places.dedup();
+    if places.len() != input.files.len() + 1 {
+        return Err(invalid("two names of one file, or of the lock"));
+    }
     let _lock = lock::exclusive(system, &input.lock, lock::WAIT)?;
 
-    // Every guard holds before the first write.
+    // Every guard holds before the first write. The last usable bytes of a guarded file are its rendered-from bytes: the live file
+    // while it still holds them, or the copy kept beside it when a stopped run already moved the unvalidated candidate in place.
     let mut replaced: Vec<(PathBuf, Previous)> = Vec::new();
     let mut changes = 0;
     for (file, content, _) in &desired {
         let dest = system.path(&file.path);
-        let live = fs::read(&dest).map_err(|error| Failure::new("config.write_failed", format!("{}: {error}", file.path)))?;
+        let read = |path: &std::path::Path| fs::read(path).map_err(|error| Failure::new("config.write_failed", format!("{}: {error}", path.display())));
+        let live = read(&dest)?;
         let current = live.as_ref().map(|(bytes, _)| bytes.as_slice());
-        let guarded = current == Some(content.as_slice()) || match (&file.from_sha256, current) {
-            (Some(from), Some(bytes)) => sha256(bytes) == *from,
-            (None, None) => true,
-            _ => false,
+        let previous = match (&file.from_sha256, current) {
+            (None, None) => None,
+            (None, Some(bytes)) if bytes == content.as_slice() => None,
+            (Some(from), Some(bytes)) if sha256(bytes) == *from => live.clone(),
+            (Some(from), Some(bytes)) if bytes == content.as_slice() => match read(&fs::kept(&dest))? {
+                Some(kept) if sha256(&kept.0) == *from => Some(kept),
+                // No kept copy: an earlier run loaded the set and dropped it, so the live file is the last usable one.
+                None => live.clone(),
+                Some(_) => return Err(Failure::new("owned_revision_conflict", format!("{} has a kept copy of other bytes", file.path))),
+            },
+            _ => return Err(Failure::new("owned_revision_conflict", format!("{} changed outside this render", file.path))),
         };
-        if !guarded {
-            return Err(Failure::new("owned_revision_conflict", format!("{} changed outside this render", file.path)));
-        }
-        replaced.push((dest, Previous { content: live }));
+        replaced.push((dest, Previous { content: previous }));
     }
-    for ((dest, _), (file, content, ids)) in replaced.iter().zip(&desired) {
+    let undo = |code: &'static str, detail: String, replaced: &[(PathBuf, Previous)]| match fs::restore(replaced) {
+        Ok(()) => Failure::new(code, detail),
+        Err(restore) => Failure::new("config.restore_failed", format!("{detail}; restore: {restore}")),
+    };
+    for ((dest, previous), (file, content, ids)) in replaced.iter().zip(&desired) {
+        // The rendered-from bytes are kept beside the file before it changes, so a replay after a stop still knows them.
+        if let Some((bytes, held)) = &previous.content {
+            if bytes != content {
+                if let Err(error) = fs::replace(&fs::kept(dest), bytes, *held) {
+                    return Err(undo("config.write_failed", format!("{}: {error}", file.path), &replaced));
+                }
+            }
+        }
         match fs::ensure(dest, content, *ids) {
             Ok(written) => changes += u32::from(written),
-            Err(error) => {
-                fs::restore(&replaced);
-                return Err(Failure::new("config.write_failed", format!("{}: {error}", file.path)));
-            }
+            Err(error) => return Err(undo("config.write_failed", format!("{}: {error}", file.path), &replaced)),
+        }
+    }
+    // The installed set is read back before anything validates or loads it.
+    for ((dest, _), (file, content, ids)) in replaced.iter().zip(&desired) {
+        if !fs::read(dest).is_ok_and(|live| live.is_some_and(|(bytes, held)| bytes == *content && held == *ids)) {
+            return Err(undo("config.write_failed", format!("{} read-back", file.path), &replaced));
         }
     }
     for validator in &input.validators {
         if let Err(detail) = system.run(60, &validator.argv()) {
-            fs::restore(&replaced);
-            return Err(Failure::new("config.validate_failed", detail));
+            return Err(undo("config.validate_failed", detail, &replaced));
         }
     }
-    for unit in &input.units {
+    for (index, unit) in input.units.iter().enumerate() {
         if let Err(detail) = load(system, unit) {
-            // The old files go back and load again, so the service runs what it ran before.
-            fs::restore(&replaced);
-            for unit in &input.units {
-                let _ = load(system, unit);
+            // The old files go back and load again in the units this run reached, so each runs what it ran before.
+            let mut failure = undo("config.load_failed", detail, &replaced);
+            for reached in &input.units[..=index] {
+                if let Err(again) = load(system, reached) {
+                    failure = Failure::new("config.restore_failed", format!("{}; reload {}: {again}", failure.detail, reached.unit));
+                }
             }
-            return Err(Failure::new("config.load_failed", detail));
+            return Err(failure);
         }
+    }
+    // The set is live: the kept copies are no longer the last usable bytes.
+    for (dest, _) in &replaced {
+        let _ = std::fs::remove_file(fs::kept(dest));
     }
     Ok(changes)
+}
+
+/// A path with its folder's links resolved, where the folder exists.
+fn resolved(path: &std::path::Path) -> PathBuf {
+    match (path.parent().and_then(|parent| std::fs::canonicalize(parent).ok()), path.file_name()) {
+        (Some(parent), Some(name)) => parent.join(name),
+        _ => path.to_path_buf(),
+    }
 }
 
 fn load(system: &impl System, unit: &Unit) -> Result<String, String> {
@@ -191,11 +244,11 @@ fn validate(input: &Input) -> Result<(), Failure> {
     {
         return Err(invalid("files"));
     }
-    let mut paths: Vec<&str> = input.files.iter().map(|file| file.path.as_str()).collect();
+    let mut paths: Vec<&str> = input.files.iter().map(|file| file.path.as_str()).chain([input.lock.as_str()]).collect();
     paths.sort_unstable();
     paths.dedup();
-    if paths.len() != input.files.len() {
-        return Err(invalid("a file named twice"));
+    if paths.len() != input.files.len() + 1 {
+        return Err(invalid("a file named twice, or as the lock"));
     }
     if !input.validators.iter().all(Validator::valid) {
         return Err(invalid("validators"));

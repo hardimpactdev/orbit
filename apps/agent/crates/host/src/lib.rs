@@ -174,8 +174,16 @@ pub(crate) struct BlobDigest {
 }
 
 impl BlobRef {
+    /// The blob's bytes, only when the reference is a SHA-256 and the bytes read hash to it.
     pub(crate) fn bytes(&self, system: &impl System) -> Result<Vec<u8>, Failure> {
-        system.blob(&self.blob.sha256).map_err(|detail| Failure::new("host.content_missing", detail))
+        if !DIGEST.is_match(&self.blob.sha256) {
+            return Err(invalid("blob reference"));
+        }
+        let bytes = system.blob(&self.blob.sha256).map_err(|detail| Failure::new("host.content_missing", detail))?;
+        if sha256(&bytes) != self.blob.sha256 {
+            return Err(Failure::new("host.content_missing", "the blob does not hash to its reference"));
+        }
+        Ok(bytes)
     }
 }
 
@@ -216,9 +224,11 @@ pub(crate) fn mode(value: &str) -> Option<u32> {
     (value.len() <= 4 && !value.is_empty()).then(|| u32::from_str_radix(value, 8).ok()).flatten().filter(|bits| *bits <= 0o7777)
 }
 
-/// An absolute path with no `..` part, no line break and no NUL.
+/// An absolute path in its one spelling: below `/`, with no empty, `.` or `..` part, no trailing `/`, no line break and no
+/// NUL. Two such paths name the same place only when they are equal, apart from links, so the root and its aliases fail.
 pub(crate) fn absolute(value: &str) -> bool {
-    value.starts_with('/') && value.len() > 1 && !value.split('/').any(|part| part == "..") && !value.contains(['\n', '\0'])
+    value.strip_prefix('/').is_some_and(|rest| !rest.is_empty() && rest.split('/').all(|part| !part.is_empty() && part != "." && part != ".."))
+        && !value.contains(['\n', '\0'])
 }
 
 /// The lower-case hex SHA-256 of `bytes`.

@@ -45,6 +45,12 @@ pub fn dotenv_ensure(system: &impl System, input: &serde_json::Value) -> Result<
     {
         return Err(invalid("dotenv"));
     }
+    let mut keys: Vec<&str> = input.values.iter().map(|pair| pair.key.as_str()).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    if keys.len() != input.values.len() {
+        return Err(invalid("a key named twice"));
+    }
     let failed = |detail: String| Failure::new("dotenv.ensure_failed", detail);
     let real = stdfs::canonicalize(system.path(&input.path)).map_err(|error| failed(error.to_string()))?;
     let uid = system.user(&input.user).map_err(failed)?;
@@ -75,6 +81,12 @@ pub fn dotenv_ensure(system: &impl System, input: &serde_json::Value) -> Result<
     }
     let mut content = lines.join("\n");
     content.push('\n');
+    if content.as_bytes() == text.as_bytes() {
+        return Ok(0);
+    }
     fs::replace(&real, content.as_bytes(), Ids { uid: meta.uid(), gid: meta.gid(), mode: meta.mode() & 0o7777 }).map_err(|error| failed(error.to_string()))?;
+    if stdfs::read(&real).map_err(|error| failed(error.to_string()))? != content.as_bytes() {
+        return Err(failed(format!("{} read-back", input.path)));
+    }
     Ok(1)
 }

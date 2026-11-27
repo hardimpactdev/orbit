@@ -59,7 +59,8 @@ it('asks for the request with its folder owner, modes and subject, only from a N
 
     expect($steps[0]->features)->toBe(['tls.csr_input'])
         ->and(RouteEngineFlow::csrInput(['directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef', 'domain' => 'shop.orbit']))->toBe([
-            'directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef', 'user' => 'root', 'group' => 'caddy',
+            'directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef',
+            'key' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem', 'user' => 'root', 'group' => 'caddy',
             'directory_mode' => '0750', 'key_mode' => '0640', 'subject' => '/CN=Orbit', 'domain' => 'shop.orbit',
         ]);
 });

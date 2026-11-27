@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -78,15 +78,12 @@ impl System for Fake {
             return Err("refused".to_owned());
         }
         match argv.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-            [_, "genpkey", .., partial] => {
-                fs::write(self.path(partial), "KEY").expect("key");
-                Ok(String::new())
-            }
+            [_, "genpkey", ..] => Ok("-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n".to_owned()),
+            [_, "pkey", "-noout", "-in", key] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             ["/usr/bin/install", "-D", .., "-t", folder, _, _] => {
                 fs::create_dir_all(self.path(folder)).expect("account copy folder");
                 Ok(String::new())
             }
-            [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
             ["/usr/bin/curl", .., "--max-time", limit, _] => {
                 // A read takes its answer's time, or curl gives up at its --max-time.
@@ -138,7 +135,7 @@ const DIRECTORY: &str = "/etc/caddy/orbit-certificates/app-instance-7/versions/0
 
 /// The input the Gateway sends: folder, owner, modes and subject are all its own.
 fn csr_input(directory: &str, domain: &str) -> serde_json::Value {
-    json!({"directory": directory, "user": "root", "group": "caddy", "directory_mode": "0750", "key_mode": "0640", "subject": "/CN=Orbit", "domain": domain})
+    json!({"directory": directory, "key": format!("{directory}/key.pem"), "user": "root", "group": "caddy", "directory_mode": "0750", "key_mode": "0640", "subject": "/CN=Orbit", "domain": domain})
 }
 
 #[test]
@@ -155,9 +152,36 @@ fn a_csr_takes_its_folder_owner_modes_and_subject_from_the_input() {
     ensure_csr(&fake, &input).expect("a request");
     let commands = fake.commands.borrow();
     assert!(commands.iter().any(|argv| argv == &strings_of(&["/usr/bin/install", "-d", "-o", "keeper", "-g", "readers", "-m", "0700", directory])));
-    assert!(commands.iter().any(|argv| argv.first().is_some_and(|program| program == "/usr/bin/chown") && argv.contains(&"keeper:readers".to_owned())));
-    assert!(commands.iter().any(|argv| argv.first().is_some_and(|program| program == "/usr/bin/chmod") && argv.contains(&"0600".to_owned())));
+    let key = fs::metadata(fake.path(&format!("{directory}/key.pem"))).expect("key");
+    assert_eq!(key.permissions().mode() & 0o7777, 0o600);
     assert!(commands.iter().any(|argv| argv.contains(&"/CN=Someone Else".to_owned())));
+}
+
+#[test]
+fn a_csr_keeps_a_readable_key_when_the_request_fails_and_puts_its_mode_right() {
+    let mut fake = Fake::new();
+    fake.write(&format!("{DIRECTORY}/key.pem"), "HEALTHY");
+    fs::set_permissions(fake.path(&format!("{DIRECTORY}/key.pem")), fs::Permissions::from_mode(0o644)).expect("mode");
+    fake.failing.push("req");
+    let mut input = csr_input(DIRECTORY, "shop.orbit");
+    input["subject"] = json!("/C=USA");
+
+    assert_eq!(ensure_csr(&fake, &input).expect_err("openssl refuses the subject").code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "HEALTHY", "a readable key is never replaced");
+    assert_eq!(fake.ran("genpkey"), 0);
+    assert_eq!(fs::metadata(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key").permissions().mode() & 0o7777, 0o640, "the mode is put right on the key in place");
+}
+
+#[test]
+fn a_csr_never_writes_its_key_through_a_link() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path(DIRECTORY)).expect("folder");
+    let elsewhere = fake.path("/victim");
+    fs::write(&elsewhere, "VICTIM").expect("victim");
+    std::os::unix::fs::symlink(&elsewhere, fake.path(&format!("{DIRECTORY}/key.pem"))).expect("link");
+
+    assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("a link").code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(&elsewhere).expect("victim"), "VICTIM");
 }
 
 fn strings_of(values: &[&str]) -> Vec<String> {
@@ -176,8 +200,8 @@ fn a_csr_makes_the_key_once_and_reuses_it() {
     assert!(first.contains("BEGIN CERTIFICATE REQUEST"));
     assert_eq!(first, second);
     assert_eq!(fake.ran("genpkey"), 1, "a repeat keeps the key a signed certificate may already match");
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
-    assert!(!fake.path(&format!("{DIRECTORY}/key.pem.partial")).exists());
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
+    assert!(fs::read_dir(fake.path(DIRECTORY)).expect("folder").all(|entry| !entry.expect("entry").file_name().to_string_lossy().contains("partial")));
     let request = fake.commands.borrow().iter().rfind(|argv| argv.contains(&"req".to_owned())).cloned().expect("a request");
     assert!(request.ends_with(&["-subj".to_owned(), "/CN=Orbit".to_owned(), "-addext".to_owned(), "subjectAltName=DNS:shop.orbit".to_owned()]));
 }
@@ -332,7 +356,7 @@ fn a_broken_key_is_replaced_once() {
     ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for a new key");
 
     assert_eq!(fake.ran("genpkey"), 1);
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
 }
 
 #[test]

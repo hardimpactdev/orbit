@@ -2,13 +2,16 @@
 //! and `replace` of the route family.
 
 use std::fs as stdfs;
-use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+use std::os::unix::fs::{fchown, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::fs;
 use crate::{absolute, invalid, parse, sha256, BlobRef, Failure, Owner, System, DIGEST};
+
+/// `O_DIRECTORY`: the open fails unless the path is a folder.
+const DIRECTORY: i32 = 0o200_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
@@ -48,7 +51,8 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
             let dest = system.path(&path);
             if let Some(from) = &from_sha256 {
                 let live = fs::read(&dest).map_err(|error| failed(error.to_string()))?;
-                if live.as_ref().is_some_and(|(current, _)| *current != bytes && sha256(current) != *from) {
+                // A guard names bytes the file must still hold: a missing file holds none of them.
+                if live.as_ref().is_none_or(|(current, _)| *current != bytes && sha256(current) != *from) {
                     return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this render")));
                 }
             }
@@ -65,18 +69,30 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
             let ids = owner.ids(system, "file.ensure_failed")?;
             let dest = system.path(&path);
             let mut changes = 0;
-            if !stdfs::symlink_metadata(&dest).is_ok_and(|meta| meta.file_type().is_dir()) {
-                stdfs::create_dir_all(&dest).map_err(|error| failed(error.to_string()))?;
-                changes += 1;
+            match stdfs::symlink_metadata(&dest) {
+                Ok(meta) if meta.file_type().is_dir() => {}
+                // A link, even to a folder, or a file in the folder's place is not the folder: nothing behind it changes.
+                Ok(_) => return Err(failed(format!("{path} is not a folder"))),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    stdfs::create_dir_all(&dest).map_err(|error| failed(error.to_string()))?;
+                    changes += 1;
+                }
+                Err(error) => return Err(failed(error.to_string())),
             }
-            let meta = stdfs::symlink_metadata(&dest).map_err(|error| failed(error.to_string()))?;
+            // Owner and mode change through the folder itself, opened without following a link.
+            let folder = stdfs::File::options().read(true).custom_flags(fs::NOFOLLOW | DIRECTORY).open(&dest).map_err(|error| failed(error.to_string()))?;
+            let meta = folder.metadata().map_err(|error| failed(error.to_string()))?;
             if (meta.uid(), meta.gid()) != (ids.uid, ids.gid) {
-                system.lchown(&dest, ids.uid, ids.gid).map_err(failed)?;
+                fchown(&folder, Some(ids.uid), Some(ids.gid)).map_err(|error| failed(error.to_string()))?;
                 changes += 1;
             }
             if meta.mode() & 0o7777 != ids.mode {
-                stdfs::set_permissions(&dest, stdfs::Permissions::from_mode(ids.mode)).map_err(|error| failed(error.to_string()))?;
+                folder.set_permissions(stdfs::Permissions::from_mode(ids.mode)).map_err(|error| failed(error.to_string()))?;
                 changes += 1;
+            }
+            let held = stdfs::symlink_metadata(&dest).map_err(|error| failed(error.to_string()))?;
+            if !held.file_type().is_dir() || (held.uid(), held.gid(), held.mode() & 0o7777) != (ids.uid, ids.gid, ids.mode) {
+                return Err(failed(format!("{path} read-back")));
             }
             Ok(changes)
         }
@@ -93,7 +109,11 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
                 return Err(invalid("absent"));
             }
             let dest = system.path(&path);
-            let Ok(meta) = stdfs::symlink_metadata(&dest) else { return Ok(0) };
+            let meta = match stdfs::symlink_metadata(&dest) {
+                Ok(meta) => meta,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+                Err(error) => return Err(failed(error.to_string())),
+            };
             let removed = if meta.file_type().is_dir() {
                 if recursive { stdfs::remove_dir_all(&dest) } else { stdfs::remove_dir(&dest) }
             } else {

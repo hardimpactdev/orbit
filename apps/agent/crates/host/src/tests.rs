@@ -16,11 +16,15 @@ struct Fake {
     fail: RefCell<Vec<&'static str>>,
     answers: RefCell<Vec<(&'static str, String)>>,
     ran: RefCell<Vec<Vec<String>>>,
+    /// Each path's ACL lines, as getfacl lists them and setfacl changes them.
+    acls: RefCell<BTreeMap<String, Vec<String>>>,
+    /// The test unit: enabled, running; `None` when systemd cannot be read.
+    unit: RefCell<Option<(bool, bool)>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default() }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))) }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -61,7 +65,67 @@ impl System for Fake {
         if self.fail.borrow().iter().any(|program| argv.iter().any(|arg| arg == program)) {
             return Err("scripted failure".to_owned());
         }
-        Ok(self.answers.borrow().iter().find(|(program, _)| argv.iter().any(|arg| arg == program)).map(|(_, out)| out.clone()).unwrap_or_default())
+        if let Some((_, out)) = self.answers.borrow().iter().find(|(program, _)| argv.iter().any(|arg| arg == program)) {
+            return Ok(out.clone());
+        }
+        let words: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let tail = words.iter().position(|arg| *arg == "--").map_or(&words[..0], |at| &words[at + 1..]);
+        match words.iter().find(|arg| arg.starts_with('/') && (arg.ends_with("getfacl") || arg.ends_with("setfacl") || arg.ends_with("systemctl") || arg.ends_with("update-ca-certificates") || arg.ends_with("openssl"))) {
+            Some(&"/usr/bin/getfacl") => Ok(tail.iter().fold(String::new(), |mut listing, path| {
+                use std::fmt::Write as _;
+                let _ = write!(listing, "# file: {}\n{}\n", path.replace(' ', "\\040"), self.acls.borrow().get(*path).cloned().unwrap_or_default().join("\n"));
+                listing
+            })),
+            Some(&"/usr/bin/setfacl") => {
+                let entry = words[words.iter().position(|arg| *arg == "-m").expect("-m") + 1];
+                let (tag, rest) = entry.strip_prefix("d:").map_or(("", entry), |rest| ("default:", rest));
+                let (user, perms) = rest.strip_prefix("u:").expect("a user entry").split_once(':').expect("perms");
+                let line = format!("{tag}user:{user}:{perms}");
+                for path in tail {
+                    let mut acls = self.acls.borrow_mut();
+                    let lines = acls.entry((*path).to_owned()).or_default();
+                    lines.retain(|held| !held.starts_with(&format!("{tag}user:{user}:")) && !held.starts_with(&format!("{tag}mask::")));
+                    lines.push(line.clone());
+                }
+                Ok(String::new())
+            }
+            Some(&"/usr/bin/systemctl") => {
+                let mut unit = self.unit.borrow_mut();
+                let Some((enabled, running)) = unit.as_mut() else { return Err("Failed to connect to bus".to_owned()) };
+                match words[1] {
+                    "show" => Ok(format!("LoadState=loaded\nActiveState={}\nUnitFileState={}\n", if *running { "active" } else { "inactive" }, if *enabled { "enabled" } else { "disabled" })),
+                    "enable" => { *enabled = true; Ok(String::new()) }
+                    "disable" => { *enabled = false; Ok(String::new()) }
+                    "start" => { *running = true; Ok(String::new()) }
+                    "stop" => { *running = false; Ok(String::new()) }
+                    _ => Ok(String::new()),
+                }
+            }
+            Some(&"/usr/bin/openssl") => {
+                let file = words.last().expect("a file");
+                let file = if file.starts_with(&*self.root().to_string_lossy()) { Path::new(file).to_path_buf() } else { self.path(file) };
+                if fs::read(file).is_ok_and(|bytes| bytes.starts_with(b"-----BEGIN CERTIFICATE-----")) { Ok(String::new()) } else { Err("unable to load certificate".to_owned()) }
+            }
+            Some(&"/usr/sbin/update-ca-certificates") => {
+                let store = self.path("/usr/local/share/ca-certificates");
+                let links = self.path("/etc/ssl/certs");
+                fs::create_dir_all(&links).expect("links");
+                for link in fs::read_dir(&links).expect("links") {
+                    let link = link.expect("link").path();
+                    if fs::metadata(&link).is_err() { fs::remove_file(&link).expect("stale link"); }
+                }
+                for cert in fs::read_dir(&store).expect("store") {
+                    let cert = cert.expect("cert").path();
+                    let name = cert.file_name().expect("name").to_string_lossy().into_owned();
+                    if let Some(stem) = name.strip_suffix(".crt").filter(|stem| !stem.starts_with('.')) {
+                        let link = links.join(format!("{stem}.pem"));
+                        if fs::symlink_metadata(&link).is_err() { std::os::unix::fs::symlink(&cert, &link).expect("link"); }
+                    }
+                }
+                Ok(String::new())
+            }
+            _ => Ok(String::new()),
+        }
     }
 
     fn user(&self, _name: &str) -> Result<u32, String> {
@@ -146,12 +210,14 @@ fn config_apply_rolls_back_and_reloads_the_old_file_when_the_reload_fails() {
     lock_folder(&fake);
     fake.write("/conf/site.conf", b"old\n");
     fake.fail.borrow_mut().push("web.service");
-    let failure = apply(&mut fake, b"new\n", b"old\n", &json!([{"kind": "dnsmasq"}])).expect_err("a failed reload");
-    assert_eq!(failure.code, "config.load_failed");
+    let failure = apply(&mut fake, b"new\n", b"old\n", &json!([{"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf/dnsmasq.d", "skip_suffixes": [".dpkg-dist"]}])).expect_err("a failed reload");
+    // The unit fails its recovery reload too, and the failure says so.
+    assert_eq!(failure.code, "config.restore_failed");
     // The old bytes are back, and the unit loads them again.
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
     assert_eq!(fake.ran("web.service"), 2);
     assert_eq!(fake.ran("/usr/sbin/dnsmasq"), 1);
+    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/dnsmasq", "--test", "--conf-file=/conf/dnsmasq.conf", "--conf-dir=/conf/dnsmasq.d,.dpkg-dist"])), "dnsmasq checks the configuration the service loads");
 }
 
 #[test]
@@ -241,9 +307,7 @@ fn acl_ensure_reads_first_and_sets_only_a_differing_entry() {
     fs::create_dir_all(fake.path("/srv/site")).expect("folder");
     let input = json!({"path": "/srv/site", "user": "web", "perms": "r-x", "run_as": "app"});
     assert_eq!(acl_ensure(&fake, &input), Ok(1));
-    let set = fake.ran.borrow().last().cloned().expect("setfacl ran");
-    assert_eq!(set, strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/", "/usr/bin/setfacl", "-m", "u:web:r-x", "--", "/srv/site"]));
-    fake.answers.borrow_mut().push(("/usr/bin/getfacl", "user::rwx\nuser:web:r-x\n".to_owned()));
+    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/", "/usr/bin/setfacl", "-P", "-m", "u:web:r-x", "--", "/srv/site"])));
     assert_eq!(acl_ensure(&fake, &input), Ok(0));
     assert_eq!(fake.ran("/usr/bin/setfacl"), 1);
     assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/missing", "user": "web", "perms": "r-x", "optional": true})), Ok(0));
@@ -251,13 +315,41 @@ fn acl_ensure_reads_first_and_sets_only_a_differing_entry() {
 }
 
 #[test]
+fn acl_ensure_compares_exact_effective_permissions_on_every_path_and_counts_them() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path("/srv/tree/sub")).expect("folders");
+    fs::write(fake.path("/srv/tree/sub/file"), "x").expect("file");
+    // `--x` is not `---` (review counterexample: desired `---` reported Ok(0)).
+    fake.acls.borrow_mut().insert("/srv/tree".to_owned(), vec!["user:web:--x".to_owned()]);
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/tree", "user": "web", "perms": "---"})), Ok(1));
+    // A mask that cuts the entry is a difference too.
+    fake.acls.borrow_mut().insert("/srv/tree".to_owned(), vec!["user:web:r-x".to_owned(), "mask::r--".to_owned()]);
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/tree", "user": "web", "perms": "r-x"})), Ok(1));
+    // Recursive: every path is counted, `X` is search on folders only, and a repeat writes nothing.
+    let recursive = json!({"path": "/srv/tree", "user": "web", "perms": "r-X", "recursive": true});
+    assert_eq!(acl_ensure(&fake, &recursive), Ok(2), "the sub folder and the file change; the root already holds r-x");
+    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned()]));
+    let writes = fake.ran("/usr/bin/setfacl");
+    assert_eq!(acl_ensure(&fake, &recursive), Ok(0));
+    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
+}
+
+#[test]
 fn unit_ensure_changes_only_what_differs() {
     let fake = Fake::new();
-    // A fake systemctl that answers every query `yes`: the unit is enabled and running already.
     let input = json!({"unit": "web.service", "enabled": true, "state": "running"});
     assert_eq!(unit_ensure(&fake, &input), Ok(0));
     assert_eq!(fake.ran("start") + fake.ran("enable"), 0);
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped"})), Ok(2));
     assert_eq!(unit_ensure(&fake, &json!({"unit": "--now.service", "enabled": true, "state": "running"})).expect_err("flag").code, "host.input_invalid");
+}
+
+#[test]
+fn unit_ensure_fails_when_systemd_cannot_be_read() {
+    let fake = Fake::new();
+    *fake.unit.borrow_mut() = None;
+    // An unread unit is no stopped unit (review counterexample: a read error passed as disabled and stopped).
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped"})).expect_err("unread").code, "unit.ensure_failed");
 }
 
 #[test]
@@ -265,17 +357,22 @@ fn trust_ensure_rebuilds_the_bundle_only_on_a_change() {
     let mut fake = Fake::new();
     fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
     let certificate = fake.put(b"-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n");
-    let input = json!({"state": "present", "name": "a-root.crt", "certificate": certificate});
-    // Ownership by root needs root; the test checks the refusals and the absent path instead when it runs unprivileged.
-    if me().0 == 0 {
-        assert_eq!(trust_ensure(&fake, &input), Ok(1));
-        assert_eq!(trust_ensure(&fake, &input), Ok(0));
-        assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 1);
-    }
+    let input = json!({"state": "present", "name": "a-root.crt", "certificate": certificate, "owner": {"user": "u", "group": "g", "mode": "0640"}});
+    assert_eq!(trust_ensure(&fake, &input), Ok(1));
+    assert_eq!(trust_ensure(&fake, &input), Ok(0));
+    assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 1);
+    assert_eq!(fs::metadata(fake.path("/usr/local/share/ca-certificates/a-root.crt")).expect("cert").mode() & 0o7777, 0o640, "owner and mode come from input");
+    // A rebuild that failed left the source without trust: a retry rebuilds (review counterexample: Ok(0)).
+    fs::remove_file(fake.path("/etc/ssl/certs/a-root.pem")).expect("trust lost");
+    assert_eq!(trust_ensure(&fake, &input), Ok(1));
     assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "../x.crt"})).expect_err("name").code, "host.input_invalid");
-    fake.write("/usr/local/share/ca-certificates/b.crt", b"x");
-    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "b.crt"})), Ok(1));
-    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "b.crt"})), Ok(0));
+    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "a-root.crt"})), Ok(1));
+    assert!(fs::symlink_metadata(fake.path("/etc/ssl/certs/a-root.pem")).is_err());
+    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "a-root.crt"})), Ok(0));
+    // Content openssl does not read never goes in place.
+    let junk_text = json!({"state": "present", "name": "c.crt", "certificate": fake.put(b"not pem"), "owner": {"user": "u", "group": "g", "mode": "0644"}});
+    assert_eq!(trust_ensure(&fake, &junk_text).expect_err("not a certificate").code, "trust.ensure_failed");
+    assert!(!fake.path("/usr/local/share/ca-certificates/c.crt").exists());
 }
 
 #[test]
@@ -286,4 +383,132 @@ fn probe_waits_for_the_expectation_within_its_budget() {
     assert_eq!(probe(&fake, &input).expect_err("still served").code, "http.probe_unmet");
     assert_eq!(probe(&fake, &json!({"url": "http://127.0.0.1:2019/config/", "budget_ms": 600, "contains": ["a.test"]})), Ok(0));
     assert_eq!(probe(&fake, &json!({"url": "file:///etc/shadow", "budget_ms": 600})).expect_err("scheme").code, "host.input_invalid");
+}
+
+#[test]
+fn config_apply_replay_after_a_stop_keeps_the_rendered_from_bytes_as_previous() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"old\n");
+    fake.fail.borrow_mut().push("validate");
+    let validators = json!([{"kind": "caddy", "config": "/conf/site.conf", "user": "web"}]);
+    // The first run writes the candidate, keeps the old bytes beside it, and fails validation: the old bytes go back.
+    assert_eq!(apply(&mut fake, b"new\n", b"old\n", &validators).expect_err("invalid").code, "config.validate_failed");
+    assert_eq!(fake.read("/conf/site.conf"), b"old\n");
+    // A stop between the move and the validation leaves the candidate live and the kept copy beside it.
+    fake.write("/conf/site.conf", b"new\n");
+    fake.write("/conf/.site.conf.previous", b"old\n");
+    assert_eq!(apply(&mut fake, b"new\n", b"old\n", &validators).expect_err("still invalid").code, "config.validate_failed");
+    assert_eq!(fake.read("/conf/site.conf"), b"old\n", "the replay restores the rendered-from bytes, not the unvalidated candidate");
+    // A run that loads drops the kept copy.
+    fake.fail.borrow_mut().clear();
+    assert_eq!(apply(&mut fake, b"new\n", b"old\n", &validators), Ok(1));
+    assert!(!fake.path("/conf/.site.conf.previous").exists());
+}
+
+#[test]
+fn config_apply_reloads_on_recovery_only_the_units_it_reached() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"old\n");
+    fake.fail.borrow_mut().push("first.service");
+    let content = fake.put(b"new\n");
+    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
+        "units": [{"unit": "first.service", "load": "reload"}, {"unit": "second.service", "load": "restart"}]});
+    let failure = config_apply(&fake, &input).expect_err("a failed load");
+    assert_eq!(failure.code, "config.restore_failed", "the recovery reload of the failed unit fails too, and says so");
+    assert_eq!(fake.ran("second.service"), 0, "a unit the forward pass never reached is not restarted");
+    assert_eq!(fake.read("/conf/site.conf"), b"old\n");
+}
+
+#[test]
+fn config_apply_refuses_aliases_and_paths_in_another_spelling() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fs::create_dir_all(fake.path("/conf")).expect("conf");
+    let content = fake.put(b"x\n");
+    let file = |path: &str| json!({"path": path, "content": content.clone(), "from_sha256": null, "owner": owner()});
+    for files in [vec![file("/conf/a"), file("/conf/./a")], vec![file("/conf/a"), file("/conf/b/../a")], vec![file("/conf//a")], vec![file("/tmp-lock/given.lock")]] {
+        let input = json!({"lock": "/tmp-lock/given.lock", "files": files});
+        assert_eq!(config_apply(&fake, &input).expect_err("an alias").code, "host.input_invalid");
+    }
+    std::os::unix::fs::symlink(fake.path("/conf"), fake.path("/alias")).expect("alias");
+    let input = json!({"lock": "/tmp-lock/given.lock", "files": [file("/conf/a"), file("/alias/a")]});
+    assert_eq!(config_apply(&fake, &input).expect_err("one file by two names").code, "host.input_invalid");
+    assert!(!fake.path("/conf/a").exists());
+    assert_eq!(file_ensure(&fake, &json!({"state": "absent", "path": "/.", "recursive": true})).expect_err("root").code, "host.input_invalid");
+    assert_eq!(file_ensure(&fake, &json!({"state": "absent", "path": "/", "recursive": true})).expect_err("root").code, "host.input_invalid");
+}
+
+#[test]
+fn a_blob_must_be_a_digest_whose_bytes_hash_to_it() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/srv")).expect("folder");
+    let traversal = json!({"state": "file", "path": "/srv/a", "content": {"blob": {"sha256": "../../etc/shadow"}}, "owner": owner()});
+    assert_eq!(file_ensure(&fake, &traversal).expect_err("a path").code, "host.input_invalid");
+    let digest = sha256(b"promised");
+    fake.blobs.insert(digest.clone(), b"something else".to_vec());
+    let swapped = json!({"state": "file", "path": "/srv/a", "content": {"blob": {"sha256": digest}}, "owner": owner()});
+    assert_eq!(file_ensure(&fake, &swapped).expect_err("other bytes").code, "host.content_missing");
+    assert!(!fake.path("/srv/a").exists());
+}
+
+#[test]
+fn file_ensure_never_changes_a_folder_through_a_link_and_a_guard_needs_the_file() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/srv/real")).expect("folder");
+    fs::set_permissions(fake.path("/srv/real"), fs::Permissions::from_mode(0o755)).expect("mode");
+    std::os::unix::fs::symlink(fake.path("/srv/real"), fake.path("/srv/link")).expect("link");
+    let folder = json!({"state": "directory", "path": "/srv/link", "owner": {"user": "u", "group": "g", "mode": "0700"}});
+    assert_eq!(file_ensure(&fake, &folder).expect_err("a link").code, "file.ensure_failed");
+    assert_eq!(fs::metadata(fake.path("/srv/real")).expect("real").mode() & 0o7777, 0o755, "the folder behind the link keeps its mode");
+    // A guard that names rendered-from bytes fails on a missing file (review counterexample: the file was made).
+    let content = fake.put(b"hello\n");
+    let guarded = json!({"state": "file", "path": "/srv/gone.txt", "content": content, "owner": owner(), "from_sha256": sha256(b"old\n")});
+    assert_eq!(file_ensure(&fake, &guarded).expect_err("absent").code, "owned_revision_conflict");
+    assert!(!fake.path("/srv/gone.txt").exists());
+}
+
+#[test]
+fn dotenv_ensure_refuses_a_key_named_twice() {
+    let fake = Fake::new();
+    fake.write("/app/.env", b"A=1\n");
+    let input = json!({"path": "/app/.env", "user": "u", "values": [{"key": "A", "value": "2"}, {"key": "A", "value": "3"}]});
+    assert_eq!(dotenv_ensure(&fake, &input).expect_err("conflict").code, "host.input_invalid");
+    assert_eq!(fake.read("/app/.env"), b"A=1\n");
+}
+
+#[test]
+fn probe_passes_the_url_literally_and_refuses_an_answer_after_its_budget() {
+    let fake = Fake::new();
+    fake.answers.borrow_mut().push(("/usr/bin/curl", "ok".to_owned()));
+    assert_eq!(probe(&fake, &json!({"url": "http://127.0.0.1/{a,b}", "budget_ms": 600, "contains": ["ok"]})), Ok(0));
+    assert!(fake.ran.borrow().iter().all(|argv| argv.contains(&"--globoff".to_owned())));
+    let late = Late { fake, reads: RefCell::new(0) };
+    assert_eq!(probe(&late, &json!({"url": "http://127.0.0.1/", "budget_ms": 600, "contains": ["ok"]})).expect_err("late").code, "http.probe_unmet");
+}
+
+/// A system whose clock jumps past any budget during the first read.
+struct Late {
+    fake: Fake,
+    reads: RefCell<u32>,
+}
+
+impl System for Late {
+    fn root(&self) -> &Path {
+        self.fake.root()
+    }
+
+    fn run(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
+        *self.reads.borrow_mut() += 1;
+        self.fake.run(seconds, argv)
+    }
+
+    fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
+        self.fake.blob(digest)
+    }
+
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now() + std::time::Duration::from_secs(u64::from(*self.reads.borrow()) * 3600)
+    }
 }

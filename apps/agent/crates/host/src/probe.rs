@@ -51,7 +51,9 @@ pub fn probe(system: &impl System, input: &serde_json::Value) -> Result<u32, Fai
         let limit = deadline.saturating_duration_since(system.now()).max(FLOOR);
         let seconds = format!("{:.3}", limit.as_secs_f64());
         let outer = u32::try_from(limit.as_secs()).unwrap_or(u32::MAX).saturating_add(2);
-        let last = match system.run(outer, &strings(&["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", &seconds, "--", &input.url])) {
+        let last = match system.run(outer, &strings(&["/usr/bin/curl", "--globoff", "--silent", "--show-error", "--fail", "--max-time", &seconds, "--", &input.url])) {
+            // An answer that arrives after the budget meets nothing: the wait is bounded by the budget, not by curl's last read.
+            Ok(_) if system.now() > deadline => unmet("the answer came after the budget"),
             Ok(body) if input.contains.iter().all(|text| body.contains(text)) && !input.lacks.iter().any(|text| body.contains(text)) => return Ok(0),
             Ok(_) => unmet("the answer does not meet the expectation"),
             Err(_) => unmet("no successful answer"),

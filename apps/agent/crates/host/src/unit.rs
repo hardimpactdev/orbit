@@ -38,19 +38,34 @@ pub fn unit_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
     }
     let failed = |detail: String| Failure::new("unit.ensure_failed", detail);
     let systemctl = |args: &[&str]| system.run(30, &[strings(&["/usr/bin/systemctl"]), strings(args), vec![input.unit.clone()]].concat());
-    let enabled = || systemctl(&["is-enabled", "--quiet"]).is_ok();
-    let running = || systemctl(&["is-active", "--quiet"]).is_ok();
+    let want_running = input.state == State::Running;
     let mut changes = 0;
-    if enabled() != input.enabled {
+    let (enabled, running) = observe(&systemctl).map_err(failed)?;
+    if enabled != input.enabled {
         systemctl(&[if input.enabled { "enable" } else { "disable" }]).map_err(failed)?;
         changes += 1;
     }
-    if running() != (input.state == State::Running) {
-        systemctl(&[if input.state == State::Running { "start" } else { "stop" }]).map_err(failed)?;
+    if running != want_running {
+        systemctl(&[if want_running { "start" } else { "stop" }]).map_err(failed)?;
         changes += 1;
     }
-    if enabled() != input.enabled || running() != (input.state == State::Running) {
+    if observe(&systemctl).map_err(failed)? != (input.enabled, want_running) {
         return Err(failed(format!("{} read-back", input.unit)));
     }
     Ok(changes)
+}
+
+/// Whether the unit is enabled and running, as systemd reports it. Only a reported state counts, `not-found` included; a
+/// unit that cannot be read fails, so an unread state never passes for a stopped one.
+fn observe(systemctl: &impl Fn(&[&str]) -> Result<String, String>) -> Result<(bool, bool), String> {
+    let shown = systemctl(&["show", "--property=LoadState,UnitFileState,ActiveState"])?;
+    let value = |name: &str| shown.lines().find_map(|line| line.strip_prefix(name).and_then(|rest| rest.strip_prefix('='))).map(str::trim);
+    let (Some(load), Some(active)) = (value("LoadState"), value("ActiveState")) else {
+        return Err("systemd gave no state".to_owned());
+    };
+    if !matches!(load, "loaded" | "not-found" | "masked") {
+        return Err(format!("unit load state {load}"));
+    }
+    let enabled = matches!(value("UnitFileState").unwrap_or_default(), "enabled" | "enabled-runtime");
+    Ok((enabled, matches!(active, "active" | "reloading" | "activating")))
 }
