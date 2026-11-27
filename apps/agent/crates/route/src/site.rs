@@ -381,6 +381,10 @@ impl<S: System> Site<'_, S> {
                 fs::rename(&path, &live).map_err(Self::failed)?;
                 self.changes += 1;
             }
+            // The installed file is read back before the receipt: a success means Caddy loads these bytes.
+            if !fs::read(&live).is_ok_and(|installed| installed == content) {
+                return Err(Self::failed("caddyfile read-back"));
+            }
             Ok(())
         })();
         let _ = fs::remove_file(&path);

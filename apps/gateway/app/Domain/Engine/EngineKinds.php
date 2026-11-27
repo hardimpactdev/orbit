@@ -13,6 +13,7 @@ use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Processes\ProcessControlEngineFlow;
 use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Schedules\ScheduleEnableEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSyncEngineFlow;
@@ -33,6 +34,7 @@ final readonly class EngineKinds
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
         'route.destroy' => RouteDestroyEngineFlow::class,
+        RouteUpdateEngineFlow::Kind => RouteUpdateEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
         InstanceDestroyEngineFlow::Kind => InstanceDestroyEngineFlow::class,
         'instance.complete' => InstanceCompleteEngineFlow::class,

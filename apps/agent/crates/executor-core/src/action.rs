@@ -208,12 +208,15 @@ impl Action {
     /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
     /// A Route withdrawal's DNS and site steps are fenced too: they run inside a receipt-bound removal.
     pub fn receipt_fenced(self) -> bool {
+        // The Route actions are fenced for an engine-run Route update (route.update), whose target stays fenced until each receipt.
         matches!(
             self,
             Self::InstanceDestroy
                 | Self::InstanceFetchBranch
                 | Self::InstanceSyncBase
                 | Self::InstanceClearBase
+                | Self::TlsEnsureCsr
+                | Self::RoutePublishSite
                 | Self::DnsPublishRecords
                 | Self::RouteWithdrawSite
                 | Self::ProcessEnsureState

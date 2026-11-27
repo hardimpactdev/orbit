@@ -84,7 +84,7 @@ Create an explicit app Route with `route:create <instance> <domain> [--publicati
 
 Creation reserves a `pending` Route and starts an Operation. It generates a Node key and CSR, signs it with the Gateway CA (keys never leave the Node), configures LAN rules if clustered, installs certificates and Caddy config, probes TLS, opens public Ingress if `public`, and publishes private DNS. A failed step leaves the Route `pending` with `failed_step` and `error_code` (there is no rollback); repeat the identical request to retry. An identical retry on an active Route returns it with no Node changes. Retrying a `failed` or `retiring` Route returns `route.activation_unsupported` (409).
 
-When `route.create` is enabled in `ORBIT_ENGINE_KINDS` and the Route needs only site publication and private DNS (no Ingress edge or LAN rules), the [Gateway engine](/reference/gateway-engine#routecreate) executes it directly via typed Node executor actions.
+When `route.create` is enabled in `ORBIT_ENGINE_KINDS` and the Route needs only site publication and private DNS (no Ingress edge or LAN rules), the [Gateway engine](/reference/gateway-engine#routecreate) executes it directly via typed Node executor actions. A private Route's `--domain` change runs there too, as [route.update](/reference/gateway-engine#routeupdate): the Gateway commits the cutover as its own step, and a retry after it runs only the post-cutover steps and never starts on Swamp.
 
 | Creation refusal | Meaning |
 | --- | --- |
@@ -381,6 +381,10 @@ Pass `--offline` to skip inactive or unreachable Nodes (a VPN Node is never skip
 ## Coordinate publication
 
 The Gateway serializes Route writes per Node using publication holds (`route_publication_holds` for exclusive whole-file publishers, `route_withdrawal_holds` for up to 8 concurrent shared writers, at most 4 removals). A competing Route write queues in `waiting` status (FIFO) rather than failing with 409; waiting whole-file renders that detect catalog drift when their turn arrives return `route.publication_stale` (409) for a fresh retry.
+
+An engine-run `route.update` and any other Route write never queue behind each other: whichever is second is refused with `route.publication_held` when both write one Node (a serving or edge Node, a Node the old site leaves, or a VPN Node; `RouteWriteNodes`). The engine start checks in its bind transaction; any other Route write checks right after its record exists, before it holds or dispatches.
+
+A timed-out write whose run is not proven stopped counts as writing its Nodes until it settles. An Ingress or Router move (`node.role_relocate`, `cluster.router_set`, `cluster.router_unset`) and an Instance registration (`instance.register`) learn their Nodes only at their step, so they and an engine-run update refuse each other fleet-wide.
 
 On each Node, shared withdrawals and container clone site publications acquire `/etc/caddy/.orbit-publish.lock` and `/run/lock/orbit-dnsmasq.lock` (30-second wait; `caddy.publish_busy` / `dns.publish_busy`), validate candidates (`caddy validate`, `php-fpm -t`, `dnsmasq --test`), back up previous files to `/var/lib/orbit/route-previous/`, verify no foreign block changed (`route.withdraw_foreign_change` / `route.publish_foreign_change` / `route.live_changed`), and reload services atomically.
 

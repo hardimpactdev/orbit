@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Operations\RouteWriteNodes;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Operation;
 use Closure;
@@ -30,6 +31,10 @@ final readonly class StartOperationAction
             return $existing;
         }
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey, $parent);
+        // A Route write beside an engine-run Route update on one of its Nodes is refused, never queued behind it.
+        if ($start && $operation->wasRecentlyCreated) {
+            RouteWriteNodes::refuseBesideEngine($operation);
+        }
         // A Route write that finds one of its Nodes held waits (status waiting) and starts when the Nodes are free.
         if ($start && $operation->wasRecentlyCreated && app(RoutePublicationHolds::class)->admit($operation)) {
             app(SwampDispatch::class)->start($operation);
