@@ -81,6 +81,12 @@ pub enum Action {
     /// Converge one host Process, a systemd unit or a Docker container, to running or stopped and
     /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
     ProcessEnsureState,
+    /// Read the run a Process restart replaces: a unit's `InvocationID` or a container's ID and start time (ADR 0271).
+    /// Its target is the Node's part for that Process (`<node>:process-<id>`).
+    ProcessReadInstance,
+    /// Restart one host Process at most once per order, only while it still runs the pinned run, and read a new run back
+    /// (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
+    ProcessRestart,
     /// Enable and start a Schedule's own Node timer and read it back (ADR 0271). Its target is the Node's part for that
     /// Schedule (`<node>:schedule-<uuid>`).
     ScheduleEnsureTimer,
@@ -98,7 +104,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 29] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -125,6 +131,8 @@ impl Action {
         Self::InstanceClearBase,
         Self::InstanceWorkRead,
         Self::ProcessEnsureState,
+        Self::ProcessReadInstance,
+        Self::ProcessRestart,
         Self::ScheduleEnsureTimer,
     ];
 
@@ -152,7 +160,7 @@ impl Action {
             | Self::InstanceSyncBase
             | Self::InstanceClearBase
             | Self::InstanceWorkRead => Family::Instance,
-            Self::ProcessEnsureState | Self::ScheduleEnsureTimer => Family::Process,
+            Self::ProcessEnsureState | Self::ProcessReadInstance | Self::ProcessRestart | Self::ScheduleEnsureTimer => Family::Process,
         }
     }
 
@@ -177,6 +185,8 @@ impl Action {
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady
             | Self::ProcessEnsureState
+            | Self::ProcessReadInstance
+            | Self::ProcessRestart
             | Self::ScheduleEnsureTimer => TargetKind::Node,
             Self::Sleep
             | Self::Wake
@@ -210,6 +220,8 @@ impl Action {
                 | Self::DnsPublishRecords
                 | Self::RouteWithdrawSite
                 | Self::ProcessEnsureState
+                | Self::ProcessReadInstance
+                | Self::ProcessRestart
                 | Self::ScheduleEnsureTimer
         )
     }
@@ -243,6 +255,8 @@ impl Action {
             Self::InstanceClearBase => "instance.clear_base",
             Self::InstanceWorkRead => "instance.work_read",
             Self::ProcessEnsureState => "process.ensure_state",
+            Self::ProcessReadInstance => "process.read_instance",
+            Self::ProcessRestart => "process.restart",
             Self::ScheduleEnsureTimer => "schedule.ensure_timer",
         }
     }
@@ -284,6 +298,8 @@ impl FromStr for Action {
             "instance.clear_base" => Ok(Self::InstanceClearBase),
             "instance.work_read" => Ok(Self::InstanceWorkRead),
             "process.ensure_state" => Ok(Self::ProcessEnsureState),
+            "process.read_instance" => Ok(Self::ProcessReadInstance),
+            "process.restart" => Ok(Self::ProcessRestart),
             "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
             _ => Err(UnknownActionError),
         }
@@ -400,6 +416,9 @@ mod tests {
         assert!(Enabled::parse("instance\n").expect("valid file").allows(Action::InstanceClone));
         assert_eq!("process.ensure_state".parse(), Ok(Action::ProcessEnsureState));
         assert_eq!("schedule.ensure_timer".parse(), Ok(Action::ScheduleEnsureTimer));
+        assert_eq!("process.restart".parse(), Ok(Action::ProcessRestart));
+        assert_eq!("process.read_instance".parse(), Ok(Action::ProcessReadInstance));
+        assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessRestart));
         assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
         assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));

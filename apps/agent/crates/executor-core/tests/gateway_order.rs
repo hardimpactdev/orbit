@@ -57,6 +57,8 @@ fn the_gateway_signed_process_orders_target_a_node_part_and_keep_their_input() {
     for (text, action, operation) in [
         (include_str!("../../../contract/fixtures/executor-process-ensure-state.json"), Action::ProcessEnsureState, "42:converge"),
         (include_str!("../../../contract/fixtures/executor-schedule-ensure-timer.json"), Action::ScheduleEnsureTimer, "43:timer"),
+        (include_str!("../../../contract/fixtures/executor-process-read-instance.json"), Action::ProcessReadInstance, "42:read"),
+        (include_str!("../../../contract/fixtures/executor-process-restart.json"), Action::ProcessRestart, "42:restart"),
     ] {
         let fixture: serde_json::Value = serde_json::from_str(text).expect("fixture");
         let keys = PinnedKeys::parse(field(&fixture, "public_key")).expect("fixture key");

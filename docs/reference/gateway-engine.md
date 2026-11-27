@@ -39,6 +39,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
 | `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
+| `process.restart` | `read`, then `restart`, on the Process's Node | `process.read_instance`, `process.restart` |
 | `schedule.enable` | `timer` on the Schedule's Node | `schedule.ensure_timer` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
@@ -155,15 +156,23 @@ Eligibility comes from the Process and its placement, for both verbs, so one Pro
 - any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
 - a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain.
 
-`process.restart` stays on Swamp.
-
-Both kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
+[`process.restart`](#processrestart) takes the same admission. All three kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
 
 A collector of the AI router checks the lock before it writes or calls its Node again. A removal that would delete a fenced Process (an Instance, a Node, the analytics role, a database server) is refused `operation.target_busy` at admission, and a Process start or stop does not bind while such a removal is open. If a row is gone when the receipt arrives, the run still ends and frees its lock.
 
 No budget fails a sent step and no expiry ends the Operation. A lost receipt is resent under the same step ID with a fresh nonce, and the Node's journal answers the stored result. The Process stays fenced until a terminal receipt. The step settles only on an `applied` receipt from its own Node, action and target.
 
 The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step its phase stands for. That is the change (`Start the Process`, `Stop the container` …), `Stop the unit`, the check (`Check the unit`, `Check the container`) or the assert (`Verify the state`). A cancel waits for a published order's receipt, then records no error code, as a cancelled Swamp run does.
+
+### process.restart
+
+The engine restarts the shapes it starts and stops, with the same eligibility, lock and fence; everything else runs `operation-process-control`. The Node must report both `process.read_instance` and `process.restart`; a Node on an older agent takes the whole Swamp path. Two steps run on the Process's Node part (`<node>:process-<id>`).
+
+The `read` step sends `process.read_instance`, which answers the run in place without changing anything. The `restart` step waits for it and sends `process.restart` with that run pinned in its input. The input also carries the Process's boot policy, as for a start and disabled on demand, or the container's image. Every send of the step rebuilds the same input from the recorded `read` output.
+
+Each step settles only on an `output` receipt that is its evidence (`ProcessControlEngineFlow::evidence`): `{"instance": …}` for `read`, and `{"restarted": "now"|"already"|"recovered", "instance": <non-empty>}` for `restart`. Any other answer fails the step `engine.receipt_invalid`. A lost receipt is resent under the same step ID, and the Node's journal and the order's attempt file keep it to one restart ([the process family](/reference/executor#the-process-family)). A new Operation reads a new run and restarts once more.
+
+The end records through `ProcessControlProjection`, as a Swamp restart's does: `ready` and `state` `active` or `running`, and the desired state `running`. A failed `read` records the first Swamp step on the Process (`Set boot policy` for a unit, `Restart the container`). A restart's `process.boot_failed` also records `Set boot policy`. A failed `restart` otherwise records the change (`Restart the Process`, `Restart the container`), including its read before the restart, the check (`Check the unit`, `Check the container`) for a read after it, or `Verify the state` for a read-back in another state or on the pinned run. The evidence check takes the members in any order.
 
 ### schedule.enable
 

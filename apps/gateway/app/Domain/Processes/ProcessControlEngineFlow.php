@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Domain\Engine\EngineDefinition;
+use App\Domain\Engine\EngineEvidence;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
@@ -17,10 +18,12 @@ use App\Support\ValidatedData;
 use LogicException;
 
 /**
- * `process:start` and `process:stop` on the state machine (ADR 0271; docs/cli/process/engine/start.mmd and stop.mmd). One step:
- * the desired-state primitive `process.ensure_state` on the Process's Node, for a host systemd unit or a host Docker container.
- * The Node converges the run state and the boot policy and reads both back; the end records through the Process's own
- * projection, as a Swamp run's end did.
+ * `process:start`, `process:stop` and `process:restart` on the state machine (ADR 0271; docs/cli/process/engine/start.mmd, stop.mmd
+ * and restart.mmd), for a host systemd unit or a host Docker container on the Process's Node. A start or stop is one step, the
+ * desired-state primitive `process.ensure_state`: the Node converges the run state and the boot policy and reads both back. A
+ * restart is not a desired state, so it is two: `process.read_instance` reads the run it replaces, and `process.restart` carries
+ * that run in its order, acts only while the Process still runs it, and records its attempt before it calls the runtime, so a
+ * lost receipt or a resend never restarts twice. The end records through the Process's own projection, as a Swamp run's end did.
  *
  * Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across
  * engines. These stay on Swamp (EngineUnsupported): a dev-server Process (`vp-dev`, `vite`: dev route, listener, awake marker),
@@ -28,14 +31,22 @@ use LogicException;
  * app-account move is a script; a Gateway release container drains), and a Node's host systemd Horizon Process, whose stop
  * waits for its drain.
  */
-final readonly class ProcessControlEngineFlow implements EngineDefinition
+final readonly class ProcessControlEngineFlow implements EngineDefinition, EngineEvidence
 {
     /** @var list<string> */
-    public const array Kinds = ['process.start', 'process.stop'];
+    public const array Kinds = ['process.start', 'process.stop', 'process.restart'];
 
     public const string Action = 'process.ensure_state';
 
+    public const string ReadAction = 'process.read_instance';
+
+    public const string RestartAction = 'process.restart';
+
     private const string Step = 'converge';
+
+    private const string ReadStep = 'read';
+
+    private const string RestartStep = 'restart';
 
     public function __construct(private ProcessControlProjection $projection) {}
 
@@ -44,24 +55,66 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
         $node = self::admitted($operation);
 
         // The target is the Node's part for this Process: two orders for one Process run one after the other.
-        return [new StepSpec(self::Step, $node, self::Action, "{$node}:process-{$operation->target_id}", budgetMs: 120_000, resendMs: 15_000)];
+        $target = "{$node}:process-{$operation->target_id}";
+        if ($operation->kind === 'process.restart') {
+            return [new StepSpec(self::ReadStep, $node, self::ReadAction, $target, budgetMs: 60_000, resendMs: 15_000),
+                new StepSpec(self::RestartStep, $node, self::RestartAction, $target, after: [self::ReadStep], budgetMs: 120_000, resendMs: 15_000)];
+        }
+
+        return [new StepSpec(self::Step, $node, self::Action, $target, budgetMs: 120_000, resendMs: 15_000)];
     }
 
     public function input(Operation $operation, string $step, EngineRun $run): array
     {
-        if ($step !== self::Step) {
+        $restart = $operation->kind === 'process.restart';
+        if (! in_array($step, $restart ? [self::ReadStep, self::RestartStep] : [self::Step], true)) {
             throw new LogicException("Unknown Process step [{$step}].");
         }
         self::admitted($operation);
         $input = $operation->input;
-        $running = $operation->kind === 'process.start';
-        $order = ['process_id' => $operation->target_id, 'runtime' => $input['runtime'], 'name' => $input['name'], 'state' => $running ? 'running' : 'stopped'];
+        $process = ['process_id' => $operation->target_id, 'runtime' => $input['runtime'], 'name' => $input['name']];
+        if ($step === self::ReadStep) {
+            return $process;
+        }
+        $running = $operation->kind !== 'process.stop';
+        // A restart's order carries the run its read answered; every send of the step reads the same recorded output.
+        $order = $restart ? [...$process, 'instance' => self::instance((string) $run->output(self::ReadStep))]
+            : [...$process, 'state' => $running ? 'running' : 'stopped'];
         if ($input['runtime'] === ProcessRuntime::Docker->value) {
             return [...$order, 'image' => ValidatedData::string($input['image'])];
         }
 
         // As Swamp's `Set boot policy`: enabled at boot only while running and not on demand.
         return [...$order, 'boot' => $running && $input['on_demand'] !== true ? 'enabled' : 'disabled'];
+    }
+
+    /** A read answers `{"instance": <run>}`; a restart also says how it restarted, and never answers an empty run. Member order is free. */
+    public function evidence(Operation $operation, string $step, string $output): bool
+    {
+        $answer = json_decode($output, true);
+        if (! is_array($answer) || array_is_list($answer) || ! is_string($answer['instance'] ?? null)) {
+            return false;
+        }
+        $keys = array_keys($answer);
+        sort($keys);
+
+        return match ($step) {
+            self::ReadStep => $keys === ['instance'],
+            self::RestartStep => $keys === ['instance', 'restarted'] && $answer['instance'] !== ''
+                && in_array($answer['restarted'], ['now', 'already', 'recovered'], true),
+            default => true,
+        };
+    }
+
+    /** The run a read answered, which its evidence check already accepted. */
+    private static function instance(string $output): string
+    {
+        $answer = json_decode($output, true);
+        if (! is_array($answer) || ! is_string($answer['instance'] ?? null)) {
+            throw new LogicException('The restart has no read run to pin.');
+        }
+
+        return $answer['instance'];
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string
@@ -78,8 +131,8 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
         $failed = $run->failed();
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => 'operation.native_failed',
-                'failure' => ['failed_step' => self::swampStep($operation, (string) $failed->error_code),
-                    'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
+                'failure' => ['failed_step' => self::swampStep($operation, $failed->name, (string) $failed->error_code),
+                    'detail' => $failed->action.' '.$failed->error_code, 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => null],
         };
@@ -87,16 +140,22 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
     }
 
     /**
-     * The step of operation-process-start or -stop whose failure the primitive's phase stands for: the change, a stop's plain
-     * `Stop the unit`, the check that reads the state back, or the assert on what it read.
+     * The step of operation-process-start, -stop or -control whose failure the primitive's phase stands for: the change, a stop's
+     * plain `Stop the unit`, the check that reads the state back, or the assert on what it read. A restart's read stands for
+     * the first step Swamp runs on the Process: a unit's `Set boot policy`, a container's restart.
      */
-    private static function swampStep(Operation $operation, string $code): string
+    private static function swampStep(Operation $operation, string $step, string $code): string
     {
         $docker = ($operation->input['runtime'] ?? null) === ProcessRuntime::Docker->value;
-        $verb = $operation->kind === 'process.stop' ? 'Stop' : 'Start';
+        $verb = match ($operation->kind) {
+            'process.stop' => 'Stop',
+            'process.restart' => 'Restart',
+            default => 'Start',
+        };
 
         return match (true) {
-            $code === 'process.state_mismatch' => 'Verify the state',
+            $step === self::ReadStep, $code === 'process.boot_failed' => $docker ? 'Restart the container' : 'Set boot policy',
+            in_array($code, ['process.state_mismatch', 'process.restart_unverified'], true) => 'Verify the state',
             $code === 'process.read_failed' => $docker ? 'Check the container' : 'Check the unit',
             $code === 'process.unit_stop_failed' => 'Stop the unit',
             $docker => "{$verb} the container",
@@ -109,7 +168,7 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
     {
         $input = $operation->input;
         $node = $operation->node_id ?? 0;
-        if (! in_array($operation->kind, ['process.start', 'process.stop'], true) || $operation->target_type !== 'process'
+        if (! in_array($operation->kind, self::Kinds, true) || $operation->target_type !== 'process'
             || $operation->target_id < 1 || ($input['process_id'] ?? null) !== $operation->target_id || $node < 1 || ($input['node_id'] ?? null) !== $node
             || ! is_string($input['name'] ?? null) || ! is_bool($input['on_demand'] ?? null)) {
             throw new EngineUnsupported('The Process intent is outside the signed control contract.');
