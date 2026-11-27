@@ -116,3 +116,22 @@ fn the_gateway_signed_order_verifies_unchanged() {
         Err(OrderRefusal::Expired)
     );
 }
+
+#[test]
+fn the_gateway_signed_work_read_is_a_read_only_order_for_its_copy() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!("../../../contract/fixtures/executor-instance-work-read.json")).expect("fixture");
+    let keys = PinnedKeys::parse(field(&fixture, "public_key")).expect("fixture key");
+    let enabled = Enabled::parse("instance").expect("valid");
+    let node = field(&fixture["fields"], "node").parse().expect("Node ID");
+    let checks = Checks { keys: &keys, enabled: &enabled, node: &node };
+    let now = fixture["now_ms"].as_u64().expect("now");
+    let order = check_with_target(field(&fixture, "wire").as_bytes(), &checks, now, |action, target| {
+        assert_eq!(action.target_kind(), TargetKind::Instance);
+        target.as_str() == "12"
+    })
+    .expect("the fixture verifies");
+    assert_eq!(order.action(), Action::InstanceWorkRead);
+    assert!(order.action().read_only());
+    assert_eq!(order.operation().as_str(), "read:12");
+    assert_eq!(order.input(), &fixture["fields"]["input"]);
+}

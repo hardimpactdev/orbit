@@ -7,10 +7,20 @@ import json
 import shlex
 import subprocess
 import threading
-import traceback
 import time
+import traceback
 
-from clone_lifecycle import EXECUTOR, EXECUTOR_UNIT, POOL, TERMINAL, CloneLane, ProofFailure, ProofInfrastructure, require, wait_for
+from clone_lifecycle import (
+    EXECUTOR,
+    EXECUTOR_UNIT,
+    POOL,
+    TERMINAL,
+    CloneLane,
+    ProofFailure,
+    ProofInfrastructure,
+    require,
+    wait_for,
+)
 
 VPN_NODE = 1
 GRACE_MS = 31_000
@@ -138,7 +148,7 @@ class RouteLane(CloneLane):
         """A request to the address the VPN Node's DNS answers (the Route Node's when it answers none), trusting only the nested root."""
         response = subprocess.run(['curl', '--noproxy', '*', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '5',
                                    '--cacert', self.ca_path, '--resolve', f'{domain}:443:{address}', f'https://{domain}/'],
-                                  capture_output=True, text=True, timeout=8)
+                                  capture_output=True, text=True, timeout=8, check=False)
         return response.stdout or '000'
 
     def serve_known(self, route):
@@ -153,7 +163,7 @@ class RouteLane(CloneLane):
 
     def body(self, domain, address):
         response = subprocess.run(['curl', '--noproxy', '*', '--silent', '--write-out', '\n%{http_code}', '--max-time', '5', '--cacert', self.ca_path,
-                                   '--resolve', f'{domain}:443:{address}', f'https://{domain}/'], capture_output=True, text=True, timeout=8)
+                                   '--resolve', f'{domain}:443:{address}', f'https://{domain}/'], capture_output=True, text=True, timeout=8, check=False)
         text, _, code = response.stdout.rpartition('\n')
         return code or '000', text
 
