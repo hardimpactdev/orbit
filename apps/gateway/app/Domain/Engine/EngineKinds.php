@@ -13,6 +13,7 @@ use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Models\Operation;
 use Throwable;
 
@@ -35,6 +36,7 @@ final readonly class EngineKinds
         'instance.complete' => InstanceCompleteEngineFlow::class,
         'instance.fleet' => InstanceFleetEngineFlow::class,
         'instance.finalize' => InstanceFinalizeEngineFlow::class,
+        TaskSyncEngineFlow::Kind => TaskSyncEngineFlow::class,
     ];
 
     /** A kind that runs only on the engine, as part of another kind's flow: it is on whenever that kind is. */
@@ -58,13 +60,18 @@ final readonly class EngineKinds
         }
         try {
             $actions = [];
-            foreach ($this->definition($operation->kind)->steps($operation) as $step) {
+            $definition = $this->definition($operation->kind);
+            foreach ($definition->steps($operation) as $step) {
                 if ($step->node > 0) {
                     $actions[$step->node] ??= $this->bus->nodeActions($step->node);
                     if (! in_array($step->action, $actions[$step->node], true)) {
                         return false;
                     }
                 }
+            }
+            // Last, once every primitive is there: the kind's own admission, decided here once for the whole Operation.
+            if ($definition instanceof EngineAdmission) {
+                $definition->admit($operation);
             }
         } catch (EngineUnsupported) {
             return false;

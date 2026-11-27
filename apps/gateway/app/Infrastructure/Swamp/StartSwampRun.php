@@ -18,6 +18,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
@@ -79,15 +80,22 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
+            // Before routing and any credential: a copy's sync never starts beside a confirmed removal of that copy, on either engine.
+            TaskSyncEngineFlow::refuseConfirmedRemoval($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             $engine = app(EngineKinds::class)->routes($operation);
             RouteUpdateEngineFlow::assertChain($operation, $engine);
             if ($engine) {
+                // An engine-eligible copy sync never starts beside its copy's removal: it is refused, not sent to Swamp. A plan the
+                // engine does not cover took the unchanged Swamp path above.
+                TaskSyncEngineFlow::assertCopyFree($operation);
                 $runId = EngineRun::runIdOf($operation->id);
-                if (in_array($operation->kind, Engine::ReceiptBound, true)) {
-                    $lock = OperationStore::lockKey($operation->target_type, $operation->target_id);
+                if (Engine::receiptBound($operation->kind)) {
+                    $lock = Engine::fenceKey($operation);
                     try {
                         app(Engine::class)->start($operation, function () use ($operation, $runId, $lock): void {
+                            // In the bind's transaction: a removal of the copy admitted since routing refuses the sync's start.
+                            TaskSyncEngineFlow::assertCopyFree($operation);
                             $this->bind($operation, $runId, $lock);
                             RouteUpdateEngineFlow::holdNodes($operation);
                         });

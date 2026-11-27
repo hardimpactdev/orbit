@@ -96,7 +96,7 @@ impl Outcome {
     }
 
     pub(crate) fn ends_operation(&self, action: Action) -> bool {
-        action != Action::InstanceDestroy || !matches!(self, Self::Failed { code, .. } if code == ORDER_EXPIRED)
+        !action.receipt_fenced() || !matches!(self, Self::Failed { code, .. } if code == ORDER_EXPIRED)
     }
 }
 
