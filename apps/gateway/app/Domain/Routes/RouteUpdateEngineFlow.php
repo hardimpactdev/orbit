@@ -260,6 +260,20 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         }
     }
 
+    /**
+     * Refuses a removal of the replacement an open engine-run update publishes: its Operation lock names the old Route, so the
+     * replacement is fenced here.
+     */
+    public static function assertNotFenced(Route $route): void
+    {
+        $open = Operation::query()->where('kind', self::Kind)->whereNotIn('status', OperationStatus::terminalValues())
+            ->where('input->route_update->result_route_id', $route->id)->where('target_id', '!=', $route->id)->get()
+            ->first(static fn (Operation $update): bool => Engine::owns($update));
+        if ($open !== null) {
+            throw new ResourceOperationException('operation.target_busy', 'An open Route update publishes this Route.', 409, details: ['operation_id' => $open->id]);
+        }
+    }
+
     /** The attempt whose cutover step is done: every later attempt resumes from its stored plan, leaves and receipts. */
     public static function cutoverOwner(Operation $operation): ?Operation
     {

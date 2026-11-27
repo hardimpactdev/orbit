@@ -252,3 +252,16 @@ it('settles a retry\'s success after a post-cutover failure without making the a
     expect($new->refresh()->status->value)->toBe('active')
         ->and(Route::query()->find($old->id))->toBeNull();
 });
+
+it('fences the replacement Route of an open engine-run update against a removal, and frees it at the update\'s end', function (): void {
+    $update = updateOperation(updateIntent());
+    $replacement = (new Route)->forceFill(['id' => 10]);
+    RouteUpdateEngineFlow::assertNotFenced($replacement);
+
+    $update->forceFill(['state' => ['swamp_run_id' => 'engine-'.$update->id]])->save();
+    expect(fn () => RouteUpdateEngineFlow::assertNotFenced($replacement))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+
+    $update->forceFill(['status' => OperationStatus::Failed])->save();
+    RouteUpdateEngineFlow::assertNotFenced($replacement);
+});
