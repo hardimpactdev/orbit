@@ -111,6 +111,8 @@ Tools run on active SSH-managed Nodes with a WireGuard IP and pinned SSH host fi
 
 Unsupported platform/manager pairs return `tool.manager_unsupported` (422); absent or conflicting scopes return `tool.manager_unavailable` (409). `orbit tool:manager:list --node=<id>` reports each supported manager as `uninstalled`, `provisioning`, `active`, or `failed`. Managers stay installed after their last Tool is removed.
 
+Linux Tool Manager setup installs only the missing OS prerequisites of its manager, such as Homebrew's `build-essential procps curl file git ca-certificates`, with `apt-get install --no-upgrade`. A prerequisite installed at any version counts as present: setup never upgrades, downgrades or otherwise changes it, held or not.
+
 Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o DPkg::Lock::Timeout=300`); `apt-get update` and `dpkg --remove` fail immediately if locked. Linux `vp` launchers in `/usr/local/bin` export `VP_HOME` for the resolved store.
 
 ### Host Conn Server membership
