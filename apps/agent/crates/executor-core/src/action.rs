@@ -32,6 +32,9 @@ pub enum Action {
     /// Place one Node's part of a Route: access, environment, PHP-FPM pools, certificates and the Caddyfile (ADR 0271).
     /// Its target is the Node, so the Node's Route publications run one at a time.
     RoutePublishSite,
+    /// Withdraw one Node's part of a Route: pools and Caddyfile without it, its leaf folders removed, read back from Caddy
+    /// (ADR 0271). Its target is the Node, so it runs one at a time with the Node's Route publications.
+    RouteWithdrawSite,
     /// Place a VPN Node's private DNS records and catalog, then restart dnsmasq and the listener (ADR 0271). Its target
     /// is the Node, so the Node's DNS publications run one at a time.
     DnsPublishRecords,
@@ -72,6 +75,15 @@ pub enum Action {
     InstanceSyncBase,
     /// Remove what a task copy's sync left on the Node and in the copy. Its target is the copy.
     InstanceClearBase,
+    /// Read a copy's workspace Git state beyond its baseline (docs/reference/development-containers.md#workspace-work-state).
+    /// Read-only: no journal record and no target lock. Its target is the copy.
+    InstanceWorkRead,
+    /// Converge one host Process, a systemd unit or a Docker container, to running or stopped and
+    /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
+    ProcessEnsureState,
+    /// Enable and start a Schedule's own Node timer and read it back (ADR 0271). Its target is the Node's part for that
+    /// Schedule (`<node>:schedule-<uuid>`).
+    ScheduleEnsureTimer,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -86,7 +98,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 27] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -94,6 +106,7 @@ impl Action {
         Self::UfwEnsureRule,
         Self::TlsEnsureCsr,
         Self::RoutePublishSite,
+        Self::RouteWithdrawSite,
         Self::DnsPublishRecords,
         Self::InstanceClone,
         Self::InstancePrepare,
@@ -110,6 +123,9 @@ impl Action {
         Self::InstanceDestroy,
         Self::InstanceSyncBase,
         Self::InstanceClearBase,
+        Self::InstanceWorkRead,
+        Self::ProcessEnsureState,
+        Self::ScheduleEnsureTimer,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -118,7 +134,7 @@ impl Action {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwEnsureRule => Family::Firewall,
-            Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
+            Self::TlsEnsureCsr | Self::RoutePublishSite | Self::RouteWithdrawSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
             Self::InstanceClone
             | Self::InstancePrepare
@@ -134,8 +150,15 @@ impl Action {
             | Self::InstanceNames
             | Self::InstanceDestroy
             | Self::InstanceSyncBase
-            | Self::InstanceClearBase => Family::Instance,
+            | Self::InstanceClearBase
+            | Self::InstanceWorkRead => Family::Instance,
+            Self::ProcessEnsureState | Self::ScheduleEnsureTimer => Family::Process,
         }
+    }
+
+    /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
+    pub fn read_only(self) -> bool {
+        matches!(self, Self::InstanceWorkRead)
     }
 
     /// What the action's target names.
@@ -145,13 +168,16 @@ impl Action {
             | Self::UfwEnsureRule
             | Self::TlsEnsureCsr
             | Self::RoutePublishSite
+            | Self::RouteWithdrawSite
             | Self::DnsPublishRecords
             | Self::InstanceClone
             | Self::InstanceFetchBranch
             | Self::InstanceClubKey
             | Self::InstanceCopyVolume
             | Self::InstanceSpareVolume
-            | Self::InstanceFleetReady => TargetKind::Node,
+            | Self::InstanceFleetReady
+            | Self::ProcessEnsureState
+            | Self::ScheduleEnsureTimer => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -163,16 +189,29 @@ impl Action {
             | Self::InstanceNames
             | Self::InstanceDestroy
             | Self::InstanceSyncBase
-            | Self::InstanceClearBase => TargetKind::Instance,
+            | Self::InstanceClearBase
+            | Self::InstanceWorkRead => TargetKind::Instance,
         }
     }
 
     /// Whether a lost receipt keeps the Gateway's target fenced (ADR 0271): only a terminal result settles the step, so an
     /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
+    /// A Route withdrawal's DNS and site steps are fenced too: they run inside a receipt-bound removal.
     pub fn receipt_fenced(self) -> bool {
         // The Route actions are fenced for an engine-run Route update (route.update), whose target stays fenced until each receipt.
-        matches!(self, Self::InstanceDestroy | Self::InstanceFetchBranch | Self::InstanceSyncBase | Self::InstanceClearBase
-            | Self::TlsEnsureCsr | Self::RoutePublishSite | Self::DnsPublishRecords)
+        matches!(
+            self,
+            Self::InstanceDestroy
+                | Self::InstanceFetchBranch
+                | Self::InstanceSyncBase
+                | Self::InstanceClearBase
+                | Self::TlsEnsureCsr
+                | Self::RoutePublishSite
+                | Self::DnsPublishRecords
+                | Self::RouteWithdrawSite
+                | Self::ProcessEnsureState
+                | Self::ScheduleEnsureTimer
+        )
     }
 
     /// The action's name on the wire.
@@ -185,6 +224,7 @@ impl Action {
             Self::UfwEnsureRule => "ufw.ensure_rule",
             Self::TlsEnsureCsr => "tls.ensure_csr",
             Self::RoutePublishSite => "route.publish_site",
+            Self::RouteWithdrawSite => "route.withdraw_site",
             Self::DnsPublishRecords => "dns.publish_records",
             Self::InstanceClone => "instance.clone",
             Self::InstancePrepare => "instance.prepare",
@@ -201,6 +241,9 @@ impl Action {
             Self::InstanceNames => "instance.names",
             Self::InstanceSyncBase => "instance.sync_base",
             Self::InstanceClearBase => "instance.clear_base",
+            Self::InstanceWorkRead => "instance.work_read",
+            Self::ProcessEnsureState => "process.ensure_state",
+            Self::ScheduleEnsureTimer => "schedule.ensure_timer",
         }
     }
 }
@@ -222,6 +265,7 @@ impl FromStr for Action {
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
             "route.publish_site" => Ok(Self::RoutePublishSite),
+            "route.withdraw_site" => Ok(Self::RouteWithdrawSite),
             "dns.publish_records" => Ok(Self::DnsPublishRecords),
             "instance.clone" => Ok(Self::InstanceClone),
             "instance.prepare" => Ok(Self::InstancePrepare),
@@ -238,6 +282,9 @@ impl FromStr for Action {
             "instance.names" => Ok(Self::InstanceNames),
             "instance.sync_base" => Ok(Self::InstanceSyncBase),
             "instance.clear_base" => Ok(Self::InstanceClearBase),
+            "instance.work_read" => Ok(Self::InstanceWorkRead),
+            "process.ensure_state" => Ok(Self::ProcessEnsureState),
+            "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
             _ => Err(UnknownActionError),
         }
     }
@@ -279,6 +326,8 @@ pub enum Family {
     Dns,
     /// Instance containers made from a seed (ADR 0271).
     Instance,
+    /// A Process's run state and a Schedule's Node timer (ADR 0271).
+    Process,
 }
 
 /// The family name is unknown to this executor.
@@ -298,6 +347,7 @@ impl Family {
             "route" => Some(Self::Route),
             "dns" => Some(Self::Dns),
             "instance" => Some(Self::Instance),
+            "process" => Some(Self::Process),
             _ => None,
         }
     }
@@ -348,6 +398,11 @@ mod tests {
         assert!(Enabled::parse("dns\n").expect("valid file").allows(Action::DnsPublishRecords));
         assert_eq!("instance.clone".parse(), Ok(Action::InstanceClone));
         assert!(Enabled::parse("instance\n").expect("valid file").allows(Action::InstanceClone));
+        assert_eq!("process.ensure_state".parse(), Ok(Action::ProcessEnsureState));
+        assert_eq!("schedule.ensure_timer".parse(), Ok(Action::ScheduleEnsureTimer));
+        assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
+        assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

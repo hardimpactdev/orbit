@@ -55,6 +55,8 @@ final readonly class NatsCredentials
     {
         return self::jwt($issuerSeed, ['iat' => $now, 'exp' => $expires, 'name' => $name, 'sub' => $userKey, 'aud' => $account,
             'nats' => ['type' => 'user', 'version' => 2, 'pub' => ['allow' => $publish], 'sub' => ['allow' => $subscribe],
+                // One reply to each request the user receives, within five seconds: a Node answers a signed read this way.
+                'resp' => ['max' => 1, 'ttl' => 5_000_000_000],
                 'subs' => -1, 'data' => -1, 'payload' => -1]]);
     }
 

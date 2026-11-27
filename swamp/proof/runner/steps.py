@@ -1093,11 +1093,24 @@ def busy_node(run, args):
     return []
 
 
-def clone_fixture(run, args, lane='CloneLane'):
-    import clone_lifecycle
+def clone_fixture(run, args, lane='CloneLane', module='clone_lifecycle'):
+    import importlib
+
     from clone_lifecycle import ProofFailure
 
-    run.clone_lane = getattr(clone_lifecycle, lane)(run, fleet_module)
+    run.clone_lane = getattr(importlib.import_module(module), lane)(run, fleet_module)
+    try:
+        run.clone_lane.setup(**args)
+    except ProofFailure as error:
+        return [str(error)]
+    return []
+
+
+def route_fixture(run, args):
+    from clone_lifecycle import ProofFailure
+    from route_lifecycle import RouteLane
+
+    run.clone_lane = RouteLane(run, fleet_module)
     try:
         run.clone_lane.setup(**args)
     except ProofFailure as error:
@@ -1146,7 +1159,14 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'executor_key': executor_key, 'executor_order': executor_order,
                   'executor_publish': executor_publish, 'executor_round_trip': executor_round_trip,
                   'executor_lost_result': executor_lost_result, 'executor_power': executor_power,
-                  'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'),
+                  'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'), 'clone_work': clone_step('work'),
                   'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup'),
+                  'route_fixture': route_fixture, 'route_create': clone_step('route_create'), 'route_destroy': clone_step('route_destroy'),
+                  'route_clone_destroy': clone_step('route_clone_destroy'), 'route_compare': clone_step('route_compare'),
                   'sync_fixture': lambda run, args: clone_fixture(run, args, 'SyncLane'), 'sync_copy': clone_step('copy'),
-                  'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare')})
+                  'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare'),
+                  'process_fixture': lambda run, args: clone_fixture(run, args, 'ProcessLane', 'process_control'),
+                  'host_instance': clone_step('host_instance'), 'process_create': clone_step('process'), 'schedule_create': clone_step('schedule'),
+                  'process_control': clone_step('start_stop'), 'process_replay': clone_step('replay'), 'process_retry': clone_step('retry'),
+                  'schedule_enable': clone_step('enable'), 'process_refused': clone_step('refused'),
+                  'process_compare': clone_step('compare'), 'process_cleanup': clone_step('cleanup')})

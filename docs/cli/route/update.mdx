@@ -44,7 +44,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 
 ### Proposed executor path
 
-On the Gateway engine, a `--domain` change of a private Route reuses the primitives of `route:create` and the site withdrawal of `route:destroy` ([route.update](/reference/gateway-engine#routeupdate)). The Gateway commits the cutover as its own step; a retry after it runs only the grace, the lasting Caddyfile, the withdrawal and the sibling check, and never switches engine. `APP_URL` and `.env` writes, public Routes and publication changes run the Swamp flow above. Until route:destroy's site withdrawal and guarded DNS input are released, every update that withdraws an old leaf or moves private DNS also runs on Swamp. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, a `--domain` change of a private Route reuses the primitives of `route:create` and the site withdrawal of `route:destroy` ([route.update](/reference/gateway-engine#routeupdate)). The Gateway commits the cutover as its own step; a retry after it runs only the grace, the lasting Caddyfile, the withdrawal and the sibling check, and never switches engine. `APP_URL` and `.env` writes, public Routes and publication changes run the Swamp flow above. An update that moves private DNS also runs on Swamp, because only route:destroy's admission captures the digests its guarded DNS input needs. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="route/engine/update"></div>
 

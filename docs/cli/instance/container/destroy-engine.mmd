@@ -1,7 +1,7 @@
 sequenceDiagram
   %% A container clone's removal on the Gateway engine (ADR 0271, docs/reference/gateway-engine.md#instancedestroy, docs/reference/instance-removal.md): what #4211 shipped, InstanceDestroyEngineFlow with one step `remove` running the executor's `instance.destroy` (apps/agent/crates/instance/src/destroy.rs). Every other removal is instance/destroy.mmd on Swamp.
-  %% Planned, not built: a clone that owns a Route withdraws it on the engine first, with the primitives of route/engine/destroy.mmd. Until then a Route in the plan throws EngineUnsupported.
-  %% status: draft
+  %% Built, proof pending: a clone that owns private Routes withdraws them on the engine first, with the primitives of route/engine/destroy.mmd.
+  %% status: built
   %% command: instance:destroy
   %% kind: instance.destroy
   autonumber
@@ -23,7 +23,8 @@ sequenceDiagram
     %%> - the target is an Instance with a positive ID, equal to the intent's `instance_id` and, checked on its own, to `container_destroy.instance_id`, the field that becomes the signed step's target; a plan that names 43 there refuses; the Operation's Node is positive and equals both the intent's and the saved plan's `node_id`
     %%> - development, `--force`, not the default name; a positive clone source that is not the Instance itself
     %%> - no `after_operation_id` (no wait for a create or completion) and no CI hold
-    %%> - exactly one member, and it is this Instance, with no `route_id`, `run_teardown: false`; `additional_route_ids` and the plan's Routes are empty lists
+    %%> - exactly one member, and it is this Instance, with `run_teardown: false`; the plan's Routes are an empty list
+    %%> - a member `route_id` or `additional_route_ids` only for private Routes with no LAN rule or Ingress edge, whose whole after-state the admission rendered (`route_engine`: each Node's Caddyfile, changed shared pools and DNS files without the Routes, with the digests of the files they replace); a PHP version whose pool empties refuses; each changed pool carries its rendered-from state; any order over the signer's 4 KB limit refuses; every VPN Node with a DNS change reports `dns.guarded_records` and each serving Node `route.withdraw_site`
     %%> - exactly one teardown entry, for this Instance, with no steps; no Processes, Schedules, database connections, database servers or SQLite files
     %%> - the saved identity is the signed contract: container and ACL `instance-42`, project `orbit-instances` or `orbit-instances-nested`, pool `orbit-instances`, mirror `/var/lib/orbit/instance-repositories/42.git`, firewall prefix `orbit:instance-42-`, the asleep marker, inner volume `inner-42` when present
     %%> - else `EngineUnsupported`, and the whole removal runs on Swamp
@@ -31,10 +32,15 @@ sequenceDiagram
     %%> The Gateway binds step `remove` (budget 600 s, resend 15 s) and the Instance's Operation lock in one transaction before it publishes the start
     %%> Cancel still works during order preparation, deadline scheduling and the Node consumer's setup; just before the first publish the Gateway checks cancel and records the first order's signed expiry under the same lock
     GW-->>CLI: 202 Accepted<br/>task #5132
-    opt planned: clone owns a Route
+    opt clone owns a Route
       EN->>N: Withdraw the Route first<br/>route/engine/destroy steps
-      %%> Planned: the DNS withdrawal and the site and leaf withdrawal of route/engine/destroy.mmd run before `remove`, with no DNS grace (a destroyed name has no new target, as instance/destroy.mmd decides)
-      %%> Planned: `remove` waits for them; a failed withdrawal fails the Operation before the container is touched
+      %%> `dns-node` (guarded `dns.publish_records`), then `withdraw-node` (`route.withdraw_site`) and `sibling-node` (a TLS probe of another Route on that Node), with no DNS grace (a destroyed name has no new target, as instance/destroy.mmd decides)
+      %%> Every step is receipt-bound like `remove`: a lost receipt resends the same step, the Node's journal answers its stored result, and the Instance stays fenced until a terminal receipt; a `blob.*` content failure comes before the journal, so it never ends a step
+      %%> Admitted only when every Route is served by the clone's own Node; the removal takes every Node whose whole files it replaces, its DNS Nodes too, alone from admission (an exclusive hold, not a shared withdrawal slot), so a second removal there waits; a removal that waited and was promoted, or that shares its Nodes, runs on Swamp, which merges from the live files
+      %%> A retry of a removal whose earlier run withdrew the Route (`route_withdrawn`) has none of these steps, as the Swamp run skips its withdraw
+      Note over EN: Record the withdrawal<br/>free the Route Nodes
+      %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then every Route Node hold of the removal is freed and the waiting writes are woken; `route_hold_released` is true only when a hold row was freed; the Instance's own lock stays until the removal's receipt; a refused release never fails the removal, and its line (`route_hold_released`, `route_hold_release_status`) is in the result, also after a later container failure
+      %%> `remove` waits for it; a failed withdrawal fails the Operation as `route.withdrawal_failed` at "Withdraw the Route" (removal step `route_target_clear`) before the container is touched
     end
     EN->>N: Remove the clone<br/>instance.destroy · step remove
     %%> Input: `project`, `name`, `pool`, `acl`, `inner_volume`; the executor checks it again (`instance.destroy_input_invalid`)

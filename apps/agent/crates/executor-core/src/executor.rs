@@ -333,6 +333,16 @@ impl<R: Run> Executor<R> {
                 .map(|finished| Box::new(reply(&first_key, finished.outcome, Source::Stored)));
             return Err(StateRefusal::ReplayedNonce { first });
         }
+        // A read changes nothing: it writes no journal record, waits for no target lock and stores no result, so a repeat
+        // (with a fresh nonce) is a fresh read. The nonce map still refuses the same order twice.
+        if key.action.read_only() {
+            let outcome = if (self.clock)().max(now_ms) >= order.expires_ms() {
+                Outcome::failed(ORDER_EXPIRED)
+            } else {
+                self.runner.run(order)
+            };
+            return Ok(reply(&key, outcome, Source::Ran));
+        }
 
         // The accept record is on file before the order waits for its target, so a reader of the journal sees
         // a pending order rather than no record.
@@ -550,6 +560,73 @@ mod tests {
     }
 
     #[test]
+    fn a_withdrawal_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_after_restart() {
+        for (action, step) in [("dns.publish_records", "dns-0"), ("route.withdraw_site", "withdraw-7")] {
+            let order = |nonce: &str| {
+                let mut fields = payload();
+                fields["action"] = action.into();
+                fields["target"] = "7".into();
+                fields["operation"] = format!("42:{step}").into();
+                fields["nonce"] = nonce.into();
+                fields["expires_ms"] = (NOW + 5000).into();
+                fields["input"] = serde_json::json!({});
+                let keys = pinned(1);
+                let enabled = Enabled::parse("dns\nroute").expect("valid");
+                let node = "7".parse().expect("id");
+                crate::order::check(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW).expect("valid withdrawal order")
+            };
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = order(N1);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            let fresh = executor.handle(&order(N2), NOW).expect("fresh order acts");
+            assert!(!fresh.repeat, "{action}");
+            let again = executor.handle(&order(N3), NOW).expect("lost receipt");
+            assert!(again.repeat, "{action}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+
+    #[test]
+    fn a_process_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_and_repeats_after_a_lost_receipt() {
+        for (action, target, step) in [("process.ensure_state", "7:process-417", "converge"),
+            ("schedule.ensure_timer", "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab", "timer")] {
+            let order = |nonce: &str| {
+                let mut fields = payload();
+                fields["action"] = action.into();
+                fields["target"] = target.into();
+                fields["operation"] = format!("42:{step}").into();
+                fields["nonce"] = nonce.into();
+                fields["expires_ms"] = (NOW + 5000).into();
+                fields["input"] = serde_json::json!({});
+                let keys = pinned(1);
+                let enabled = Enabled::parse("process").expect("valid");
+                let node = "7".parse().expect("id");
+                crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, _| true)
+                    .expect("valid process order")
+            };
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = order(N1);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            assert!(!executor.handle(&order(N2), NOW).expect("fresh order acts").repeat, "{action}");
+            assert!(executor.handle(&order(N3), NOW).expect("lost receipt").repeat, "{action}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+    #[test]
     fn a_route_step_that_expired_before_its_lock_runs_once_on_a_fresh_nonce_after_restart() {
         for (action, step) in [("tls.ensure_csr", "csr-0"), ("route.publish_site", "site-3"), ("dns.publish_records", "dns-0")] {
             let directory = tempfile::tempdir().expect("scratch");
@@ -572,8 +649,9 @@ mod tests {
     #[test]
     fn only_fenced_actions_keep_an_expiry_out_of_the_journal() {
         assert!(Action::InstanceDestroy.receipt_fenced() && Action::InstanceSyncBase.receipt_fenced() && Action::InstanceClearBase.receipt_fenced()
-            && Action::InstanceFetchBranch.receipt_fenced());
-        assert!(Action::TlsEnsureCsr.receipt_fenced() && Action::RoutePublishSite.receipt_fenced() && Action::DnsPublishRecords.receipt_fenced());
+            && Action::InstanceFetchBranch.receipt_fenced() && Action::ProcessEnsureState.receipt_fenced() && Action::ScheduleEnsureTimer.receipt_fenced());
+        assert!(Action::TlsEnsureCsr.receipt_fenced() && Action::RoutePublishSite.receipt_fenced() && Action::DnsPublishRecords.receipt_fenced()
+            && Action::RouteWithdrawSite.receipt_fenced());
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
     }
 
@@ -676,6 +754,46 @@ mod tests {
         assert_eq!(repeat.outcome, first.outcome);
         assert_eq!(repeat.operation.as_str(), "42:remove");
         assert_eq!(runs.load(Ordering::SeqCst), 0);
+    }
+
+    fn read_order(nonce: &str, expiry: u64) -> VerifiedOrder {
+        let mut fields = payload();
+        fields["action"] = "instance.work_read".into();
+        fields["target"] = "12".into();
+        fields["operation"] = "read:12".into();
+        fields["nonce"] = nonce.into();
+        fields["expires_ms"] = expiry.into();
+        let keys = pinned(1);
+        let enabled = Enabled::parse("instance").expect("valid");
+        let node = "7".parse().expect("id");
+        crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, target| {
+            target.as_str() == "12"
+        })
+        .expect("valid read")
+    }
+
+    #[test]
+    fn a_read_runs_every_time_outside_the_journal_and_the_target_lock() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("j");
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+        // A destroy of the same target holds its lock; the read does not wait for it.
+        let lock = {
+            let mut targets = executor.targets.lock().expect("targets");
+            Arc::clone(targets.entry("12".parse().expect("target")).or_default())
+        };
+        let held = lock.lock().expect("target lock");
+        let first = executor.handle(&read_order(N1, NOW + 4000), NOW).expect("reads");
+        let second = executor.handle(&read_order(N2, NOW + 4000), NOW).expect("reads again");
+        drop(held);
+        assert!(!first.repeat && !second.repeat, "a lost reply is read again, never repeated from a record");
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        assert!(matches!(executor.handle(&read_order(N1, NOW + 4000), NOW), Err(StateRefusal::ReplayedNonce { first: None })));
+        assert_eq!(executor.handle(&read_order(N3, NOW + 1), NOW + 1).expect("expired").outcome, Outcome::failed(ORDER_EXPIRED));
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        drop(executor);
+        assert!(records(&path).is_empty(), "a read writes no journal record");
     }
 
     #[test]

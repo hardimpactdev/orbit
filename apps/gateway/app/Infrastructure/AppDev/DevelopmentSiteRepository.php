@@ -558,7 +558,12 @@ final readonly class DevelopmentSiteRepository
                 phpVersion: null,
                 domain: $route->domain,
                 projectSlug: $instance->project->slug,
-                certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
+                // A web-root site loads its own leaf, as on a checkout Instance below: the Instance's leaf names only its own Route.
+                certificateScope: match (true) {
+                    $domainChange => "app-instance-{$instance->id}-hostname-change",
+                    $route->hasWebRoot() => "route-{$route->id}",
+                    default => null,
+                },
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
                 devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
                 viteUpstream: $vitePort === null ? null : $runtime->bridge_address.':'.$vitePort,

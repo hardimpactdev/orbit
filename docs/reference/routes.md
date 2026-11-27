@@ -359,6 +359,8 @@ Dedicated hostnames keep service endpoints independent of application routes wit
 | `route.removal_check_failed` | Verify no site, cert, or rule remains |
 | `route.withdrawal_failed` | Any other removal failure |
 
+When `route.destroy` is enabled in `ORBIT_ENGINE_KINDS`, the [Gateway engine](/reference/gateway-engine#routedestroy) runs an ordinary private Route's removal with typed executor actions. Every Node must report the actions, and each VPN Node the `dns.guarded_records` feature. On the engine, the sibling check fails as `route.removal_check_failed`. `--offline`, replacements, LAN rules, the Ingress edge and `APP_URL` writes stay on Swamp.
+
 ### Remove a replacement that never activated
 
 `route:destroy` on a `pending` or `failed` replacement Route abandons the change, withdraws staging sites and certificates, restores `APP_URL` / `.env` and DNS for the old domain, clears `replaced_by_route_id`, and leaves the original Route active. Replacements owned by an open Instance transfer return `instance.transfer_incomplete`, and replacements that already cut over (`activating`/`active`) return `route.target_conflict`.

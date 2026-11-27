@@ -32,12 +32,12 @@ use RuntimeException;
  *
  * - `csr-<i>`, `sign-<i>`: the leaves, as route.create;
  * - `site-<node>`: `route.publish_site` with the publish phase, whose Caddyfile serves the old and the new name side by side;
- * - `dns-<i>`: the guarded `dns.publish_records` of ORB-6310 on each VPN Node ([self::guardedDnsInput]);
+ * - `dns-<i>`: route.destroy's guarded `dns.publish_records` on each VPN Node ([self::guardedDnsInput]);
  * - `probe-<i>`: the TLS handshake with each serving Node under the new name;
  * - `cutover`: the Gateway commits the replacement authoritative and the old Route `retiring` ([self::cutover]);
  * - `grace`: the DNS grace, timed from the stored DNS receipts;
  * - `final-<node>`: `route.publish_site` with the retire phase, the lasting Caddyfile and the late leaves, read back by the action;
- * - `withdraw-<node>`: route.destroy's removal action for the old domain's leaves ([self::RemovalAction]);
+ * - `withdraw-<node>`: route.destroy's `route.withdraw_site` for the old name and its leaves, over the lasting Caddyfile ([self::removalInput]);
  * - `sibling-<node>`: another Route on that Node still answers.
  *
  * A retry of the same update is forward only and never changes engine ([self::chain]): after the cutover it runs only the
@@ -48,10 +48,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
 {
     public const string Kind = 'route.update';
 
-    /**
-     * route.destroy's site withdrawal (ORB-6310), which a Node must report before an update that retires a leaf leaves Swamp.
-     * No Node reports it yet, so such an update starts on Swamp.
-     */
+    /** route.destroy's site withdrawal, which a Node must report before an update that retires a leaf there leaves Swamp. */
     public const string RemovalAction = 'route.withdraw_site';
 
     /** TTL 30 s and 1 s: resolvers that honor the TTL stop asking for the old name before its site leaves. */
@@ -125,6 +122,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         }
         $withdrawn = [];
         foreach (array_unique(array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['cleanup']))) as $node) {
+            RouteEngineFlow::fits(self::removalInput($operation, $plan, $node));
             $steps[] = new StepSpec("withdraw-{$node}", $node, self::RemovalAction, (string) $node, isset($finals[$node]) ? [$finals[$node]] : $before, budgetMs: 120_000, resendMs: 20_000);
             $withdrawn[$node] = "withdraw-{$node}";
         }
@@ -148,7 +146,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
             'site' => $this->phaseInput($plan, 'publish', (int) $index, $signed),
             'final' => $this->phaseInput($plan, 'retire', (int) $index, $signed),
             'dns' => self::guardedDnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $index]),
-            'withdraw' => self::removalInput($plan, (int) $index),
+            'withdraw' => self::removalInput($operation, $plan, (int) $index),
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
     }
@@ -337,29 +335,57 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     }
 
     /**
-     * The guarded input of `dns.publish_records` (ORB-6310): per file, the digest the Gateway rendered from and the digest of
-     * the desired bytes. Until ORB-6310 lands that input, an update with private DNS starts on Swamp.
+     * The guarded input of `dns.publish_records`: per file, the digest of the bytes the Gateway rendered from. Only route.destroy's
+     * admission captures those digests (`route_guards`), so an update with private DNS starts on Swamp.
      *
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private static function guardedDnsInput(array $row): array
     {
-        throw new EngineUnsupported('A Route update with private DNS needs the guarded DNS publication of ORB-6310.');
+        throw new EngineUnsupported('A Route update with private DNS has no captured rendered-from digests; it runs on Swamp.');
     }
 
     /**
-     * route.destroy's removal input (ORB-6310) for the old domain's leaves on one Node.
+     * route.destroy's `route.withdraw_site` input on one Node, after the lasting Caddyfile: that file is both the rendered-from
+     * and the desired one, so the action writes no Caddyfile and refuses `owned_revision_conflict` when a sibling Route changed
+     * it since. It removes the old domain's leaf folders, reloads Caddy and reads back that the old name is gone. A Node whose
+     * leaves leave without a lasting Caddyfile here, or a leaf outside the executor's shape, starts on Swamp.
      *
      * @param  array<string, mixed>  $plan
      * @return array<string, mixed>
      */
-    private static function removalInput(array $plan, int $node): array
+    private static function removalInput(Operation $operation, array $plan, int $node): array
     {
-        $leaves = array_values(array_map(static fn (array $row): array => ValidatedData::object($row['leaf']),
-            array_filter(RouteExecutionProof::objects($plan['cleanup']), static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node)));
+        $nodes = is_array($plan['nodes'] ?? null) ? $plan['nodes'] : [];
+        $account = ValidatedData::object($nodes[$node] ?? $nodes[(string) $node] ?? [])['account'] ?? null;
+        if (! is_string($account) || preg_match(RouteEngineFlow::Name, $account) !== 1) {
+            throw new EngineUnsupported("Node {$node} has no account in the executor's shape.");
+        }
+        $caddy = array_values(array_filter(RouteExecutionProof::objects(ValidatedData::object($plan['retire'])['caddy'] ?? []),
+            static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
+        if ($caddy === []) {
+            throw new EngineUnsupported("Node {$node} has no lasting Caddyfile to withdraw the old name over.");
+        }
+        $leaves = [];
+        foreach (RouteExecutionProof::objects($plan['cleanup']) as $row) {
+            $leaf = ValidatedData::object($row['leaf']);
+            if (ValidatedData::integer($row['node_id']) !== $node) {
+                continue;
+            }
+            if (ValidatedData::string($leaf['user']) !== $account || preg_match(RouteEngineFlow::Scope, ValidatedData::string($leaf['scope'])) !== 1) {
+                throw new EngineUnsupported('A leaf outside the account or scope shape runs on Swamp.');
+            }
+            $leaves[] = ValidatedData::string($leaf['scope']);
+        }
+        $domain = Route::query()->findOrFail(self::intent($operation)['route_id'])->domain;
+        if (preg_match(RouteEngineFlow::Domain, $domain) !== 1) {
+            throw new EngineUnsupported('A domain outside the executor\'s shape runs on Swamp.');
+        }
+        $content = ValidatedData::string(end($caddy)['content']);
 
-        return ['leaves' => $leaves];
+        return ['account' => $account, 'domains' => [$domain], 'leaves' => array_values(array_unique($leaves)),
+            'caddy' => ['from_sha256' => hash('sha256', $content), 'content' => ['blob' => ['content' => $content]]]];
     }
 
     /**
@@ -463,9 +489,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
             || ValidatedData::object($intent['before'])['publication'] !== RoutePublication::Private->value) {
             throw new EngineUnsupported('Only a private Route\'s domain change runs on the engine.');
         }
-        // route.destroy's withdrawal is not wired on either side yet (RemovalAction): an update that withdraws a leaf stays on Swamp,
-        // whatever its Nodes report.
-        foreach (['ingress', 'ingress_ports', 'lan_absent', 'cleanup'] as $list) {
+        foreach (['ingress', 'ingress_ports', 'lan_absent'] as $list) {
             if (($plan[$list] ?? []) !== []) {
                 throw new EngineUnsupported("route.update with {$list} runs on Swamp.");
             }

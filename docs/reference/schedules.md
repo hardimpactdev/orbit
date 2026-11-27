@@ -81,6 +81,8 @@ When a trigger fires (or when you call `run`), Orbit starts a transient `systemd
 Enable publishes the trigger and records `enabled` (creating the workflow first for copied Project definitions that start disabled). Disable removes the trigger and records `disabled` while letting any active run finish.
 
 - **Node-timer enable:** Instance-targeted Node-timer Schedules enable and start their systemd timer. Node-timer Schedules targeting a Node refuse enable with `schedule.target_invalid` (409).
+- **Engine:** an eligible Node-timer enable without `container` or `production_control` can run on the Gateway engine as one signed `schedule.ensure_timer` order ([schedule.enable](/reference/gateway-engine#scheduleenable)).
+- **Engine result:** the same `ready: true` result as Swamp; a cancelled engine run records no error code, as on Swamp.
 - **Disable:** Only cron-workflow Schedules support `disable`; Node-timer Schedules return `schedule.state_invalid` (409).
 
 ## Node timers

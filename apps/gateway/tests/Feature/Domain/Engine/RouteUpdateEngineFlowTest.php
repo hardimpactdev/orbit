@@ -115,7 +115,7 @@ it('leaves every URL write, public Route, edge, LAN rule and unguarded DNS move 
     'the Ingress edge' => [['ingress' => [['node_id' => 6]]], []],
     'a LAN rule' => [['lan_absent' => [['node_id' => 3]]], []],
     'private DNS before the guarded input lands' => [['dns' => [['node_id' => 1, 'records' => "address=/new.orbit/10.44.0.2\n", 'catalog' => "{}\n"]]], []],
-    'a leaf withdrawal before route.destroy\'s action is wired' => [['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => 'app-instance-7-old']]]], []],
+    'a leaf outside the account' => [['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'other', 'scope' => 'app-instance-7-hostname-change']]]], []],
 ]);
 
 it('resumes an engine-started update after its cutover with only the post-cutover steps, from the stored plan and leaves', function (): void {
@@ -333,4 +333,50 @@ it('refuses a first attempt whose Node gained a sibling Route between admission 
     $site('blog', 'blog.fixture.test');
     expect(fn () => RouteUpdateEngineFlow::assertCurrent($operation))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_stale'));
+});
+
+it('runs a real domain change of a Route without URL writes on the engine, withdrawing the staging leaf over the lasting Caddyfile', function (): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-root-certificate');
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'update-node', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key', 'ssh_host_fingerprint' => 'fixture']));
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $control = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'control', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '10.44.0.209', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-control-key']));
+    $control->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $site = function (string $slug, string $domain) use ($node): Route {
+        $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package',
+            'repository_url' => "https://github.com/example/{$slug}.git", 'default_branch' => 'main', 'root' => 'public']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $slug,
+            'checkout_path' => "/home/orbit/apps/{$slug}", 'status' => 'active', 'source_layout' => 'worktree', 'root' => 'public',
+            'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id,
+            'provenance' => 'explicit', 'publication' => 'private', 'domain' => $domain, 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+
+        return $route->refresh();
+    };
+    $route = $site('shop', 'shop.fixture.test');
+    $candidate = app(RouteMutationState::class)->reserve($route, 'store.fixture.test');
+    $input = ['mode' => 'replace_domain', 'domain' => 'store.fixture.test', 'publication' => 'private', 'web_root' => null,
+        'candidate_route_id' => $candidate->id, 'allow_generated' => false];
+    $capture = app(NativeRouteUpdateInput::class)->capture($route->refresh()->load('targets.instance.node'), $input);
+    $operation = Operation::query()->forceCreate(['kind' => 'route.update', 'status' => OperationStatus::Running, 'target_type' => 'route',
+        'target_id' => $route->id, 'node_id' => null, 'input' => [...$input, 'route_update' => $capture['intent']], 'state' => []]);
+    $plan = RouteUpdateEngineFlow::plan($operation);
+    $cleanup = $plan['cleanup'];
+    expect($cleanup)->toHaveCount(1)->and($cleanup[0]['leaf']['scope'])->toEndWith('-hostname-change');
+
+    $steps = updateSteps($operation);
+    $names = array_column($steps, 0);
+    $withdraw = "withdraw-{$node->id}";
+    expect($names)->toContain('cutover', "final-{$node->id}", $withdraw, "sibling-{$node->id}")
+        ->and($steps[array_search($withdraw, $names, true)])->toBe([$withdraw, $node->id, 'route.withdraw_site', ["final-{$node->id}"]]);
+
+    $input = app(RouteUpdateEngineFlow::class)->input($operation, $withdraw, new EngineRun($operation->id, [], 0, null));
+    $lasting = collect($plan['retire']['caddy'])->firstWhere('node_id', $node->id)['content'];
+    expect($input)->toBe(['account' => 'orbit', 'domains' => ['shop.fixture.test'], 'leaves' => [$cleanup[0]['leaf']['scope']],
+        'caddy' => ['from_sha256' => hash('sha256', $lasting), 'content' => ['blob' => ['content' => $lasting]]]])
+        ->and($lasting)->not->toContain('shop.fixture.test');
 });

@@ -25,6 +25,8 @@ The CLI requires confirmation (`--yes` in JSON or noninteractive mode). `--force
 
 Before stopping Schedules or recording a removal, Orbit runs a dry-run preflight across blockers, owned databases, Routes, and live host worktrees. A refusal leaves the Instance, Schedules, and Route untouched.
 
+While a [Gateway engine run](/reference/gateway-engine#processstart-and-processstop) holds one of the Instance's Processes, the removal refuses `operation.target_busy` before it records anything.
+
 - **Worktree dependents (`instance.worktree_dependents`, 409):** On host checkouts, Orbit checks for live worktrees pointing into the target's Git data (even with `--force`). Unreadable unrelated checkouts emit bounded `instance.checkout_unknown` warnings.
 - **Open operations and migrations:** Active `instance:migrate` operations refuse with `instance.lifecycle_busy` (even with `--force`). Destroying a creating clone cancels the create and queues the destroy.
 - **Container rules:** Container clones require `--force` (`instance.container_destroy_force_required`, 409). A `default` cannot be destroyed with active clones (`instance.default_has_copies`, 409) or outside the trial list.
@@ -41,7 +43,7 @@ Physical slots do not belong to a database and never block removal. MySQL, Valke
 
 ## Native order
 
-The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
+The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. It first withdraws the clone's private Routes with `route.withdraw_site` and guarded DNS steps. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
 
 While a task copy's [sync on the engine](/reference/gateway-engine#taskssync) holds the copy's Instance lock, removal of that copy, including the one `task:cancel` starts, refuses with HTTP 409 `operation.target_busy` until the sync ends.
 

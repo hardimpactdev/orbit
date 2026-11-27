@@ -107,9 +107,38 @@ async fn consume<R: Run + 'static>(
             }
         }
     });
+    let reads = tokio::spawn(answer_reads(job_for(&client, &context, &node), Arc::clone(settings), Arc::clone(executor), log));
     let result = serve(&context, client, &node, settings, executor, log).await;
     reporter.abort();
+    reads.abort();
     result
+}
+
+fn job_for(client: &async_nats::Client, context: &jetstream::Context, node: &str) -> Job {
+    Job { client: client.clone(), context: context.clone(), node: node.to_owned() }
+}
+
+/// Answers signed read orders on core NATS request/reply, `orbit.node.<node>.reads` (docs/reference/executor.md#signed-reads):
+/// a read changes nothing, so it needs no stream, no receipt and no acknowledgement. Only a read-only action is answered here;
+/// any other order is refused, so a change always takes the durable order stream.
+async fn answer_reads<R: Run + 'static>(job: Job, settings: Arc<Settings>, executor: Arc<Executor<R>>, log: Log) {
+    if !orbit_executor_core::action::Action::ALL.into_iter().any(|action| action.read_only() && settings.enabled.allows(action)) {
+        return;
+    }
+    let mut requests = match job.client.subscribe(format!("orbit.node.{}.reads", job.node)).await {
+        Ok(requests) => requests,
+        Err(error) => return log(&format!("read subscription failed: {error}")),
+    };
+    while let Some(request) = requests.next().await {
+        let (job, settings, executor) = (job.clone(), Arc::clone(&settings), Arc::clone(&executor));
+        tokio::spawn(async move {
+            let Some(reply) = request.reply.clone() else { return };
+            let line = job.read(&request.payload, &settings, &executor, log).await;
+            if let Err(error) = job.client.publish(reply, line.to_string().into()).await {
+                log(&format!("read reply failed: {error}"));
+            }
+        });
+    }
 }
 
 /// Waits for the Node's consumer, then pulls its orders.
@@ -137,7 +166,7 @@ async fn serve<R: Run + 'static>(
     };
     let width = slots();
     log(&format!("nats bus joined as node-{node} with {width} slots"));
-    let job = Job { client, context: context.clone(), node: node.to_owned() };
+    let job = job_for(&client, context, node);
     pull(&consumer, &job, width, settings, executor, log).await
 }
 
@@ -206,11 +235,13 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
         .map(orbit_executor_core::action::Action::name)
         .collect();
     // An older executor refuses an input it does not know, so the Gateway sends one only to a Node that names it here.
-    let features: Vec<&str> = if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
-        vec!["instance.t3_pairing", "instance.fetch_seed"]
-    } else {
-        Vec::new()
-    };
+    let mut features: Vec<&str> = Vec::new();
+    if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
+        features.extend(["instance.t3_pairing", "instance.fetch_seed"]);
+    }
+    if settings.enabled.allows(orbit_executor_core::action::Action::DnsPublishRecords) {
+        features.push("dns.guarded_records");
+    }
     serde_json::json!({
         "actions": actions,
         "node_targets": node_targets,
@@ -277,6 +308,39 @@ impl Job {
         } else {
             log("receipt not stored; the order comes back and the journal answers it");
         }
+    }
+
+    /// One signed read: checked as every order is, its content read, then run on a blocking thread. The line is the reply.
+    async fn read<R: Run + 'static>(&self, wire: &[u8], settings: &Arc<Settings>, executor: &Arc<Executor<R>>, log: Log) -> serde_json::Value {
+        let now = server::now_ms();
+        let wire = wire.to_vec();
+        let checked = tokio::task::spawn_blocking({
+            let (wire, settings, executor) = (wire.clone(), Arc::clone(settings), Arc::clone(executor));
+            move || server::verify(&wire, &settings, &executor, now, log, "nats-read")
+        })
+        .await
+        .unwrap_or_else(|_| Err(serde_json::json!({"status": "refused", "reason": "executor.panicked", "node_clock_ms": now})));
+        let verified = match checked {
+            Ok(verified) if verified.action().read_only() => verified,
+            Ok(_) => return serde_json::json!({"status": "refused", "reason": "executor.not_a_read", "node_clock_ms": now}),
+            Err(refused) => return with_unverified_identity(refused, &wire),
+        };
+        // The content is read within the order's life: the Gateway takes no reply after it, and the read itself stops by then too.
+        let left = verified.expires_ms().saturating_sub(server::now_ms());
+        let fetched = tokio::time::timeout(Duration::from_millis(left), self.fetch_blobs(verified.input())).await;
+        let failed = match fetched {
+            Ok(Ok(())) => None,
+            Ok(Err(code)) => Some(code),
+            Err(_) => Some(orbit_executor_core::executor::ORDER_EXPIRED),
+        };
+        if let Some(code) = failed {
+            return serde_json::json!({"status": "failed", "code": code, "operation": verified.operation(), "action": verified.action(),
+                "target": verified.target(), "node_clock_ms": now});
+        }
+        let executor = Arc::clone(executor);
+        tokio::task::spawn_blocking(move || server::run_line(&executor, &verified, server::now_ms(), log, "nats-read"))
+            .await
+            .unwrap_or_else(|_| serde_json::json!({"status": "failed", "code": "executor.panicked", "node_clock_ms": now}))
     }
 
     /// Runs the order on a blocking thread and sends progress acknowledgements until it ends.
@@ -493,5 +557,22 @@ mod tests {
         assert!(node_targets.contains(&"instance.club_key"));
         assert!(!node_targets.contains(&"instance.checkout"));
         assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing", "instance.fetch_seed"]));
+    }
+
+    #[test]
+    fn capability_report_lists_guarded_dns_records_with_the_dns_family() {
+        use orbit_executor_core::action::Enabled;
+        use orbit_executor_core::caller::Policy;
+        use orbit_executor_core::order::PinnedKeys;
+
+        let settings = Settings {
+            policy: Policy::production(None, PathBuf::from("/usr/local/bin/orbit-agent")),
+            keys: PinnedKeys::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=").expect("valid key"),
+            enabled: Enabled::parse("dns\nroute").expect("dns and route families"),
+            node: "7".parse().expect("node"),
+        };
+        let report = capability_report(&settings);
+        assert_eq!(report["features"], serde_json::json!(["dns.guarded_records"]));
+        assert!(report["actions"].as_array().expect("actions").contains(&serde_json::json!("route.withdraw_site")));
     }
 }

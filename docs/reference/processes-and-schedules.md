@@ -147,6 +147,8 @@ Creating or starting a Process requires an active Instance and Node (`process.ta
 
 `process.start`, `process.stop`, and `process.restart` verify the release directory (on production), prepare Vite Caddy routing when needed, apply systemd boot policy (skipping enablement on on-demand dev units), run the start/stop/restart action, and verify the resulting state. For `vp-dev`, if Vite has not yet bound its port during the immediate check, start fails with `vite.listener_unavailable` (or `vite.not_ready` on checkout readiness failure); stop the Process or retry `process:start` once Vite is ready.
 
+`process.start` and `process.stop` of a host systemd unit or a host Docker container can run on the Gateway engine as one signed `process.ensure_state` order. The projection is the same as on Swamp. A cancelled engine run records no error code, as on Swamp. Dev-server, production release, Instance-container, Gateway release-container and a Node's host Horizon units keep the Swamp workflow ([process.start and process.stop](/reference/gateway-engine#processstart-and-processstop)).
+
 ### Update in place
 
 [`process:update`](/cli/process/update) (`PATCH /api/v1/processes/{process}`) updates only the fields you send, keeping the Process ID, name, owner, and desired state intact. Omitted fields keep their stored values; send `working_directory: null` to restore the default, or an empty map/list (`{}` / `[]`) to clear a collection. Switching runtimes returns `process.option_invalid` (422) if an omitted field from the old runtime would be discarded.

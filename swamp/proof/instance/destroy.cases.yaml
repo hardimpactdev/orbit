@@ -26,8 +26,56 @@ cases:
     expect:
       - clone_compare: {engine: signed, swamp: fallback}
       - clone_cleanup: {}
+  - id: route-owning-clone
+    batch: fresh-fleet
+    covers: ["path:admitted", "path:route-withdrawal", "path:succeeded"]
+    summary: Destroy a clone that owns a private development Route on one engine, withdrawing its DNS answers and site before the signed removal, beside the same destroy on Swamp; a sibling Route on the same Node answers throughout.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1200
+    setup:
+      - route_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - clone_create: {name: sibling, via: engine}
+      - clone_create: {name: owner, via: engine}
+      - clone_create: {name: legacy, via: engine}
+      - route_create: {name: neighbour, clone: sibling}
+      - route_create: {name: owned, clone: owner}
+      - route_create: {name: legacy-route, clone: legacy}
+      - clone_create: {name: held, via: engine}
+      - route_create: {name: held-route, clone: held}
+      - route_clone_destroy: {name: owner, via: engine, sibling: neighbour, route: owned}
+      - route_clone_destroy: {name: legacy, via: swamp, sibling: neighbour, route: legacy-route}
+      - route_clone_destroy: {name: held, via: engine, sibling: neighbour, route: held-route, fault: boundary}
+    expect:
+      - route_compare: {engine: owner, swamp: legacy, kind: clone}
+      - clone_cleanup: {}
+  - id: work-read-before-remove
+    batch: fresh-fleet
+    covers: ["path:admitted"]
+    summary: >-
+      Read a disposable clone's unsaved work through Conn's GET .../work (instance/container/work-read-engine) by the signed executor
+      read and by today's SSH reader in clean, dirty (tracked edit, untracked file, stash, new branch), running, stopped and asleep
+      states; both answer alike, and a bus watcher ties every read, timed samples included, to its executor order or to none.
+      A lost first reply is read again with a fresh nonce inside the budget, a stalled executor answers unknown/timeout, and the
+      unacknowledged destroy POST reads afresh and refuses dirty, stopped and asleep clones with no Operation.
+    exclusive: true
+    fails_on_base: true
+    timeout: 900
+    setup:
+      - clone_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - clone_create: {name: quiet, via: engine}
+      - clone_create: {name: worked, via: engine}
+      - clone_work: {name: worked, quiet: quiet}
+    expect:
+      - clone_cleanup: {}
 uncovered:
-  "path:main": "Need a container clone fixture with an owned database, Processes, a Route and a paired T3 client. Force destroy one clone; verify its Route, Processes, database, container, ZFS volume/snapshots, default-project ACL, firewall rules, mirror, Conn records and execution copies are absent. The client loses access; the default and sibling remain healthy; another clone can reuse its T3 port."
+  "path:route-withdrawal": "One private development Route on the clone's own Node. Several Routes, a Route on another Node, and a failure or lost receipt inside the clone's withdrawal are not covered here (route:destroy covers the lost withdrawal receipt)."
+  "path:main": "Need a container clone fixture with an owned database, Processes and a paired T3 client. Force destroy one clone; verify its Route, Processes, database, container, ZFS volume/snapshots, default-project ACL, firewall rules, mirror, Conn records and execution copies are absent. The client loses access; the default and sibling remain healthy; another clone can reuse its T3 port."
   "path:removal-failed": "The case retries signed removal after container deletion. Failure after Route withdrawal and destruction of a stopped clone are not covered."
   "path:default-unavailable": "The case checks the forced refusal for an unlisted default. Refusal without force and the allowlisted default's refusal with live copies are not covered."
   "path:succeeded": "The case replays the original admission key after deletion. Actual reallocation of the freed port is not covered."
+  "work-read:not_a_repository": "No clone fixture lacks /srv/workspace; the reason is covered by the executor's Rust tests."
+  "work-read:unreachable": "The case does not stop NATS during a read; the Gateway tests cover two failed sends."
+  "work-read:published": "No task-copy publish fixture: published commits that do not count as unpushed are covered by the Rust and Gateway tests."

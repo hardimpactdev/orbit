@@ -38,13 +38,13 @@ final readonly class RouteEngineFlow implements EngineDefinition
     private const array Unsupported = ['lan', 'ingress', 'ingress_ports', 'env_files', 'awake'];
 
     /** The executor's own shape rules (orbit-executor-route), checked here first so a mismatch starts on Swamp. */
-    private const string Name = '/\A[a-z_][a-z0-9_-]{0,31}\z/D';
+    public const string Name = '/\A[a-z_][a-z0-9_-]{0,31}\z/D';
 
-    private const string Scope = '/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/D';
+    public const string Scope = '/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/D';
 
     private const string Directory = '#\A/etc/caddy/orbit-certificates/[A-Za-z0-9][A-Za-z0-9._-]*/versions/[0-9a-f]{16}\z#D';
 
-    private const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
+    public const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
 
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
     private const int OrderOverhead = 400;
@@ -176,7 +176,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $digests = static function (array $value) use (&$digests): array {
             foreach ($value as $key => $item) {
                 if (is_array($item)) {
-                    $value[$key] = is_array($item['blob'] ?? null) ? ['blob' => ['sha256' => str_repeat('0', 64)]] : $digests($item);
+                    $value[$key] = is_array($item['blob'] ?? null) ? [...$item, 'blob' => ['sha256' => str_repeat('0', 64)]] : $digests($item);
                 }
             }
 
@@ -296,7 +296,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
      * @param  list<array<string, mixed>>  $reloads
      * @return list<array{version: string, user: ?string, content: array{blob: array{content: string}}}>
      */
-    private static function pools(array $files, array $tests, array $reloads): array
+    public static function pools(array $files, array $tests, array $reloads): array
     {
         if (count($files) !== count($tests) || count($files) !== count($reloads)) {
             throw new EngineUnsupported('PHP-FPM pools without one test and one unit each run on Swamp.');

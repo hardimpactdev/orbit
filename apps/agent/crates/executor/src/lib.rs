@@ -148,12 +148,14 @@ impl Run for Families {
                     Outcome::failed(failure.code)
                 }
             },
-            Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
+            Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
             Action::InstanceDestroy => self.destroy(order),
+            Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames | Action::InstanceSyncBase | Action::InstanceClearBase => instance(order),
+            Action::ProcessEnsureState | Action::ScheduleEnsureTimer => process(order),
         }
     }
 }
@@ -327,12 +329,13 @@ fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// The route family (ADR 0271): a leaf's certificate request, or one Node's part of a Route. A failure's code goes to the
+/// The route family (ADR 0271): a leaf's certificate request, one Node's part of a Route, or its withdrawal. A failure's code goes to the
 /// Gateway, its detail only to the log.
 fn route(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_route::NodeSystem::new(bus::BLOBS_PATH);
     let result = match order.action() {
         Action::TlsEnsureCsr => orbit_executor_route::ensure_csr(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::RouteWithdrawSite => orbit_executor_route::withdraw_site(&system, order.input()).map(|changes| Outcome::Applied { changes }),
         _ => orbit_executor_route::publish_site(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {
@@ -351,6 +354,48 @@ fn dns(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |changes| Outcome::Applied { changes },
+    )
+}
+
+/// The process family (ADR 0271): a Process's run state and a Schedule's Node timer. A failure's code goes to the Gateway,
+/// its detail only to the log.
+fn process(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_process::NodeSystem;
+    if !process_slot(order.action(), order.target().as_str(), order.input()) {
+        log(&format!("{} {} failed: its target is not the slot of the resource it names", order.action(), order.operation()));
+        return Outcome::failed(if order.action() == Action::ScheduleEnsureTimer { "schedule.input_invalid" } else { "process.input_invalid" });
+    }
+    let result = match order.action() {
+        Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(&system, order.input())
+            .map(|timer| Outcome::Output { stdout: serde_json::json!(timer).to_string() }),
+        _ => orbit_executor_process::ensure_state(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+    };
+    result.unwrap_or_else(|failure| {
+        log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+        Outcome::failed(failure.code)
+    })
+}
+
+/// Whether the signed target's slot (`<node>:process-<id>`, `<node>:schedule-<uuid>`) names the resource the input acts on,
+/// so the target lock serializes the orders of that resource and no other.
+fn process_slot(action: Action, target: &str, input: &serde_json::Value) -> bool {
+    let slot = target.split_once(':').map_or("", |(_, slot)| slot);
+    match action {
+        Action::ScheduleEnsureTimer => input["schedule_id"].as_str().is_some_and(|id| slot == format!("schedule-{id}")),
+        _ => input["process_id"].as_u64().is_some_and(|id| slot == format!("process-{id}")),
+    }
+}
+
+/// `instance.work_read`: a copy's workspace read, answered as the reader's JSON. A refused input goes to the Gateway as its
+/// code, which the Gateway reads as `unknown` `unreachable`.
+fn work_read(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_instance::work_read(&system, order.target().as_str(), order.input(), order.expires_ms()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |stdout| Outcome::Output { stdout },
     )
 }
 
@@ -438,6 +483,17 @@ mod tests {
         // An order from a Gateway before the field gets the power family's default.
         assert_eq!(ready_bound(&serde_json::Value::Null), None);
         assert_eq!(ready_bound(&input("30".into())), None);
+    }
+
+    #[test]
+    fn a_process_order_acts_only_on_the_resource_its_target_slot_names() {
+        let state = serde_json::json!({"process_id": 417});
+        assert!(process_slot(Action::ProcessEnsureState, "7:process-417", &state));
+        assert!(!process_slot(Action::ProcessEnsureState, "7:process-418", &state));
+        assert!(!process_slot(Action::ProcessEnsureState, "7", &state));
+        let timer = serde_json::json!({"schedule_id": "7f3c0a5e-1b2c-4d3e-8f90-0123456789ab"});
+        assert!(process_slot(Action::ScheduleEnsureTimer, "7:schedule-7f3c0a5e-1b2c-4d3e-8f90-0123456789ab", &timer));
+        assert!(!process_slot(Action::ScheduleEnsureTimer, "7:process-417", &timer));
     }
 
     #[test]

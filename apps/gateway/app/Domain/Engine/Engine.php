@@ -7,7 +7,9 @@ namespace App\Domain\Engine;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Processes\ProcessControlEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
+use App\Domain\Schedules\ScheduleEnableEngineFlow;
 use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -37,11 +39,12 @@ final readonly class Engine
      * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
      * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
      */
-    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, RouteUpdateEngineFlow::Kind];
+    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, ...ProcessControlEngineFlow::Kinds, ScheduleEnableEngineFlow::Kind, 'route.destroy',
+        RouteUpdateEngineFlow::Kind];
 
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
-    private const array FencedSuccess = ['instance.destroy' => 'done', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
-        'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', 'dns.publish_records' => 'applied'];
+    private const array FencedSuccess = ['instance.destroy' => 'done', 'dns.publish_records' => 'applied', 'route.withdraw_site' => 'applied', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
+        'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', ProcessControlEngineFlow::Action => 'applied', ScheduleEnableEngineFlow::Action => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -162,14 +165,17 @@ final readonly class Engine
     }
 
     /**
-     * The Operation lock a receipt-bound kind holds until its end: the resource its orders change. A task copy's sync locks its
+     * The Operation lock a receipt-bound kind holds until its end: the resource its orders change. A Schedule's enable locks its UUID; a task copy's sync locks its
      * copy, so no removal or other writer of that Instance starts beside it; the group stays fenced by its running Operation.
      */
     public static function fenceKey(Operation $operation): string
     {
-        return $operation->kind === TaskSyncEngineFlow::Kind
-            ? OperationStore::lockKey('instance', ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0))
-            : OperationStore::lockKey($operation->target_type, $operation->target_id);
+        return match ($operation->kind) {
+            TaskSyncEngineFlow::Kind => OperationStore::lockKey('instance', ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0)),
+            // A Schedule's UUID, so the owner's other Schedules stay free (EngineTargetFence).
+            ScheduleEnableEngineFlow::Kind => EngineTargetFence::scheduleKey(ValidatedData::string(ValidatedData::object($operation->input)['id'] ?? null)),
+            default => OperationStore::lockKey($operation->target_type, $operation->target_id),
+        };
     }
 
     public static function requiresReceipt(Operation $operation): bool
@@ -282,8 +288,8 @@ final readonly class Engine
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
             $cancel = $operation->cancel_requested_at !== null;
-            // A receipt-bound cancel sends no new step: it waits for each published order's terminal receipt, then runs the failure
-            // steps for the work that was done, and ends. A step whose first order was never published did nothing.
+            // A receipt-bound cancel or failure sends no new step: it waits for each published order's terminal receipt, then runs
+            // the failure steps for the work that was done, and ends. A step whose first order was never published did nothing.
             $published = static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null;
             $outstanding = array_any($steps, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step));
             $acted = array_any($steps, $published);
@@ -294,9 +300,10 @@ final readonly class Engine
             }
             $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
             $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
-            $rescue = $failed || ($receiptBound && $cancel && $acted && ! array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step)));
+            $pending = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step));
+            $rescue = $receiptBound ? ($failed || ($cancel && $acted)) && ! $pending : $failed;
             foreach ($steps as $step) {
-                if ($receiptBound && $cancel && ! $step->on_failure) {
+                if ($receiptBound && ($cancel || $failed) && ! $step->on_failure) {
                     if ($step->status !== 'sent' || ! $published($step)) {
                         continue; // Only a published order is resent until its terminal receipt.
                     }

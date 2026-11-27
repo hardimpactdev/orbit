@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php,Domain/Tasks/TaskSyncEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Processes/ProcessControlEngineFlow.php,Domain/Schedules/ScheduleEnableEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php,Domain/Tasks/TaskSyncEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -21,7 +21,7 @@ For Operations started through `StartSwampRun`, `EngineKinds::routes()` chooses 
 
 - The engine defines a flow for the kind (`EngineKinds`).
 - The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
-- Every Node targeted by its steps has reported the required primitive.
+- Every Node targeted by its steps has reported the required primitive, and each optional input the step needs in its `features`.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
 When any condition fails, the entire Operation runs on its Swamp workflow. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback.
@@ -34,9 +34,12 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
-| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, guarded `dns.publish_records` and route.destroy's site withdrawal, both not released yet |
+| `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
+| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
-| `instance.destroy` | `remove` | `instance.destroy` |
+| `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
+| `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
+| `schedule.enable` | `timer` on the Schedule's Node | `schedule.ensure_timer` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
@@ -54,7 +57,19 @@ The engine runs the admitted `route_create` plan while preserving Route holds an
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.update`.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.destroy` and `route.update`.
+
+### route.destroy
+
+The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) with the Route Nodes held from admission to the terminal state. Its steps run in this order:
+
+1. `dns-<i>`: `dns.publish_records` writes each VPN Node's records and catalog without the Route. Each file carries the digest of the bytes the Gateway rendered from at admission. Admission requires `dns.guarded_records` in the VPN Node's `features`.
+2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt. A redelivered receipt does not move that time. A repeat waits only what is left.
+3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. It writes only over the Caddyfile the Gateway rendered from. A repeat reports `applied: 0`.
+4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
+
+A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
+
 
 ### route.update
 
@@ -69,7 +84,7 @@ Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`,
 | `cutover` | A Gateway transaction that marks the replacement `active` and the old Route `retiring`; its `done` row is the acknowledgement |
 | `grace` | A timed Gateway step that ends 31 s after the latest stored DNS receipt; a resend or retry never shortens it |
 | `final-<node>` | `route.publish_site` with the lasting Caddyfile and the late leaves, validated and read back |
-| `withdraw-<node>` | route.destroy's site withdrawal for the old domain's leaves |
+| `withdraw-<node>` | `route.withdraw_site` for the old name and its staging leaves, over the lasting Caddyfile: that file is both the rendered-from and the desired one, so a sibling change since refuses `owned_revision_conflict`; it reloads Caddy and reads back that the old name is gone |
 | `sibling-<node>` | Another site the Node serves, of any Route kind, still answers over TLS; a Node that serves none passes, one without an address fails |
 
 A failure after the committed cutover is labelled `Withdraw the old site` or `Wait the DNS grace`, so `NativeRouteUpdateProjection` keeps the replacement authoritative and the old Route `retiring`; it never demotes it. A retry of the same Route and replacement is forward only: when the chain's earlier engine Operation committed the cutover, the retry runs only `grace`, `final-<node>`, `withdraw-<node>` and `sibling-<node>`, from that Operation's stored plan, signed leaves and DNS receipt times.
@@ -86,7 +101,7 @@ A timed-out write whose run is not proven stopped counts as writing until it set
 
 The Operation lock names the old Route, so `route:destroy` of the replacement refuses with `operation.target_busy` while the update is open.
 
-A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. Until route.destroy releases the guarded DNS input and the site withdrawal, an update that moves private DNS or withdraws an old leaf also stays on Swamp, whatever its Nodes report.
+A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. An update that moves private DNS still stays on Swamp: its guarded `dns.publish_records` input needs the rendered-from digests that only route.destroy's admission captures yet. A Node that does not report `route.withdraw_site` keeps an update that withdraws a leaf there on Swamp.
 
 ### instance.create
 
@@ -109,7 +124,15 @@ The Gateway unseals the sessions without using a vault and records `route_public
 
 ### instance.destroy
 
-The engine accepts `--force` for one container clone in development. The clone cannot be the default and must have a saved Incus identity. The plan cannot require Route withdrawal, database or Valkey cleanup, Process or Schedule teardown, custom teardown, a CI hold release, or waiting for a create or completion. The Node must advertise `instance.destroy`, independently of `instance.create`. Other removals keep their full Swamp workflow.
+The engine accepts `--force` for one container clone in development. The clone cannot be the default and must have a saved Incus identity. The plan cannot require database or Valkey cleanup, Process or Schedule teardown, custom teardown, a CI hold release, or waiting for a create or completion. The Node must advertise `instance.destroy`, independently of `instance.create`. Other removals keep their full Swamp workflow.
+
+A clone that owns private Routes withdraws them first, when the admission rendered each Node's whole state without them (`route_engine`). LAN rules, the Ingress edge, and a PHP version whose shared pool empties stay on Swamp. The withdrawal reuses `route.destroy`'s steps without the DNS grace:
+
+1. `dns-<node>`: The guarded `dns.publish_records` removes the Routes' answers.
+2. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` removes the sites, pools and leaves, then another Route on the Node must still answer.
+3. `release`: The Gateway records `route_withdrawn_at` on the removal and frees the Route Nodes, as the Swamp run's release step does.
+
+Every Route must be served by the clone's own Node. The removal holds every Node whose files it replaces alone, DNS Nodes included, until `release` frees them. A removal promoted after waiting runs on Swamp. A failed withdrawal fails as `route.withdrawal_failed` at `Withdraw the Route` before `remove` runs. A retry of a removal that already withdrew its Routes runs `remove` alone.
 
 The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
 
@@ -118,6 +141,35 @@ The removal can still be cancelled during order preparation, deadline scheduling
 The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
 
 A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`. If no complete line fits in the tail, the error records that the diagnostic was omitted rather than exposing part of a line.
+
+### process.start and process.stop
+
+The engine runs a start or stop of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
+
+Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across engines. These throw `EngineUnsupported` and run their whole Swamp workflow:
+
+- a dev-server Process (`vp-dev`, `vite`), whose start publishes a dev route, checks its listener and marks it awake;
+- a Process of an Instance not placed on app-dev, such as a production release layout;
+- any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
+- a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain.
+
+`process.restart` stays on Swamp.
+
+Both kinds are receipt-bound, as `instance.destroy` and `tasks.sync` are (`Engine::ReceiptBound`). The run, its steps and its lock (`process:<id>`, `Engine::fenceKey`) commit in one transaction before the start event. Binding also refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`, and so does every synchronous Process writer under the runtime lease (a direct start or restart, a bootstrap or reconverge, a direct removal), before it changes the row or the runtime.
+
+A collector of the AI router checks the lock before it writes or calls its Node again. A removal that would delete a fenced Process (an Instance, a Node, the analytics role, a database server) is refused `operation.target_busy` at admission, and a Process start or stop does not bind while such a removal is open. If a row is gone when the receipt arrives, the run still ends and frees its lock.
+
+No budget fails a sent step and no expiry ends the Operation. A lost receipt is resent under the same step ID with a fresh nonce, and the Node's journal answers the stored result. The Process stays fenced until a terminal receipt. The step settles only on an `applied` receipt from its own Node, action and target.
+
+The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step its phase stands for. That is the change (`Start the Process`, `Stop the container` …), `Stop the unit`, the check (`Check the unit`, `Check the container`) or the assert (`Verify the state`). A cancel waits for a published order's receipt, then records no error code, as a cancelled Swamp run does.
+
+### schedule.enable
+
+The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`).
+
+The kind is receipt-bound like a Process start. The run holds the Schedule's own lock (`schedule:<uuid>`), so the owner's other Schedules stay free. Its step settles only on an `output` receipt whose read-back shows the timer enabled and active with an answered next elapse (`EngineEvidence`); other output fails it as `engine.receipt_invalid`.
+
+While the run holds its lock, any admission for that Schedule, a create's reservation included, refuses `operation.target_busy` before changing the row. A failure records `operation.native_failed` with failed step `timer`, `check_timer` or `Check the timer`, by the phase that failed. A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine. A timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
 
 ### tasks.sync
 
@@ -157,6 +209,10 @@ When `instance.create` recorded `services: seed` and no database, Valkey ACL use
 ### instance.finalize
 
 For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names. `names` sends `SIGHUP` first to live-reload Conn Server and preserve active connections, restarting T3 once only if reload fails, then polls until the new label appears.
+
+### The workspace read
+
+The workspace unsaved-work read (`ContainerWorkspaceRead`, which Conn's Remove and the unacknowledged destroy call) is no kind: it is a synchronous [signed read](/reference/executor#signed-reads) of `instance.work_read`, decided on each read by the Node's report. A Node that reports the action answers it; any other Node, or a Gateway without a bus, is read over SSH exactly as before. Both paths give the same answer (`instance/container/work-read-engine.mmd`).
 
 ### Capability reporting
 
@@ -252,6 +308,7 @@ Because all processes on a Node share its WireGuard address, each Node also load
 - Direct gets of its own content keys `n<id>.*`.
 - Writing its own capability key `$KV.NODES.n<id>`.
 - Subscribing to its own inbox prefix `_INBOX.node-<id>.>`.
+- Subscribing to its own [signed reads](/reference/executor#signed-reads) on `orbit.node.<id>.reads`, which only the Gateway publishes, and one reply to each request within five seconds (`resp`).
 
 Order signatures remain the execution boundary: neither the bus nor another Node can forge an order.
 
