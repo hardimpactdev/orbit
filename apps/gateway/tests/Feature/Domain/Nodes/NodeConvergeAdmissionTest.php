@@ -44,6 +44,7 @@ use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
+use App\Models\AptRepository;
 use App\Models\GatewayRelease;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -639,6 +640,22 @@ it('admits actual Tool intent in a full run without mistaking its own hold for a
     $this->postJson($this->url, ['base' => true])->assertAccepted();
     $base = Operation::query()->whereKeyNot($full->id)->sole();
     expect($base->input['_converge']['tool_scope'])->toBeFalse()->and($base->input['_converge']['intent']['tools'])->toBe([]);
+});
+
+it('publishes each apt repository its Tools reference and decides it by its own report from then on', function (): void {
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    $definition = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['stable'], 'components' => ['main'],
+        'signing_key' => ['url' => 'https://packages.example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
+    $repository = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'vendor', 'definition' => $definition, 'status' => 'failed',
+        'error_code' => 'tool.repository_unconfirmed']);
+    Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id, 'package' => 'tree', 'desired_version' => '1.10',
+        'installed_version' => '1.10', 'status' => 'installed', 'owned' => true, 'apt_repository_id' => $repository->id]);
+
+    $this->postJson($this->url, [])->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    expect($operation->input['_converge']['intent']['repositories'])->toBe([['id' => $repository->id, 'repository' => $definition, 'repository_packages' => ['tree'], 'ready' => false]])
+        ->and($repository->refresh()->operation_id)->toBe($operation->id);
 });
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {

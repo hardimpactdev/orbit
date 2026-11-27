@@ -29,7 +29,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - `apps/gateway/resources/machine-software/core.yaml` uses JSON syntax within YAML and owns release pins for host prerequisites, roles, and the shared container runtime and agent folders.
 - Release preparation and the core planners read that release's recipe. Core digests exclude optional Tool coordinates and Conn host releases.
 - The Gateway owns optional membership per Node. It admits typed Tool coordinates from the active catalog or database before Ansible runs on the Swamp control Node over pinned SSH.
-- Full convergence includes all eligible Tools; selected Tool convergence resolves only its selection and any shared signed sources. Writes hold the selected manager scopes on the target Node, while changing policy mode waits for all Tool holds. Relinquishing a historical membership never uninstalls protected host software.
+- Full convergence includes all eligible Tools; selected Tool convergence resolves only its selection and the apt repositories it references. Writes hold the selected manager scopes on the target Node, while changing policy mode waits for all Tool holds. Relinquishing a historical membership never uninstalls protected host software.
 
 **Updates.**
 

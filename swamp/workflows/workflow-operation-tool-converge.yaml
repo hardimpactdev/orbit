@@ -9,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tool.converge]}
+    kind: {type: string, enum: [tool.converge, tool.apt_repository_add, tool.apt_repository_remove]}
     intent: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent]

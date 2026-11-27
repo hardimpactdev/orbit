@@ -15,7 +15,7 @@ final class UpdateToolRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['desired_version' => ['nullable', 'string', 'max:255'], ...new AptRepositoryRules()->rules()];
+        return ['desired_version' => ['nullable', 'string', 'max:255'], 'repository' => AptRepositoryRules::name()];
     }
 
     /** @return array<string, mixed> */
@@ -31,12 +31,9 @@ final class UpdateToolRequest extends FormRequest
         }
     }
 
-    /** @return array<string, mixed>|null */
-    public function repository(): ?array
+    public function repository(): ?string
     {
-        $value = $this->validated('repository');
-
-        return $value === null ? null : ValidatedData::object($value);
+        return ValidatedData::nullableString($this->validated('repository'));
     }
 
     public function desiredVersion(): ?string

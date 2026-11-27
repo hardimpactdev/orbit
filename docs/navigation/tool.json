@@ -18,6 +18,10 @@
             "cli/tool/update",
             "cli/tool/remove",
             "cli/tool/converge",
+            "cli/tool/apt-repository-add",
+            "cli/tool/apt-repository-list",
+            "cli/tool/apt-repository-show",
+            "cli/tool/apt-repository-remove",
             "cli/tool/mode",
             "cli/tool/mode-set"
           ]

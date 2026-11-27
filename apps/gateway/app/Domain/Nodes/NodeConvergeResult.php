@@ -29,7 +29,7 @@ final class NodeConvergeResult
         if (! is_array($value)) {
             self::invalid();
         }
-        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 't3_restart_deferred', 'error_code', 'cleanup_complete', 'failure', 'digests']));
+        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'repositories', 'browser_trust', 't3_restart_deferred', 'error_code', 'cleanup_complete', 'failure', 'digests']));
         $rules = [
             'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
             'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],

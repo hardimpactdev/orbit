@@ -140,6 +140,9 @@ final class OperationBudgetTable
         'tool.update' => 1500,
         // 2,100 s per admitted Tool, 500 s phase overhead, then 200 s for dispatch and result.
         'tool.converge' => 'run_budget_seconds',
+        // Provisional. One repository: the 500 s Tools phase (key fetch 30 s, index read 60 s), then 200 s for dispatch and result.
+        'tool.apt_repository_add' => 700,
+        'tool.apt_repository_remove' => 700,
     ];
 
     /**

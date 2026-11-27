@@ -5,7 +5,7 @@ description: "Apply the desired version or update one unpinned Tool to its manag
 ---
 
 ```bash
-orbit tool:update <tool> [--tool-version=VERSION] [--repository=JSON] [--idempotency-key=KEY] [--json]
+orbit tool:update <tool> [--tool-version=VERSION] [--repository=NAME] [--idempotency-key=KEY] [--json]
 ```
 
 In database mode, `--tool-version` sets an exact desired version. Without it, Orbit keeps an existing pin or asks the manager for a candidate. In file mode, the active catalog supplies the coordinate and the command refuses overrides.

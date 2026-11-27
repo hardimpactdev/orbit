@@ -15,7 +15,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ToolData extends Data
 {
-    /** @param array<string, mixed>|null $repository */
+    /** @param string|null $repository the name of the Node's apt repository the Tool installs from */
     public function __construct(
         public int $id,
         public int $nodeId,
@@ -27,7 +27,7 @@ final class ToolData extends Data
         public ?string $failedOperation,
         public ?string $errorCode,
         public ?string $outcome,
-        public ?array $repository = null,
+        public ?string $repository = null,
         public ?string $desiredVersion = null,
     ) {}
 
@@ -47,7 +47,7 @@ final class ToolData extends Data
             failedOperation: $tool->failed_operation?->value,
             errorCode: $tool->error_code,
             outcome: $outcome?->value,
-            repository: $tool->aptRepository?->definition,
+            repository: $policy?->mode === 'file' ? $definition?->repository : $tool->aptRepository?->name,
             desiredVersion: $policy?->mode === 'file' ? $definition?->version : $tool->desired_version,
         );
     }

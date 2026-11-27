@@ -112,7 +112,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |
 | `task` | `cancel`, `check`, `close`, `complete`, `start`, `publish`, `sync`, `turn`, `status` | The CLI starts task work, checks or publishes work, brings main into a task copy, sends turns, completes or cancels tasks, closes questions, and reports state. |
-| `tool` | `adopt`, `converge`, `scan` | Adopt an installed package, apply registered Tool coordinates, or discover packages without taking ownership. |
+| `tool` | `adopt`, `apt-repository-add`, `apt-repository-list`, `apt-repository-remove`, `apt-repository-show`, `converge`, `scan` | Adopt an installed package, manage a Node's signed apt repositories, apply registered Tool coordinates, or discover packages without taking ownership. |
 | `vault` | `setup`, `status`, `sync` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
 | `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |
 

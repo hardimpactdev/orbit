@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\AptRepositoriesController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolPolicyController;
@@ -33,4 +34,8 @@ Route::middleware([
     Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
         ->whereNumber('tool')
         ->name('tool:remove');
+    Route::get('apt-repositories', [AptRepositoriesController::class, 'index'])->name('tool:apt-repository-list');
+    Route::get('apt-repositories/{repository}', [AptRepositoriesController::class, 'show'])->whereNumber('repository')->name('tool:apt-repository-show');
+    Route::post('apt-repositories', [AptRepositoriesController::class, 'store'])->name('tool:apt-repository-add');
+    Route::delete('apt-repositories/{repository}', [AptRepositoriesController::class, 'destroy'])->whereNumber('repository')->name('tool:apt-repository-remove');
 });

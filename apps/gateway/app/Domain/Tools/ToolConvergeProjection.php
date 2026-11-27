@@ -30,8 +30,7 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         $intent = ValidatedData::object($operation->input['intent']);
         $plans = $this->plans($intent);
         $phase = ($result['succeeded'] ?? null) === true ? 'completed' : ToolConvergeObservations::phaseFromRun($run);
-        $this->observations->settle($operation, $plans, $this->observations->lateObservations($result['tools'] ?? [], $plans, $phase), $phase,
-            ValidatedData::stringList($intent['orphan_sources'] ?? []));
+        $this->observations->settle($operation, $plans, $this->observations->lateObservations($result['tools'] ?? [], $plans, $phase), self::repositories($result));
     }
 
     /**
@@ -51,51 +50,76 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         return $plans;
     }
 
-    /** A convergence that never ran wrote nothing to its sources. */
-    public function neverRan(Operation $operation): void
+    /** A convergence that never ran changed nothing. */
+    public function neverRan(Operation $operation): void {}
+
+    /**
+     * The repository outcomes a report carries, or none when they cannot be used.
+     *
+     * @param  array<string, mixed>  $result
+     * @return list<array{name: string, status: string, error_code: ?string}>
+     */
+    private static function repositories(array $result): array
     {
-        AptSourceTrust::settlePlans(ValidatedData::integer($operation->node_id), array_values($this->plans(ValidatedData::object($operation->input['intent']))), $operation->id, 'unwritten');
+        try {
+            return AptRepositoryOutcomes::validate($result['repositories'] ?? []);
+        } catch (ResourceOperationException) {
+            return [];
+        }
+    }
+
+    /**
+     * A cancelled or interrupted run, or a report that cannot be used: the Tools and repositories a usable report checkpointed still count.
+     *
+     * @param  array<int, array<string, mixed>>  $plans
+     * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $tools
+     * @param  list<array{name: string, status: string, error_code: ?string}>  $repositories
+     */
+    private function unreported(Operation $operation, array $plans, array $data, array $tools, array $repositories): Operation
+    {
+        return DB::transaction(function () use ($operation, $data, $plans, $tools, $repositories): Operation {
+            $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! $locked->status->terminal()) {
+                $this->observations->settle($locked, $plans, $tools, $repositories);
+            }
+
+            return $this->direct->project($locked, $data, []);
+        });
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
         $intent = ValidatedData::object($operation->input['intent']);
         $plans = $this->plans($intent);
-        $run = ValidatedData::object($data['native_run'] ?? []);
-        // A cancelled or interrupted run, or a report that cannot be used, leaves the sources as its own history shows; the Tools a usable
-        // report checkpointed still count.
-        $unreported = fn (array $projected, array $tools = []): Operation => DB::transaction(function () use ($operation, $projected, $plans, $run, $tools): Operation {
-            $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (! $locked->status->terminal()) {
-                $this->observations->settle($locked, $plans, array_values(array_map(ValidatedData::object(...), $tools)), ToolConvergeObservations::phaseFromRun($run), []);
-            }
-
-            return $this->direct->project($locked, ...$projected);
-        });
         if (in_array($data['status'] ?? null, ['cancelled', 'interrupted'], true)) {
-            return $unreported([$data, []], $this->observations->lateObservations(ValidatedData::object($data['result'] ?? [])['tools'] ?? [], $plans, 'partial'));
+            $partial = ValidatedData::object($data['result'] ?? []);
+
+            return $this->unreported($operation, $plans, $data, $this->observations->lateObservations($partial['tools'] ?? [], $plans, 'partial'), self::repositories($partial));
         }
         $result = ValidatedData::object($data['result'] ?? []);
         $completed = ($result['succeeded'] ?? null) === true;
         try {
             $tools = $this->observations->validate($result['tools'] ?? [], $plans, $completed);
+            $repositories = AptRepositoryOutcomes::validate($result['repositories'] ?? []);
         } catch (ResourceOperationException $error) {
-            return $unreported([[...$data, 'status' => 'failed', 'error_code' => $error->errorCode], []]);
+            return $this->unreported($operation, $plans, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], [], []);
         }
         $changed = max(0, ValidatedData::integer($result['changed'] ?? 0));
         $cleanup = ($result['cleanup_complete'] ?? null) === true;
-        $code = ! $completed || ! $cleanup ? 'operation.native_failed' : (in_array('failed', array_column($tools, 'status'), true) ? 'tool.converge_failed' : null);
+        $code = ! $completed || ! $cleanup ? 'operation.native_failed'
+            : (in_array('failed', [...array_column($tools, 'status'), ...array_column($repositories, 'status')], true) ? 'tool.converge_failed' : null);
         $success = $code === null && ($data['status'] ?? null) === 'succeeded';
 
-        return DB::transaction(function () use ($operation, $data, $plans, $tools, $code, $changed, $cleanup, $success, $completed, $intent, $run): Operation {
+        return DB::transaction(function () use ($operation, $data, $plans, $tools, $repositories, $code, $changed, $cleanup, $success): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->observations->settle($locked, $plans, $tools, $completed ? 'completed' : ToolConvergeObservations::phaseFromRun($run), ValidatedData::stringList($intent['orphan_sources'] ?? []));
+            $this->observations->settle($locked, $plans, $tools, $repositories);
 
             return $this->direct->project($locked, [...$data, 'status' => $success ? 'succeeded' : 'failed', 'error_code' => $success ? null : ($code ?? 'operation.native_failed')],
-                ['changed' => $changed, 'tools' => $tools, 'cleanup_complete' => $cleanup,
+                ['changed' => $changed, 'tools' => $tools, 'repositories' => $repositories, 'cleanup_complete' => $cleanup,
                     'outcome' => $success ? ($changed === 0 ? 'unchanged' : 'applied') : 'failed']);
         });
     }

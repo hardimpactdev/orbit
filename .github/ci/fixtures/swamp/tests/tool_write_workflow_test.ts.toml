@@ -1,9 +1,9 @@
 order = 1500
 cases = [
-  "a verified write holds the source to owned packages before publication and prefers the acquired package last",
-  "a key that fails to fetch or verify writes no preference, key or source",
-  "an unchanged owned package still ends with the confirmed source's own preference",
-  "a refusal or an unverified write never prefers the acting package, and a verified source is not published again",
+  "a write holds the repository to owned packages before the package is read and prefers the acquired package last",
+  "a write without a repository writes no preference",
+  "an unchanged owned package still ends with its repository's own preference",
+  "a refusal or an unverified write never prefers the acting package",
   "a failed write of the acquired package's preference fails the run after the acquisition",
 ]
 file = "swamp/tests/tool_write_workflow_test.ts"

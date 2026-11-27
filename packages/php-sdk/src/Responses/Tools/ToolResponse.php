@@ -8,13 +8,12 @@ use InvalidArgumentException;
 use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use Orbit\Sdk\Support\GatewayRequestId;
-use Orbit\Sdk\Support\ToolRepositoryData;
 use SensitiveParameter;
 
 final readonly class ToolResponse
 {
-    /** @var array<string, mixed>|null */
-    public ?array $repository;
+    /** The name of the Node's apt repository the Tool installs from. */
+    public ?string $repository;
 
     public int $id;
 
@@ -46,9 +45,10 @@ final readonly class ToolResponse
 
     private const int TOKEN_MAX_LENGTH = 32;
 
+    private const int REPOSITORY_MAX_LENGTH = 63;
+
     private const string TOKEN_PATTERN = '/\A[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*\z/D';
 
-    /** @param array<string, mixed>|null $repository */
     public function __construct(
         int $id,
         int $nodeId,
@@ -71,11 +71,11 @@ final readonly class ToolResponse
         #[SensitiveParameter]
         string $requestId,
         #[SensitiveParameter]
-        ?array $repository = null,
+        ?string $repository = null,
         #[SensitiveParameter]
         ?string $desiredVersion = null,
     ) {
-        $this->repository = $repository === null ? null : new CredentialRedactor()->redactArray($repository);
+        $this->repository = self::directNullableText($repository, self::REPOSITORY_MAX_LENGTH, 'repository');
         if ($id < 1 || $nodeId < 1) {
             throw new InvalidArgumentException('Invalid Tool response identifier.');
         }
@@ -165,7 +165,7 @@ final readonly class ToolResponse
             errorCode: self::stringOrNull($data, 'error_code'),
             outcome: self::nullableString($data, 'outcome'),
             requestId: $requestId,
-            repository: ToolRepositoryData::fromGateway($data['repository'] ?? null),
+            repository: self::nullableString($data, 'repository'),
             desiredVersion: self::nullableString($data, 'desired_version'),
         );
     }

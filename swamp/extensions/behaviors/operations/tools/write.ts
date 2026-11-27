@@ -159,7 +159,7 @@ function choose(input: Input, phase: Phase): Decision {
 }
 export const behavior = {
     type: "@nckrtl/tool-write-command",
-    version: "2026.11.26.5",
+    version: "2026.11.27.1",
     resources: {
         assets: { schema: Public, lifetime: "1d", garbageCollection: 10 },
         decision: { schema: Public, lifetime: "1d", garbageCollection: 10 },
@@ -189,7 +189,6 @@ export const behavior = {
                         package: "",
                         repository: null,
                         repository_packages: [],
-                        remove_repository: false,
                     }).version,
                     packages: args.input.setup?.packages ?? [],
                 };

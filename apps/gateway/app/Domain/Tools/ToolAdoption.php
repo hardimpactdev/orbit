@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -21,10 +22,10 @@ final readonly class ToolAdoption
     public function __construct(private VersionConstraint $constraints) {}
 
     /**
-     * @param  array<string, mixed>|null  $repository
+     * @param  AptRepository|null  $repository  the ready repository the Tool references, whose files the Node agent must report as written
      * @return array{Tool, ToolOutcome} `unchanged` when the Tool was already recorded as installed
      */
-    public function record(Node $node, ToolManager $manager, ?ToolManagerRecord $record, ?Tool $tool, string $package, ToolDefinition $definition, ?array $repository): array
+    public function record(Node $node, ToolManager $manager, ?ToolManagerRecord $record, ?Tool $tool, string $package, ToolDefinition $definition, ?AptRepository $repository): array
     {
         $observed = ObservedPackages::find($node, $manager->name())
             ?? throw new ResourceOperationException('tool.not_observed', "The Node agent has not reported the {$manager->name()->value} packages on this Node yet.", 409);
@@ -44,24 +45,20 @@ final readonly class ToolAdoption
                 throw new ResourceOperationException('tool.installed_version_constraint_violated', 'The installed version is outside the constraint.', 409);
             }
         }
-        if ($repository !== null && ! $this->repositoryMatches($observed, $repository)) {
+        if ($repository !== null && ! $this->repositoryMatches($observed, $repository->definition)) {
             throw new ResourceOperationException('tool.repository_adoption_mismatch', 'The apt source or signing key on the Node does not match the repository.', 409);
         }
 
         $record ??= ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $manager->name()->value, 'status' => LifecycleStatus::Active]);
-        $repositoryId = null;
-        if ($repository !== null) {
-            $repositoryId = AptSourceTrust::adopt($node->id, $repository)->id;
-        }
         $outcome = $tool?->status === ToolStatus::Installed ? ToolOutcome::Unchanged : ToolOutcome::Applied;
         $tool ??= new Tool(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $package, 'version_constraint' => $constraint]);
-        $tool->fill(['version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository]);
+        $tool->fill(['version_constraint' => $constraint, 'desired_version' => $definition->version, 'apt_repository_id' => $repository?->id]);
         if (! $tool->exists) {
             $tool->fill(['status' => ToolStatus::Installed, 'installed_version' => $version])->save();
         }
         // An adoption orders after every earlier Operation, so a late receipt never sets back what it recorded (Tool::adopt).
-        $tool->adopt(['status' => ToolStatus::Installed, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id, 'failed_operation' => null, 'error_code' => null,
-            'version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository], $version);
+        $tool->adopt(['status' => ToolStatus::Installed, 'apt_repository_id' => $repository?->id, 'failed_operation' => null, 'error_code' => null,
+            'version_constraint' => $constraint, 'desired_version' => $definition->version], $version);
 
         return [$tool, $outcome];
     }

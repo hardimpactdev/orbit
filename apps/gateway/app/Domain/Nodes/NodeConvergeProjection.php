@@ -10,7 +10,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\AptRepositoryOutcomes;
 use App\Domain\Tools\ToolConvergeObservations;
 use App\Models\Node;
 use App\Models\Operation;
@@ -38,8 +38,12 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
         $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
         $admitted = array_column(array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? $intent['tools'] : []), null, 'id');
         $phase = self::phase($result, $run);
-        $this->toolObservations->settle($operation, $admitted, $this->toolObservations->lateObservations($result['tools'] ?? [], $admitted, $phase), $phase,
-            ValidatedData::stringList($intent['orphan_sources'] ?? []));
+        try {
+            $repositories = AptRepositoryOutcomes::validate($result['repositories'] ?? []);
+        } catch (ResourceOperationException) {
+            $repositories = [];
+        }
+        $this->toolObservations->settle($operation, $admitted, $this->toolObservations->lateObservations($result['tools'] ?? [], $admitted, $phase), $repositories);
     }
 
     /**
@@ -55,13 +59,8 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
         };
     }
 
-    /** A convergence that never ran wrote nothing to its sources. */
-    public function neverRan(Operation $operation): void
-    {
-        $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
-        AptSourceTrust::settlePlans(ValidatedData::integer($operation->node_id), array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? array_values($intent['tools']) : []),
-            $operation->id, 'unwritten');
-    }
+    /** A convergence that never ran changed nothing. */
+    public function neverRan(Operation $operation): void {}
 
     public function apply(Operation $operation, array $data): Operation
     {
@@ -72,6 +71,7 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
             $result = NodeConvergeResult::parse($data['result'] ?? null);
             $phases = array_map(ValidatedData::object(...), is_array($result['phases'] ?? null) ? $result['phases'] : []);
             $tools = $this->toolObservations->validate($result['tools'] ?? [], $admitted, $phases[4]['status'] === 'succeeded');
+            $repositories = AptRepositoryOutcomes::validate($result['repositories'] ?? []);
             if (($data['status'] ?? null) !== 'succeeded' && $result['outcome'] === 'succeeded') {
                 throw new ResourceOperationException('operation.result_invalid', 'An unsuccessful native run cannot report success.', 422);
             }
@@ -82,7 +82,7 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
             return DB::transaction(function () use ($operation, $data, $error, $admitted): Operation {
                 $locked = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
                 if (! $locked->status->terminal()) {
-                    $this->toolObservations->settle($locked, $admitted, [], self::phase([], ValidatedData::object($data['native_run'] ?? [])), []);
+                    $this->toolObservations->settle($locked, $admitted, [], []);
                 }
 
                 return app(DirectOperation::class)->project($locked, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], ['error_code' => $error->errorCode]);
@@ -90,13 +90,12 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
         }
         $data = [...$data, 'status' => $result['outcome'], 'error_code' => $result['error_code'] ?? null];
 
-        return DB::transaction(function () use ($operation, $data, $result, $tools, $admitted, $intent, $snapshot): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $tools, $repositories, $admitted, $intent, $snapshot): Operation {
             $locked = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->toolObservations->settle($locked, $admitted, $tools, self::phase($result, ValidatedData::object($data['native_run'] ?? [])),
-                ValidatedData::stringList($intent['orphan_sources'] ?? []));
+            $this->toolObservations->settle($locked, $admitted, $tools, $repositories);
 
             $phases = $result['phases'];
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);

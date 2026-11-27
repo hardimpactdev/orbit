@@ -525,8 +525,13 @@ function tool_response_sdk_trace(Throwable $exception): string
     return print_r($sdkFrames, return: true);
 }
 
-it('round trips repository intent on Tool reads', function (): void {
-    $data = [...tool_response_data(), 'repository' => ['name' => 'vendor', 'suites' => ['preview']]];
+it('round trips the repository name on Tool reads', function (): void {
+    $data = [...tool_response_data(), 'repository' => 'vendor'];
     $response = ToolResponse::fromGatewayData($data, tool_response_request_id());
     expect($response->repository)->toBe($data['repository'])->and($response->toArray()['repository'])->toBe($data['repository']);
+});
+
+it('refuses a repository that is not a name on Tool reads', function (): void {
+    expect(fn () => ToolResponse::fromGatewayData([...tool_response_data(), 'repository' => ['name' => 'vendor']], tool_response_request_id()))
+        ->toThrow(InvalidArgumentException::class);
 });

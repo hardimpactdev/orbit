@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Http\Requests\Tools\AptRepositoryRules;
 use App\Infrastructure\MachineSoftware\ConnServerReleases;
 use App\Models\Tool;
 
@@ -13,16 +12,15 @@ final readonly class ToolDefinitionResolver
 {
     public function __construct(private ToolPolicy $policy, private VersionConstraint $constraints, private ConnServerReleases $conn) {}
 
-    /** @param array<string, mixed>|null $repository */
-    public function resolve(string $verb, ToolManager $manager, string $package, ?Tool $tool, ?string $version, ?string $constraint, ?array $repository, ?ActiveToolPolicy $active = null): ToolDefinition
+    public function resolve(string $verb, ToolManager $manager, string $package, ?Tool $tool, ?string $version, ?string $constraint, ?string $repository, ?ActiveToolPolicy $active = null): ToolDefinition
     {
         if ($verb === 'remove') {
-            return new ToolDefinition($tool?->desired_version, $tool?->version_constraint, null);
+            return new ToolDefinition($tool?->desired_version, $tool?->version_constraint, $tool?->aptRepository?->name);
         }
         $active ??= $this->policy->active();
         if ($active->mode === 'file') {
             if ($version !== null || $constraint !== null || $repository !== null) {
-                throw new ResourceOperationException('tool.file_override', 'File mode takes the coordinate, constraint and source only from its catalog.', 409);
+                throw new ResourceOperationException('tool.file_override', 'File mode takes the coordinate, constraint and repository only from its catalog.', 409);
             }
             $definition = $active->definition($manager->name()->value, $package)
                 ?? throw new ResourceOperationException('tool.not_in_catalog', 'The package is not in the active Tool catalog.', 409);
@@ -31,7 +29,7 @@ final readonly class ToolDefinitionResolver
                 throw new ResourceOperationException('tool.constraint_conflict', 'The Tool already has a different constraint.', 409);
             }
             $pin = $version ?? $tool->desired_version ?? ($manager->name() === ToolManagerName::ConnServer ? $this->conn->find(null)?->version : null);
-            $definition = new ToolDefinition($pin, $constraint ?? $tool?->version_constraint, $repository ?? $tool->desired_repository ?? $tool?->aptRepository?->definition);
+            $definition = new ToolDefinition($pin, $constraint ?? $tool?->version_constraint, $repository ?? $tool?->aptRepository?->name);
         }
         self::assertRepositoryIdentity($tool, $definition);
         $this->validate($manager, $definition);
@@ -39,88 +37,38 @@ final readonly class ToolDefinitionResolver
         return $definition;
     }
 
-    /** A Tool keeps its source name until removal cleans it: its verified source, or the one an earlier attempt may have published. */
+    /** A Tool keeps the repository it references until its removal. */
     public static function assertRepositoryIdentity(?Tool $tool, ToolDefinition $definition): void
     {
-        $current = $tool?->aptRepository->name ?? $tool?->desired_repository['name'] ?? null;
-        if ($current !== null && ($definition->repository['name'] ?? null) !== $current) {
-            throw new ResourceOperationException('tool.repository_conflict', 'Remove the Tool membership before changing its repository name.', 409);
+        $current = $tool?->aptRepository?->name;
+        if ($current !== null && $definition->repository !== $current) {
+            throw new ResourceOperationException('tool.repository_conflict', 'Remove the Tool membership before changing its repository.', 409);
         }
     }
 
     /**
-     * The packages a write pins to the source: the acting one and every owned membership sharing it.
+     * The packages a write pins to its repository: the acting one and every other owned, enrolled membership referencing it. Apt prefers
+     * the repository only for packages Orbit owns, so a membership still waiting for its first install never pins an independently
+     * installed package to the vendor.
      *
-     * @param  array<string, mixed>  $repository
      * @param  iterable<Tool>  $members
      * @return list<string>
      */
-    public function repositoryPackages(ActiveToolPolicy $active, array $repository, iterable $members, string $package, bool $removing): array
+    public function repositoryPackages(int $repositoryId, iterable $members, string $package, bool $removing): array
     {
-        // Apt prefers Orbit's source only for packages Orbit owns: a membership still waiting for its first install, such as one
-        // refused because the package was already there, never pins an independently installed package to the vendor.
-        $packages = array_keys(array_filter($this->sharing($active, $repository, $members, $package, $removing)));
+        $packages = [];
+        foreach ($members as $member) {
+            if ($member->apt_repository_id === $repositoryId && $member->package !== $package && $member->owned && ! $member->withdrawn()) {
+                $packages[] = $member->package;
+            }
+        }
         if (! $removing) {
             $packages[] = $package;
         }
+        $packages = array_values(array_unique($packages));
         sort($packages, SORT_STRING);
 
         return $packages;
-    }
-
-    /**
-     * The other enrolled memberships that name the source, owned or not. A source stays on the Node while any of them remains, even
-     * when none of them owns its package yet.
-     *
-     * @param  array<string, mixed>  $repository
-     * @param  iterable<Tool>  $members
-     * @return list<string>
-     */
-    public function repositoryMembers(ActiveToolPolicy $active, array $repository, iterable $members, string $package): array
-    {
-        $packages = array_keys($this->sharing($active, $repository, $members, $package, true));
-        sort($packages, SORT_STRING);
-
-        return $packages;
-    }
-
-    /**
-     * @param  array<string, mixed>  $repository
-     * @param  iterable<Tool>  $members
-     * @return array<string, bool> each other non-withdrawn apt membership naming the source, and whether Orbit owns its package
-     */
-    private function sharing(ActiveToolPolicy $active, array $repository, iterable $members, string $package, bool $removing): array
-    {
-        $sharing = [];
-        $name = $repository['name'];
-        foreach ($members as $member) {
-            if ($member->manager->name !== ToolManagerName::Apt->value || $member->package === $package || $member->withdrawn()) {
-                continue;
-            }
-            $observed = $member->aptRepository?->definition;
-            $desired = $active->mode === 'file' ? $active->definition(ToolManagerName::Apt->value, $member->package)?->repository : ($member->desired_repository ?? $observed);
-            if (($desired['name'] ?? null) !== $name && ($observed['name'] ?? null) !== $name) {
-                continue;
-            }
-            if (! $removing) {
-                self::assertRepositoryIdentity($member, new ToolDefinition(null, null, $desired));
-                self::assertSharedRepository($desired, $repository);
-            }
-            $sharing[$member->package] = $member->owned;
-        }
-
-        return $sharing;
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $shared
-     * @param  array<string, mixed>  $repository
-     */
-    public static function assertSharedRepository(?array $shared, array $repository): void
-    {
-        if (! ToolDefinition::sameRepository($shared, $repository)) {
-            throw new ResourceOperationException('tool.repository_conflict', 'A Node can admit only one definition of a signed apt repository.', 409);
-        }
     }
 
     public function validate(ToolManager $manager, ToolDefinition $definition): void
@@ -151,6 +99,8 @@ final readonly class ToolDefinitionResolver
         if ($manager->name() === ToolManagerName::ConnServer && ($version === null || $this->conn->find($version) === null)) {
             throw new ResourceOperationException('conn_server.pin_unavailable', 'The requested Conn Server host release is not in the release catalog.', 409);
         }
-        new AptRepositoryRules()->validate($definition->repository, $manager->name()->value);
+        if ($definition->repository !== null && ($manager->name() !== ToolManagerName::Apt || preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $definition->repository) !== 1)) {
+            throw new ResourceOperationException('tool.repository_invalid', 'A Tool names an apt repository of its Node by name, and only an apt Tool does.', 422);
+        }
     }
 }

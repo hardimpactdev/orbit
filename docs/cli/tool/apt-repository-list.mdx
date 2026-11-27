@@ -1,0 +1,11 @@
+---
+title: "orbit tool:apt-repository-list"
+sidebarTitle: "tool:apt-repository-list"
+description: "List the apt repositories of one Node with their state and the number of Tools that reference each."
+---
+
+```bash
+orbit tool:apt-repository-list --node=ID [--json]
+```
+
+Each repository reports its ID, name, definition, `status` (`adding`, `ready`, `removing`, or `failed`), `error_code`, and `tool_count`. A repository an upgrade kept is `failed` with `tool.repository_unconfirmed` until [`tool:apt-repository-add`](/cli/tool/apt-repository-add) publishes it.

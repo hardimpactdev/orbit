@@ -32,7 +32,7 @@ sequenceDiagram
   CLI->>GW: tool:adopt ripgrep<br/>--node=12 --manager=apt
   %%> Command:
   %%> - `orbit tool:adopt ripgrep --node=12 --manager=apt --yes`
-  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=JSON] [--yes]`
+  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=NAME] [--yes]`
   %%> What adopting means:
   %%> - Orbit takes over a package that is already installed, so it manages later updates and removal
   %%> - it installs, updates, removes and repins nothing
@@ -48,12 +48,12 @@ sequenceDiagram
   %%> - the package is installed, and its version fits `--constraint`
   %%> - in file mode the installed version matches the catalog coordinate
   %%> - Orbit can manage this package later (no adoption block)
-  %%> - with `--repository`: the apt source and signing key on the Node match the definition
+  %%> - with `--repository`: the named apt repository of Node 12 is ready, and its source and signing key on the Node match its definition
   alt package can be adopted
     GW-->>CLI: Tool recorded<br/>Tool 31: installed 14.1.0
     %%> Result:
     %%> - Tool 31 recorded as installed, with the observed version
-    %%> - the apt repository recorded, when one was given
+    %%> - the Tool references the named apt repository, when one was given
     %%> - first line: the agent's liveness, online or offline since <time>
     %%> - the answer comes at once; there is no task to follow
     %%> - when the agent is offline, the facts are marked "possibly outdated, agent silent since <time>"

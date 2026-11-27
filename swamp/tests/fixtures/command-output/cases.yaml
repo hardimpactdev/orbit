@@ -446,10 +446,9 @@ contexts:
         uid:-::::1700000000::0000000000000000000000000000000000000000::Fixture <fixture@example.test>::::::::::0:
 
         '
-    tool:
-      repository:
-        signing_key:
-          fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567
+    apt_repository:
+      signing_key:
+        fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567
   ssh-fingerprint:
     hub_lan:
       fingerprint: SHA256:AbCdEf0123456789+/abcdefghijklmnoPQRSTUvwx
@@ -3265,9 +3264,13 @@ cases:
     tzdata: [2025b]
 non_command_output:
 - file: tasks/node-converge-tools.yml
-  task: Remove the Orbit apt sources no Tool names
+  task: Remove each named apt repository's files
   field: loop
-  reason: Keeps only valid apt source names from the Gateway's intent before naming their files; it parses no command output.
+  reason: Keeps only valid apt repository names from the Gateway's intent before naming their files; it parses no command output.
+- file: tasks/node-converge-tools.yml
+  task: Record each removed apt repository
+  field: loop
+  reason: Keeps only valid apt repository names from the Gateway's intent before recording them; it parses no command output.
 - file: conn-server-rollout.yml
   task: Record the failed Node
   field: ansible.builtin.set_fact.node_result

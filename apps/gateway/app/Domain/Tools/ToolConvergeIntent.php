@@ -27,7 +27,7 @@ final readonly class ToolConvergeIntent
         foreach ($plans as $plan) {
             Tool::query()->whereKey(ValidatedData::integer($plan['id']))->update(['desired_version' => ValidatedData::nullableString($plan['desired_version'] ?? null),
                 'version_constraint' => ValidatedData::nullableString($plan['version_constraint'] ?? null),
-                'desired_repository' => is_array($plan['repository'] ?? null) ? json_encode($plan['repository'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null]);
+                'apt_repository_id' => is_int($plan['repository_id'] ?? null) ? $plan['repository_id'] : null]);
         }
     }
 
@@ -54,7 +54,6 @@ final readonly class ToolConvergeIntent
         $packages = [];
         $protectedPackages = [];
         $tools = Tool::query()->where('node_id', $node->id)->whereKeyNot($without)->with(['manager', 'aptRepository'])->orderBy('id')->get();
-        $sources = AptSourceTrust::nodeDefinitions($node->id, $without);
         foreach ($tools as $tool) {
             if (($ids !== null && ! in_array($tool->id, $ids, true)) || $tool->withdrawn()) {
                 continue;
@@ -68,18 +67,13 @@ final readonly class ToolConvergeIntent
                 continue;
             }
             $definition = $this->definitions->resolve('update', $manager, $tool->package, $tool, null, null, null, $active);
-            $package = new AdmittedToolPackage($node, $manager->name(), $tool->package, $definition, $tool, $tool->manager, $protected)->toArray();
-            if ($definition->repository !== null) {
-                $package['repository_packages'] = $this->definitions->repositoryPackages($active, $definition->repository, $tools, $tool->package, false);
-                // Part of the Tools phase digest. An unproven source is bound to this Operation, so every Node converge runs the phase
-                // until a write proves the source, however many times its trust was lost since the last recorded digest.
-                $record = AptRepository::query()->where('node_id', $node->id)->where('name', $definition->repository['name'])->first();
-                AptSourceTrust::assertDistinct($definition->repository, [...$sources, ...array_map(ValidatedData::object(...), array_values(array_filter(array_column($packages, 'repository'))))]);
-                $package['repository_verified'] = AptSourceTrust::verified($record, $definition->repository);
-                $package['repository_origins'] = AptSourceTrust::origins($record, $definition->repository);
-                if (! $package['repository_verified'] && $owner !== null) {
-                    $package['repository_proof_run'] = $owner;
-                }
+            // The repository the Tool installs from: the convergence publishes it before the packages, the Node's record in database mode
+            // and the catalog's definition in file mode (ToolConvergeIntent::repositories).
+            $record = $definition->repository === null ? null : $this->repositoryRecord($node, $definition->repository, $active);
+            $package = new AdmittedToolPackage($node, $manager->name(), $tool->package, $definition, $tool, $tool->manager, $protected, $record)->toArray();
+            if ($record !== null) {
+                $package['repository_id'] = $record->id;
+                $package['repository_packages'] = $this->definitions->repositoryPackages($record->id, $tools, $tool->package, false);
             }
             if (! $manager->supportsNode($node)) {
                 $package['manager_unavailable'] = true;
@@ -93,6 +87,53 @@ final readonly class ToolConvergeIntent
         $this->assertIdle($node->id, self::scopes($packages), $owner, $beside);
 
         return $packages;
+    }
+
+    /**
+     * The Node's record of the repository a planned Tool names. In file mode the catalog defines it: a record missing or holding another
+     * definition takes the catalog's and waits for this convergence to publish it.
+     */
+    private function repositoryRecord(Node $node, string $name, ActiveToolPolicy $active): AptRepository
+    {
+        $record = AptRepository::query()->where('node_id', $node->id)->where('name', $name)->first();
+        if ($active->mode !== 'file') {
+            return $record ?? throw new ResourceOperationException('tool.repository_missing', 'A Tool names an apt repository the Node does not have.', 409);
+        }
+        $definition = $active->repository($name) ?? throw new ResourceOperationException('tool.not_in_catalog', 'The apt repository is not in the active Tool catalog.', 409);
+        if ($record === null || ! AptRepositories::same($record->definition, $definition)) {
+            AptRepositories::assertDistinct($node->id, $definition);
+            $record ??= new AptRepository(['node_id' => $node->id, 'name' => $name]);
+            $record->fill(['definition' => $definition, 'status' => AptRepositoryStatus::Failed, 'error_code' => 'tool.repository_unconfirmed'])->save();
+        }
+
+        return $record;
+    }
+
+    /**
+     * The repositories a convergence publishes before its packages: each one a planned Tool references, held to the owned members that
+     * reference it until a member is verified installed. One the Node shares a URI and suite with under another name stops the convergence, as
+     * it stops that repository's own add.
+     *
+     * @param  list<array<string, mixed>>  $plans
+     * @return list<array<string, mixed>>
+     */
+    public function repositories(array $plans): array
+    {
+        $repositories = [];
+        foreach ($plans as $plan) {
+            if (! is_int($plan['repository_id'] ?? null) || isset($repositories[$plan['repository_id']])) {
+                continue;
+            }
+            $record = AptRepository::query()->findOrFail($plan['repository_id']);
+            AptRepositories::assertDistinct($record->node_id, $record->definition);
+            $owned = Tool::query()->where('apt_repository_id', $record->id)->where('owned', true)->with('manager')->get()
+                ->reject->withdrawn()->pluck('package')->sort()->values()->all();
+            // Its readiness is part of the Tools phase digest, so a Node converge publishes a repository that is not ready whatever the
+            // phase recorded before.
+            $repositories[$record->id] = ['id' => $record->id, 'repository' => $record->definition, 'repository_packages' => $owned, 'ready' => $record->ready()];
+        }
+
+        return array_values($repositories);
     }
 
     /**
@@ -153,10 +194,10 @@ final readonly class ToolConvergeIntent
         if ($writer->kind === 'node.converge' || $writer->kind === 'tool.converge') {
             $intent = $writer->kind === 'node.converge' ? '_converge.intent' : 'intent';
             $packages = data_get($input, $intent.'.tools');
-            // Removing a source no Tool names writes apt's files like an apt Tool.
-            $orphans = data_get($input, $intent.'.orphan_sources');
+            // Publishing or removing an apt repository writes apt's files like an apt Tool.
+            $repositories = data_get($input, $intent.'.repositories');
 
-            return is_array($packages) ? self::scopes([...$packages, ...(is_array($orphans) && $orphans !== [] ? [['manager' => 'apt']] : [])]) : ['*'];
+            return is_array($packages) ? self::scopes([...$packages, ...(is_array($repositories) && $repositories !== [] ? [['manager' => 'apt']] : [])]) : ['*'];
         }
         $manager = $input['manager'] ?? (is_string($writer->lock_key) ? substr(strrchr($writer->lock_key, ':') ?: ':', 1) : null);
 

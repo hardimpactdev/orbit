@@ -1,0 +1,25 @@
+---
+title: "orbit tool:apt-repository-add"
+sidebarTitle: "tool:apt-repository-add"
+description: "Add or republish one signed apt repository on a Node."
+---
+
+```bash
+orbit tool:apt-repository-add --node=ID --name=NAME --definition=JSON [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--node` | The Node's numeric ID. |
+| `--name` | The repository name: lowercase letters, digits and single hyphens. `caddy` and `php` are reserved. |
+| `--definition` | A JSON object with `uris`, `suites`, `components`, optional `architectures`, and `signing_key` with an HTTPS `url` and the full primary-key `fingerprint`. |
+
+Before any request, the CLI refuses a missing `--name` with `tool.repository_name_required`, a `--definition` that is not a JSON object with `tool.repository_definition_invalid`, and an invalid `--node` with `tool.node_id_invalid`.
+
+The command starts an Operation that publishes the repository on the Node: it holds the repository's preference to the owned Tools that reference it, verifies the downloaded key against the fingerprint, writes the keyring and source, and reads the repository's package index. The repository is `ready` only when that run succeeded. Otherwise it is `failed` with the run's code, such as `tool.repository_key_mismatch` or `tool.repository_unavailable`.
+
+Run the command again with the same name and definition to publish the repository again. That is the recovery for a failed repository, for one an upgrade left unconfirmed, and for a key rotation under the same definition. The command refuses a URI and suite that another repository of the Node has, and a different definition under a name that Tools reference, with `tool.repository_conflict`. In file mode it takes the definition only from the active catalog. See [Apt repositories](/reference/tools#apt-repositories).
+
+## How it works
+
+<div className="flow-at" data-chart="tool/apt-repository-add"></div>

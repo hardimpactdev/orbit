@@ -20,9 +20,15 @@
       become: false
       changed_when: false
       register: tool_os
-    # The preferences of this Tool's source: held to the owned Tools of its plan and the Tools of the source this run already installed
-    # before the source is published, and joined by this Tool only after it is verified installed. Every other package from every
-    # origin the source may have on disk stays at priority 1.
+    # This run published the Tool's repository first; a repository whose add failed stops its Tools.
+    - name: Require the Tool's repository published
+      when: tool.manager == 'apt' and tool.repository is not none
+      ansible.builtin.assert:
+        that: (repository_results | selectattr('name', 'equalto', tool.repository.name) | map(attribute='status') | list) != ['failed']
+        fail_msg: tool.repository_failed
+        quiet: true
+    # The preferences of this Tool's repository once the Tool is verified installed: its owned members, the Tools of the repository
+    # this run already installed, and this one. Every other package of its origins stays at priority 1.
     - name: Compute the preferences of this Tool's source
       when: tool.manager == 'apt' and tool.repository is not none
       vars:
@@ -37,11 +43,6 @@
       become: false
       changed_when: false
       register: tool_pins
-    - name: Reconcile a recorded apt repository
-      when: tool.manager == 'apt' and tool.repository is not none
-      ansible.builtin.include_tasks:
-        file: node-converge-tool-repository.yml
-        apply: { become: true, timeout: 45 }
     - name: Read the Tool manager version
       ansible.builtin.command: { argv: "{{ tool_argv.version }}" }
       become: "{{ tool.manager == 'apt' }}"

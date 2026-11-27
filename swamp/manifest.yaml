@@ -94,6 +94,7 @@ additionalFiles:
   - ansible/tasks/node-converge-tool.yml
   - ansible/tasks/node-converge-tools.yml
   - ansible/tasks/node-converge-tool-repository.yml
+  - ansible/tasks/node-converge-repository.yml
   - ansible/operation-tool-converge.yml
   - ansible/tasks/node-converge-network.yml
   - ansible/tasks/node-converge-hub.yml

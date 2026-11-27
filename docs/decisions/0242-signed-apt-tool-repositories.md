@@ -1,17 +1,17 @@
 ---
 title: "ADR 0242: Signed apt repositories for Tools"
-description: "Manage signed vendor repositories as shared Node intent and execute their lifecycle in Swamp."
+description: "Manage signed vendor repositories as explicit Node records with their own lifecycle, executed in Swamp."
 ---
 
 # ADR 0242: Signed apt repositories for Tools
 
-An apt Tool carries a signed repository definition. Tools on one Node share a repository by name. Swamp verifies its pinned signing key, writes deb822 sources, and selects the package from that repository.
+A signed apt repository is a Node record with its own lifecycle. An apt Tool references one by name. Swamp verifies its pinned signing key, writes deb822 sources, and selects the package from that repository.
 
 ## Status
 
 In progress.
 
-Principle: [One way, one name](/mission#principles). Repository intent uses the existing Tool API, CLI, MCP catalogue, and native Swamp operations.
+Principle: [One way, one name](/mission#principles). Repositories have their own `tool:apt-repository-*` commands, API routes, SDK requests and MCP tools; Tool commands name them.
 
 ## Context
 
@@ -19,7 +19,7 @@ Apt Tools use only the Node's existing sources. Vendor software needs a reposito
 
 ## Decision
 
-The Gateway stores one repository definition per Node and slug, referenced by Tool intent. The definition contains `name`, `uris`, `suites`, `components`, optional `architectures`, and `signing_key` with an HTTPS `url` and a full primary-key `fingerprint`. Repository definitions are accepted only for apt. A Tool update can replace the definition under the same name, including its suite, URI, and signing key. Every Tool sharing that name then uses the new intent. Install and adoption refuse a conflicting definition.
+The Gateway stores one repository record per Node and name, with `uris`, `suites`, `components`, optional `architectures`, and `signing_key` with an HTTPS `url` and a full primary-key `fingerprint`. `tool:apt-repository-add` publishes it in an Operation, and the record is usable only when that add succeeded: no other event confirms or doubts it. Adding the name again republishes it, the one recovery. The add refuses a URI and suite another repository of the Node has, and a different definition under a name Tools reference. Tool install, adoption and update name an existing, ready repository and never publish or change one. Removal refuses while a Tool references the repository. In file mode the catalog lists repositories by name and convergence publishes the ones its Tools reference, as their own add.
 
 Swamp performs all execution through official SSH, where Tool writes already execute. It fetches each suite's InRelease before changing managed files, verifies that the downloaded key contains exactly the pinned primary key, exports that key to `/etc/apt/keyrings/orbit-<name>.gpg`, writes the apt preference `/etc/apt/preferences.d/orbit-<name>.pref`, and then writes `/etc/apt/sources.list.d/orbit-<name>.sources`. Apt verifies the repository signature through `Signed-By`. Refresh is limited to that source and treats any fetch error as failure. No global trust or source file is changed.
 
@@ -31,7 +31,7 @@ The preference limits each repository origin to its Tools' packages. The Gateway
 
 Candidate lookup reads only the declared source and excludes installed-package status. Install uses that exact candidate through normal apt dependency resolution. An installed newer version is never downgraded. This selects Superlogical Rex rather than the distribution's unrelated package, and the scoped preference keeps it selected when apt upgrades the Node. Existing package ownership and SemVer constraints still apply.
 
-Removal deletes only the recorded package. After proven absence, Swamp removes the source, preference, and key only for the final Tool reference. A shared repository keeps the removed package in its preference until the next write for that repository. Missing files and an already absent package are successful retry states. Adoption remains read-only and verifies the declared managed source, preference, and key. Scan includes apt packages and the repository intent of registered Tools.
+Tool removal deletes only the recorded package and repins the repository's remaining owned packages; the repository stays, even after its last Tool, until `tool:apt-repository-remove`. Missing files and an already absent package are successful retry states. Adoption remains read-only and verifies the declared managed source, preference, and key. Scan includes apt packages and the repository intent of registered Tools.
 
 ## Rejected alternatives
 
@@ -41,14 +41,15 @@ Removal deletes only the recorded package. After proven absence, Swamp removes t
 - A preference that permits downgrades (priority 1000 or more): existing Tools never select a lower installed version.
 - No preference: the vendor origin would serve any package at distribution priority, and unattended upgrades would replace Rex with the distribution's higher `rex`.
 - One source per Tool: packages from the same vendor share one managed source and keyring.
+- A repository definition inside Tool intent, trusted by inferring which Tool writes published it: two upgrade histories still let a stale writer gain source authority, and the repair refused valid requests. An explicit add is the only confirmation.
 
 ## Consequences
 
-Operators can move Rex from preview to stable with a normal Tool update once stable is published. A vendor key rotation is a normal Tool update with the new `signing_key`; the keyring is replaced and the old key is gone. A missing InRelease or a fingerprint mismatch fails with a bounded Tool error. Node sources outside the managed repository remain unchanged. Apt update and package locks remain owned by apt; the existing Node apt operation lock serializes shared repository intent.
+Operators move Rex from preview to stable once stable is published by removing its Tools, adding the repository again with the stable suite, and installing them again. A key rotation under the same definition is an add of the same name. A missing InRelease or a fingerprint mismatch fails with a bounded Tool error. Node sources outside the managed repository remain unchanged. Apt update and package locks remain owned by apt; the existing Node apt operation lock serializes shared repository intent.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk
 - ADRs: ADR 0238
-- Detail: [Tools](/reference/tools#signed-apt-repositories)
+- Detail: [Tools](/reference/tools#apt-repositories)
 - Verify: Tool API and SDK tests, CLI transport tests, Python repository tests, and native Swamp Tool workflow tests.

@@ -13,7 +13,6 @@ use App\Domain\Nodes\NodeConvergeResult;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\AptSourceTrust;
 use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
@@ -473,25 +472,21 @@ it('retains the deferred T3 receipt without crediting its role, then credits an 
         ->and($this->node->converge_digests)->toBe(['roles' => str_repeat('b', 64)]);
 });
 
-it('restores source trust its admission suspended only when the Tools phase did not run', function (bool $capturedVerified, ?string $failure, array $unchanged, array $observations, bool $verified): void {
-    $source = ['name' => 'proof', 'uris' => ['https://example.test/apt'], 'suites' => ['1'], 'components' => ['main'],
+it('records each apt repository by its own reported publication, and leaves one the report does not name', function (?string $failure, array $reported, string $status, ?string $code): void {
+    $source = ['uris' => ['https://example.test/apt'], 'suites' => ['1'], 'components' => ['main'],
         'signing_key' => ['url' => 'https://example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
-    // The source was verified (or not) when the convergence's admission claimed it.
-    $record = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'proof', 'definition' => $source, 'verified' => $capturedVerified]);
-    $tool = $this->tools[0];
-    $intent = ['tools' => [['id' => $tool->id, 'manager_id' => $tool->tool_manager_id, 'package' => $tool->package, 'version_constraint' => null,
-        'repository' => $source, 'repository_verified' => $capturedVerified]]];
-    $this->operation->update(['input' => ['_converge' => ['intent' => $intent]]]);
-    AptSourceTrust::claim($this->node->id, [$source], $this->operation->id);
-    $tools = array_map(static fn (string $status): array => ['id' => $tool->id, 'status' => $status, 'installed_version' => null], $observations);
+    // The convergence's admission made it the Operation whose outcome decides the repository.
+    $record = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'proof', 'definition' => $source, 'status' => 'failed',
+        'error_code' => 'tool.repository_unconfirmed', 'operation_id' => $this->operation->id]);
 
     app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed',
-        'result' => converge_receipt($failure, $tools, $unchanged)]);
+        'result' => converge_receipt($failure, $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '1.0.0'])->all())
+            + ['repositories' => $reported]]);
 
-    expect($record->refresh()->verified)->toBe($verified);
+    expect([$record->refresh()->status->value, $record->error_code])->toBe([$status, $code]);
 })->with([
-    'digest skipped a verified source' => [true, null, ['tools'], [], true],
-    'an earlier phase failed before Tools' => [true, 'roles', [], [], true],
-    'the Tools phase ran and the Tool failed' => [true, null, [], ['failed'], false],
-    'the source was already unproven at admission' => [false, null, ['tools'], [], false],
+    'published' => [null, [['name' => 'proof', 'status' => 'ready', 'error_code' => null]], 'ready', null],
+    'key mismatch' => [null, [['name' => 'proof', 'status' => 'failed', 'error_code' => 'tool.repository_key_mismatch']], 'failed', 'tool.repository_key_mismatch'],
+    'a failed Tools phase still records what it published' => ['tools', [['name' => 'proof', 'status' => 'ready', 'error_code' => null]], 'ready', null],
+    'not named' => [null, [], 'failed', 'tool.repository_unconfirmed'],
 ]);

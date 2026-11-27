@@ -1,8 +1,8 @@
 ---
-- name: Start the independent Tool observations
-  ansible.builtin.set_fact: { tool_results: [] }
+- name: Start the independent Tool and repository observations
+  ansible.builtin.set_fact: { tool_results: [], repository_results: [] }
 - name: Run the Tool helper once before judging any Tool
-  when: intent.tools | length > 0
+  when: (intent.tools | length) + (intent.repositories | default([]) | length) > 0
   ansible.builtin.command:
     argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", check]
   delegate_to: localhost
@@ -11,32 +11,50 @@
   failed_when: false
   register: tool_helper
 - name: Require a working Tool helper
-  when: intent.tools | length > 0
+  when: (intent.tools | length) + (intent.repositories | default([]) | length) > 0
   ansible.builtin.assert:
     that: tool_helper.rc | default(1) == 0 and (tool_helper.stdout | default('') | trim) == '{"ready":true}'
     fail_msg: >-
       The Tool helper does not run with {{ converge_deno }} on the Swamp Node, so no Tool was judged.
       Converge the Swamp Node: its software phase installs the pinned Deno.
     quiet: true
+# Each apt repository the Tools reference is published before any package, as that repository's own add.
+- name: Publish each apt repository the Tools reference
+  ansible.builtin.include_tasks:
+    file: node-converge-repository.yml
+    apply: { tags: [tools] }
+  loop: "{{ intent.repositories | default([]) }}"
+  loop_control: { loop_var: repository_plan, label: "{{ repository_plan.repository.name }}" }
 - name: Reconcile each independent Tool
   ansible.builtin.include_tasks:
     file: node-converge-tool.yml
     apply: { tags: [tools] }
   loop: "{{ intent.tools }}"
   loop_control: { loop_var: tool, label: "{{ tool.id }}" }
-# A source no Tool names any more, such as one an earlier attempt may have published, leaves the Node with its key and preferences.
-# A failure here fails the phase, so the Gateway forgets a source only after its files are gone.
-- name: Remove the Orbit apt sources no Tool names
+# Removing the last Tool leaves its apt repository on the Node; only `tool:apt-repository-remove` names one here.
+- name: Remove each named apt repository's files
   ansible.builtin.file: { path: "{{ item[1] | replace('@', item[0]) }}", state: absent }
   loop: >-
-    {{ (intent.orphan_sources | default([])) | select('match', '^[a-z][a-z0-9-]*$')
+    {{ (intent.removed_repositories | default([])) | select('match', '^[a-z][a-z0-9-]*$')
        | product(['/etc/apt/sources.list.d/orbit-@.sources', '/etc/apt/keyrings/orbit-@.gpg', '/etc/apt/preferences.d/orbit-@.pref']) | list }}
   loop_control: { label: "{{ item[0] }}" }
   become: true
+- name: Record each removed apt repository
+  ansible.builtin.set_fact:
+    repository_results: "{{ repository_results + [{'name': item, 'status': 'removed', 'error_code': none}] }}"
+  loop: "{{ (intent.removed_repositories | default([])) | select('match', '^[a-z][a-z0-9-]*$') | list }}"
 - name: Record bounded Tool results
   ansible.builtin.copy:
     dest: "{{ orbit_run }}/tools-result.json"
     content: "{{ tool_results | to_json }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+- name: Record bounded apt repository results
+  ansible.builtin.copy:
+    dest: "{{ orbit_run }}/repositories-result.json"
+    content: "{{ repository_results | to_json }}"
     mode: "0600"
   delegate_to: localhost
   become: false

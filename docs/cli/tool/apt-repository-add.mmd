@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% docs/reference/tools.md#apt-repositories
+  %% status: draft
+  %% command: tool:apt-repository-add
+  %% kind: tool.apt_repository_add
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>control Node
+  participant N as Node 12<br/>reached over ssh
+  CLI->>GW: tool:apt-repository-add<br/>--node=12 --name=rex
+  %%> Command:
+  %%> - `orbit tool:apt-repository-add --node=12 --name=rex --definition='{"uris":[…],"suites":["preview"],"components":["main"],"signing_key":{…}}'`
+  %%> - syntax: `--node=ID --name=NAME --definition=JSON [--idempotency-key=KEY] [--json]`
+  Note over GW: Validate, record rex<br/>adding · task #5140
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs the apt manager; no other apt write holds Node 12
+  %%> - no other repository of Node 12 has one of its URIs and suites (`tool.repository_conflict`)
+  %%> - a repository that Tools reference keeps its definition (`tool.repository_conflict`); the same definition republishes it
+  %%> - file mode takes the definition only from the catalog (`tool.not_in_catalog`, `tool.file_override`)
+  GW->>SW: Start the Tools phase<br/>with only this repository
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  SW->>N: Hold its preference<br/>to its owned Tools
+  SW->>N: Verify the key, write<br/>keyring and source
+  %%> Key:
+  %%> - the downloaded key has exactly the recorded primary fingerprint, or `tool.repository_key_mismatch` before any keyring or source write
+  SW->>N: Read its package index
+  alt published
+    SW-->>GW: Report rex ready
+    Note over GW: rex: ready
+    %%> Result:
+    %%> - Tool writes from rex are admitted from now on
+  else key, fetch or write failed
+    SW--xGW: Report rex failed<br/>error_code
+    Note over GW: rex: failed with the code
+    %%> Retry:
+    %%> - run the same command again; it is the one recovery
+    %%> - a run that never started leaves the repository as it was; a timed-out one leaves it failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5140
+    GW-->>CLI: status + result
+  end

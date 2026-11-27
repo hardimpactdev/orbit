@@ -74,6 +74,11 @@
       "guard": "{{ intent.tools }}"
     },
     {
+      "file": "swamp/ansible/tasks/node-converge-tools.yml",
+      "include": "node-converge-repository.yml",
+      "guard": "{{ intent.repositories | default([]) }}"
+    },
+    {
       "file": "swamp/ansible/operation-node-converge.yml",
       "include": "tasks/node-converge-network.yml",
       "guard": "intent.network != None"

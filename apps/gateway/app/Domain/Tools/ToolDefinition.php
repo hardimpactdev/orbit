@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+/** A Tool's desired state: its exact coordinate, its constraint and the name of the Node's apt repository it installs from. */
 final readonly class ToolDefinition
 {
-    /** @param array<string, mixed>|null $repository */
-    public function __construct(public ?string $version, public ?string $constraint, public ?array $repository) {}
+    public function __construct(public ?string $version, public ?string $constraint, public ?string $repository) {}
 
     public function matches(ToolManagerName $manager, string $observed): bool
     {
@@ -18,31 +18,10 @@ final readonly class ToolDefinition
 
     public function sameAs(self $other): bool
     {
-        return $this->version === $other->version && $this->constraint === $other->constraint
-            && self::sameRepository($this->repository, $other->repository);
+        return $this->version === $other->version && $this->constraint === $other->constraint && $this->repository === $other->repository;
     }
 
-    /** @param array<string, mixed>|null $first
-     * @param  array<string, mixed>|null  $second
-     */
-    public static function sameRepository(?array $first, ?array $second): bool
-    {
-        return self::canonical($first) === self::canonical($second);
-    }
-
-    private static function canonical(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-        if (! array_is_list($value)) {
-            ksort($value, SORT_STRING);
-        }
-
-        return array_map(self::canonical(...), $value);
-    }
-
-    /** @return array{version: ?string, constraint: ?string, repository: ?array<string, mixed>} */
+    /** @return array{version: ?string, constraint: ?string, repository: ?string} */
     public function toArray(): array
     {
         return ['version' => $this->version, 'constraint' => $this->constraint, 'repository' => $this->repository];

@@ -10,24 +10,21 @@ type Input =
         | "architecture"
         | "repository"
         | "repository_packages"
-        | "remove_repository"
     >
-    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean; repository_origins?: string[] };
+    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
 /** The origin apt matches `Pin: origin` against: the URI's host as written, an IPv6 literal without its brackets and unnormalized. */
 export function origin(uri: string): string {
     const host = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]*\]|[^/:?#]*)/i.exec(uri)?.[1] ?? "";
     return host.replace(/^\[(.*)\]$/, "$1").toLowerCase();
 }
-/** Apt preferences of one Orbit source: priority 990 for the listed packages, and 1 for every other package from its origins, which
- * include any origin a failed change of the source may have left on disk. */
+/** Apt preferences of one Orbit repository: priority 990 for the listed packages, and 1 for every other package from its origins. */
 export function preferences(
     repo: ToolInput["repository"],
     packages: string[],
-    origins: string[] = [],
 ): string {
     if (repo === null) return "";
-    const hosts = [...new Set([...repo.uris.map(origin), ...origins])];
+    const hosts = [...new Set(repo.uris.map(origin))];
     return hosts.map((host) => {
         const preferred = packages.length === 0
             ? ""
@@ -133,19 +130,16 @@ export function commands(input: Input) {
         prefix,
         home,
         scope,
-        remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
-        // Once the run verified its package from the source it published: the owned packages and this one, for that source's own
-        // origins only. Origins an earlier uncertain write may have left are no longer this source's, so they keep no restriction.
+        // Once the run verified its package: the owned packages of the repository and this one.
         repository_preferences: preferences(repo, input.repository_packages),
-        // Before publication and whenever the run stops short of acquiring: only what Orbit already owns, so no interruption can leave
-        // an unacquired package preferred. Selection reads only Orbit's source list and installs an exact version, so it needs no pin.
+        // Before the package write and whenever the run stops short of acquiring: only what Orbit already owns, so no interruption can
+        // leave an unacquired package preferred. Selection reads only the repository's source list and installs an exact version.
         repository_preferences_held: preferences(
             repo,
             input.package_owned !== false
                 ? input.repository_packages
                 : input.repository_packages.filter((name) => name !== input.package),
-            input.repository_origins,
         ),
         repository: input.repository ??
             {

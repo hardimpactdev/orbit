@@ -11,8 +11,7 @@ final readonly class UpdateToolAction
 {
     public function __construct(private StartToolOperationAction $operations) {}
 
-    /** @param array<string, mixed>|null $repository */
-    public function execute(Tool $tool, ?array $repository = null, ?string $version = null): Operation
+    public function execute(Tool $tool, ?string $repository = null, ?string $version = null): Operation
     {
         $tool->loadMissing('manager');
 

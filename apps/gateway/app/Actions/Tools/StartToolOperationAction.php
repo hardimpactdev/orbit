@@ -12,7 +12,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\AdmittedToolPackage;
-use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\AptRepositories;
 use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolAdoption;
 use App\Domain\Tools\ToolAdoptionBlocked;
@@ -51,17 +51,16 @@ final readonly class StartToolOperationAction
         private ToolAdoption $adoption,
     ) {}
 
-    /** @param array<string, mixed>|null $repository */
-    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?array $repository = null, ?string $version = null): Operation
+    /** @param string|null $repository the name of the Node's apt repository the Tool installs from */
+    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?string $repository = null, ?string $version = null): Operation
     {
         if (($existing = app(OperationIdempotency::class)->replay('tool.'.$verb)) !== null) {
             return $existing;
         }
 
         return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, $version, function (array $admitted) use ($verb, $nodeId, $managerName, $package): Operation {
-            ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
-                'owned' => $owned, 'definition' => $definition] = $admitted;
+            ['manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'repository_record' => $repositoryRecord,
+                'definition' => $definition] = $admitted;
             if ($manager->name() === ToolManagerName::ConnServer) {
                 return app(ConnServerToolMembership::class)->record($verb, $nodeId, $tool, $definition, request()->attributes->getString('orbit.request_id'));
             }
@@ -72,7 +71,7 @@ final readonly class StartToolOperationAction
                 $record ??= ToolManagerRecord::query()->create(['node_id' => $nodeId, 'name' => $managerName, 'status' => LifecycleStatus::Provisioning]);
                 $tool = Tool::query()->create(['node_id' => $nodeId, 'tool_manager_id' => $record->id, 'package' => $package,
                     'version_constraint' => $definition->constraint, 'desired_version' => $definition->version,
-                    'desired_repository' => $definition->repository, 'status' => ToolStatus::Installing]);
+                    'apt_repository_id' => $repositoryRecord?->id, 'status' => ToolStatus::Installing]);
                 $input['tool_id'] = $tool->id;
                 $input['manager_id'] = $record->id;
             }
@@ -84,17 +83,9 @@ final readonly class StartToolOperationAction
 
                 return $operation;
             }
-
-            if ($repository !== null) {
-                // The record is the cleanup handle and trust state of a source this run may publish, remove or repin.
-                $input['repository_id'] = AptSourceTrust::handle($nodeId, $repository)->id;
-            }
             $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
-            if ($repository !== null && $operation->wasRecentlyCreated) {
-                AptSourceTrust::claim($nodeId, [$repository], $operation->id);
-            }
             if ($verb !== 'remove' && $operation->wasRecentlyCreated) {
-                $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);
+                $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'apt_repository_id' => $repositoryRecord?->id]);
             }
 
             return $operation;
@@ -103,7 +94,8 @@ final readonly class StartToolOperationAction
 
     /**
      * Admits again, in place, a request the preceding release admitted and never started, so its first dispatch carries what the
-     * current admission gives it: scope, protection, membership, ownership, pins and source trust (docs/reference/tools.md#upgrade-from-the-preceding-release).
+     * current admission gives it: scope, protection, membership, ownership, its repository and pins (docs/reference/tools.md#upgrade-from-the-preceding-release).
+     * A write that named a source names that repository, which stays not ready until its own add, so the write is refused until then.
      * A request the current admission would relinquish ends as that membership-only receipt; one it refuses throws its refusal and keeps
      * the Operation as it was.
      */
@@ -113,10 +105,11 @@ final readonly class StartToolOperationAction
         $verb = substr($operation->kind, 5);
         $input = $operation->input;
         $selected = is_int($input['tool_id'] ?? null) ? Tool::query()->find($input['tool_id']) : null;
-        $repository = $verb !== 'remove' && ($input['repository_given'] ?? false) === true && is_array($input['repository'] ?? null) ? ValidatedData::object($input['repository']) : null;
+        $repository = $verb !== 'remove' && ($input['repository_given'] ?? false) === true && is_array($input['repository'] ?? null)
+            ? ValidatedData::string($input['repository']['name'] ?? null) : null;
         $this->admit($verb, ValidatedData::integer($operation->node_id), ValidatedData::string($input['manager'] ?? null), ValidatedData::string($input['package'] ?? null),
             ValidatedData::nullableString($input['version_constraint'] ?? null), $selected, $repository, null, null, function (array $admitted) use ($operation, $verb): void {
-                ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'repository' => $repository,
+                ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'repository_record' => $repositoryRecord,
                     'definition' => $definition] = $admitted;
                 $current = $this->input($verb, ValidatedData::string($operation->input['package']), $admitted);
                 if ($relinquish) {
@@ -130,40 +123,30 @@ final readonly class StartToolOperationAction
                     $record ??= ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $manager->name()->value, 'status' => LifecycleStatus::Provisioning]);
                     $tool = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $operation->input['package'],
                         'version_constraint' => $definition->constraint, 'desired_version' => $definition->version,
-                        'desired_repository' => $definition->repository, 'status' => ToolStatus::Installing]);
+                        'apt_repository_id' => $repositoryRecord?->id, 'status' => ToolStatus::Installing]);
                     $current = [...$current, 'tool_id' => $tool->id, 'manager_id' => $record->id];
                 }
-                if ($repository !== null) {
-                    $current['repository_id'] = AptSourceTrust::handle($node->id, $repository)->id;
-                    AptSourceTrust::claim($node->id, [$repository], $operation->id);
-                }
                 if ($verb !== 'remove') {
-                    $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);
+                    $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'apt_repository_id' => $repositoryRecord?->id]);
                 }
                 $operation->forceFill(['input' => $current])->save();
             }, $operation->id, $beside);
     }
 
     /**
-     * The input the current admission gives a request.
+     * The input the current admission gives a request. A write pins its package and the Node's other owned members of its repository; a
+     * removal repins the remaining ones. Neither publishes nor removes the repository itself.
      *
-     * @param  array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}  $admitted
+     * @param  array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository_record: ?AptRepository, repository_packages: list<string>, owned: bool, definition: ToolDefinition}  $admitted
      * @return array<string, mixed>
      */
     private function input(string $verb, string $package, array $admitted): array
     {
         ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-            'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
-            'owned' => $owned, 'definition' => $definition] = $admitted;
-        // Ownership decides which packages apt prefers; surviving membership decides whether the source may go.
-        $removeRepository = $verb === 'remove' && $repository !== null && $repositoryMembers === [];
-        // The trust the run is admitted with: a receipt that wrote nothing may keep it, never create it.
-        $verified = $repository !== null && AptSourceTrust::verified($repositoryRecord, $repository);
+            'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'owned' => $owned, 'definition' => $definition] = $admitted;
         $input = [
-            ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
-            'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-            'repository_packages' => $repositoryPackages, 'repository_origins' => $repository === null ? [] : AptSourceTrust::origins($repositoryRecord, $repository),
-            'repository_given' => $repository !== null && $verb !== 'remove' && ! $verified,
+            ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected, $repositoryRecord)->toArray(), ['id' => true, 'protected' => true]),
+            'repository_id' => $repositoryRecord?->id, 'repository_packages' => $repositoryPackages,
             'package_owned' => $owned,
             'tool_id' => $tool?->id,
             'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
@@ -196,13 +179,12 @@ final readonly class StartToolOperationAction
      * Records ownership of an installed package from the Node agent's latest report, after the same admission checks
      * (R1: no task, no run). Refusals carry the agent's liveness.
      *
-     * @param  array<string, mixed>|null  $repository
      * @return array{Tool, ToolOutcome}
      */
-    public function adopt(int $nodeId, string $managerName, string $package, ?string $constraint, ?array $repository, ?NodeAgentData $agent): array
+    public function adopt(int $nodeId, string $managerName, string $package, ?string $constraint, ?string $repository, ?NodeAgentData $agent): array
     {
         return $this->admit('adopt', $nodeId, $managerName, $package, $constraint, null, $repository, $agent, null,
-            fn (array $admitted): array => $this->adoption->record($admitted['node'], $admitted['manager'], $admitted['record'], $admitted['tool'], $package, $admitted['definition'], $admitted['repository']));
+            fn (array $admitted): array => $this->adoption->record($admitted['node'], $admitted['manager'], $admitted['record'], $admitted['tool'], $package, $admitted['definition'], $admitted['repository_record']));
     }
 
     /**
@@ -210,13 +192,12 @@ final readonly class StartToolOperationAction
      *
      * @template T
      *
-     * @param  array<string, mixed>|null  $repository
-     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}): T  $then
+     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository_record: ?AptRepository, repository_packages: list<string>, owned: bool, definition: ToolDefinition}): T  $then
      * @param  int|null  $owner  the Operation admitted again, which its own idleness check skips
      * @param  list<int>  $beside  the other queued requests admitted again with it
      * @return T
      */
-    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then, ?int $owner = null, array $beside = []): mixed
+    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?string $repository, ?NodeAgentData $agent, ?string $version, Closure $then, ?int $owner = null, array $beside = []): mixed
     {
         try {
             return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then, $owner, $beside): mixed {
@@ -260,47 +241,26 @@ final readonly class StartToolOperationAction
                 $protected = $this->protection->forNode($node, $manager->name());
                 $hostOwned = in_array($package, $protected, true);
                 // Uninstall authority is the Tool's recorded ownership alone: Orbit installed, adopted or converged its package. No
-                // failure, retry, status or sibling changes it. Without it, removal clears only the record, or, when the Tool's apt
-                // source may be on disk, cleans that source and its pins without touching the package or needing its manager.
+                // failure, retry, status or sibling changes it. Without it, removal clears only the record: an unowned membership was never
+                // pinned to its repository, and the repository keeps its own lifecycle.
                 $owned = $tool !== null && $tool->owned;
-                $sourceName = $tool?->aptRepository->name ?? $tool?->desired_repository['name'] ?? null;
-                $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || (! $owned && $sourceName === null));
+                $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || ! $owned);
                 if ($hostOwned && ! $relinquish) {
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : ToolPackageProtection::ErrorCode);
                 }
-                $sourceOnly = $verb === 'remove' && ! $owned;
-                if (! $relinquish && ! $sourceOnly && $verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
+                if (! $relinquish && $verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
                     $this->refuse('tool.manager_unavailable');
                 }
 
-                $active = app(ToolPolicy::class)->active();
-                $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, $active);
-                // A removal cleans or repins the source as the Node's record now defines it, so surviving members keep their current origin.
-                $removing = $verb === 'remove' && $sourceName !== null && ! $relinquish
-                    ? AptRepository::query()->where('node_id', $nodeId)->where('name', $sourceName)->first() : null;
-                $repository = $relinquish ? null : ($verb === 'remove' ? ($removing->definition ?? $tool?->desired_repository) : $definition->repository);
-                $repositoryRecord = $verb === 'remove' ? $removing : $tool?->aptRepository;
-                $repositoryPackages = [];
-                $repositoryMembers = [];
-                if ($repository !== null && $verb !== 'remove') {
-                    AptSourceTrust::assertDistinct($repository, AptSourceTrust::nodeDefinitions($nodeId));
-                }
-                if ($repository !== null) {
-                    $repositoryName = $repository['name'];
-                    $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repositoryName)->first();
-                    $members = Tool::query()->with(['aptRepository', 'manager'])->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)->get();
-                    $repositoryPackages = $this->definitions->repositoryPackages($active, $repository, $members, $package, $verb === 'remove');
-                    $repositoryMembers = $this->definitions->repositoryMembers($active, $repository, $members, $package);
-                    // Repinning survivors names the source's origins. Only a proven record says which origins are on disk; after an
-                    // uncertain write, a write of a surviving member republishes the source first.
-                    if ($verb === 'remove' && $repositoryMembers !== [] && ! AptSourceTrust::verified($repositoryRecord, $repository)) {
-                        $this->refuse('tool.repository_unverified');
-                    }
-                }
+                $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, app(ToolPolicy::class)->active());
+                // A write needs its repository ready; a removal repins the remaining members of the one the Tool references, whatever its state.
+                $repositoryRecord = $relinquish || $definition->repository === null ? null
+                    : ($verb === 'remove' ? $tool?->aptRepository : AptRepositories::usable($nodeId, $definition->repository));
+                $repositoryPackages = $repositoryRecord === null ? [] : $this->definitions->repositoryPackages($repositoryRecord->id,
+                    Tool::query()->with('manager')->where('node_id', $nodeId)->where('apt_repository_id', $repositoryRecord->id)->get(), $package, $verb === 'remove');
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
-                    'owned' => $owned, 'definition' => $definition]);
+                    'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'owned' => $owned, 'definition' => $definition]);
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.') && $error->errorCode !== 'conn_server.pin_unavailable') {

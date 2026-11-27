@@ -19,7 +19,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $package
  * @property string|null $version_constraint
  * @property string|null $desired_version
- * @property array<string, mixed>|null $desired_repository
  * @property ToolStatus $status
  * @property string|null $installed_version
  * @property ToolOperation|null $failed_operation
@@ -40,7 +39,6 @@ final class Tool extends Model
         'apt_repository_id',
         'version_constraint',
         'desired_version',
-        'desired_repository',
         'status',
         'installed_version',
         'failed_operation',
@@ -177,7 +175,6 @@ final class Tool extends Model
             'status' => ToolStatus::class,
             'receipts' => 'array',
             'failed_operation' => ToolOperation::class,
-            'desired_repository' => 'array',
             'owned' => 'boolean',
         ];
     }

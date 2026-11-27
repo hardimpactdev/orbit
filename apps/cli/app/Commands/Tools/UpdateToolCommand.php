@@ -13,7 +13,7 @@ final class UpdateToolCommand extends ToolActionCommand
     protected $signature = 'tool:update
         {tool : Numeric tool ID}
         {--tool-version= : Exact manager-native version (database mode)}
-        {--repository= : Replacement signed apt repository as a JSON object}
+        {--repository= : Name of the Node\'s ready apt repository to install from}
         {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
 
@@ -21,10 +21,8 @@ final class UpdateToolCommand extends ToolActionCommand
     protected $description = 'Update one tool.';
 
     #[\Override]
-    protected function request(int $toolId): ?GatewayRequest
+    protected function request(int $toolId): GatewayRequest
     {
-        $repository = $this->repositoryDefinition($this->option('repository'));
-
-        return $repository === false ? null : new UpdateToolRequest($toolId, $this->stringOption('idempotency-key'), $repository, $this->stringOption('tool-version'));
+        return new UpdateToolRequest($toolId, $this->stringOption('idempotency-key'), $this->stringOption('repository'), $this->stringOption('tool-version'));
     }
 }

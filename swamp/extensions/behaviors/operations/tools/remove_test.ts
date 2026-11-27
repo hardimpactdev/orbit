@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assertEquals } from "jsr:@std/assert@1";
 import { behavior, removalDecision, RemoveInput } from "./remove.ts";
 import * as native from "./native.ts";
 import { preferences } from "./native.ts";
@@ -187,7 +187,6 @@ Deno.test("an Orbit source always restricts every other package of all its origi
         user: "orbit",
         repository,
         repository_packages: ["nano", "tree"],
-        remove_repository: false,
         package_owned: false,
     });
     assertEquals(
@@ -198,21 +197,21 @@ Deno.test("an Orbit source always restricts every other package of all its origi
         commands.repository_preferences_held,
         preferences(repository, ["nano"]),
     );
-    // Through a failed change of origin both hosts may hold the source: every other package of each stays at priority 1.
+    // Each origin of the repository gets the same pin: its owned packages at 990, every other package at 1.
+    const twoOrigins = { ...repository, uris: ["https://vendor.example.test/apt", "https://mirror.example.test/apt"] };
     assertEquals(
-        preferences(repository, ["nano"], ["old.example.test", "vendor.example.test"]),
+        preferences(twoOrigins, ["nano"]),
         'Package: nano\nPin: origin "vendor.example.test"\nPin-Priority: 990\n\n' + wildcard + "\n" +
-            'Package: nano\nPin: origin "old.example.test"\nPin-Priority: 990\n\n' +
-            'Package: *\nPin: origin "old.example.test"\nPin-Priority: 1\n',
+            'Package: nano\nPin: origin "mirror.example.test"\nPin-Priority: 990\n\n' +
+            'Package: *\nPin: origin "mirror.example.test"\nPin-Priority: 1\n',
     );
-    // Once the run verified its package from the source it published, the preference is that source's alone: an origin an earlier
-    // uncertain write may have left keeps no restriction and no preference.
-    const moved = native.commands({
+    // An owned package keeps its pin before the write too.
+    const owned = native.commands({
         manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository,
-        repository_packages: ["nano", "tree"], repository_origins: ["old.example.test", "vendor.example.test"], remove_repository: false, package_owned: true,
+        repository_packages: ["nano", "tree"], package_owned: true,
     });
-    assertEquals(moved.repository_preferences, preferences(repository, ["nano", "tree"]));
-    assertEquals(moved.repository_preferences_held, preferences(repository, ["nano", "tree"], ["old.example.test", "vendor.example.test"]));
+    assertEquals(owned.repository_preferences, preferences(repository, ["nano", "tree"]));
+    assertEquals(owned.repository_preferences_held, preferences(repository, ["nano", "tree"]));
 });
 
 Deno.test("an IPv6 source origin is written as apt matches it, without brackets, and the contract accepts it", () => {
@@ -222,10 +221,8 @@ Deno.test("an IPv6 source origin is written as apt matches it, without brackets,
     // apt reads the literal as written: an uncompressed one is not shortened to ::1.
     assertEquals(native.origin("https://[0:0:0:0:0:0:0:1]/apt"), "0:0:0:0:0:0:0:1");
     assertEquals(native.origin("https://Packages.Example.test:8443/apt"), "packages.example.test");
-    const input = RemoveInput.parse({ node_id: 7, manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository,
-        repository_origins: ["2001:db8::7", "packages.example.test"] });
-    assertEquals(input.repository_origins, ["2001:db8::7", "packages.example.test"]);
-    assertThrows(() => RemoveInput.parse({ ...input, repository_origins: ["[2001:db8::7]"] }));
+    const input = RemoveInput.parse({ node_id: 7, manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository });
+    assertEquals(input.repository?.uris, ["https://[2001:DB8::7]/apt"]);
 });
 
 Deno.test("a removal's check after its package step reads whether the package survived, whatever version an install would target", async () => {

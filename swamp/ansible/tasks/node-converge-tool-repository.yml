@@ -1,28 +1,27 @@
 ---
-# Keep the existing Tool repository layout, and never publish an unverified key to APT.
-# Every origin the source may have on disk is restricted before anything is published: the owned Tools stay preferred, and no Tool
-# that has not been verified installed ever is.
+# Publish one apt repository (apt_repository) and never an unverified key. Its origins are restricted before anything is published: the
+# owned Tools that reference it stay preferred, and no Tool that has not been verified installed ever is.
 - name: Hold the repository to its owned Tools before publishing it
   ansible.builtin.copy:
-    dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
-    content: "{{ (tool_pins.stdout | from_json).repository_preferences_held }}"
+    dest: "/etc/apt/preferences.d/orbit-{{ apt_repository.name }}.pref"
+    content: "{{ (repository_pins.stdout | from_json).repository_preferences_held }}"
     owner: root
     group: root
     mode: "0644"
 - name: Inspect the recorded repository keyring
   ansible.builtin.command:
-    argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
+    argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg"]
   register: repository_key
   changed_when: false
   failed_when: false
 - name: Repair a missing or different repository signing key
   vars:
     primary_pattern: '(?m)^pub:[^\n]*\nfpr:::::::::([A-F0-9]+):'
-  when: repository_key.rc != 0 or (repository_key.stdout | regex_findall(primary_pattern)) != [tool.repository.signing_key.fingerprint]
+  when: repository_key.rc != 0 or (repository_key.stdout | regex_findall(primary_pattern)) != [apt_repository.signing_key.fingerprint]
   block:
     - name: Read the admitted signing-key candidate
       ansible.builtin.uri:
-        url: "{{ tool.repository.signing_key.url }}"
+        url: "{{ apt_repository.signing_key.url }}"
         return_content: true
         timeout: 30
       register: repository_download
@@ -34,27 +33,27 @@
       changed_when: false
     - name: Require exactly the recorded primary key
       ansible.builtin.assert:
-        that: (repository_candidate.stdout | regex_findall(primary_pattern)) == [tool.repository.signing_key.fingerprint]
+        that: (repository_candidate.stdout | regex_findall(primary_pattern)) == [apt_repository.signing_key.fingerprint]
         quiet: true
     - name: Create the Tool keyring folder
       ansible.builtin.file: { path: /etc/apt/keyrings, state: directory, owner: root, group: root, mode: "0755" }
     - name: Publish only the verified repository key
       ansible.builtin.command:
-        argv: [gpg, --batch, --yes, --dearmor, --output, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
+        argv: [gpg, --batch, --yes, --dearmor, --output, "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg"]
         stdin: "{{ repository_download.content }}"
       changed_when: true
 - name: Reconcile keyring access
-  ansible.builtin.file: { path: "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg", owner: root, group: root, mode: "0644" }
+  ansible.builtin.file: { path: "/etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg", owner: root, group: root, mode: "0644" }
 - name: Reconcile the recorded repository definition
   ansible.builtin.copy:
-    dest: "/etc/apt/sources.list.d/orbit-{{ tool.repository.name }}.sources"
+    dest: "/etc/apt/sources.list.d/orbit-{{ apt_repository.name }}.sources"
     content: |
       Types: deb
-      URIs: {{ tool.repository.uris | join(' ') }}
-      Suites: {{ tool.repository.suites | join(' ') }}
-      Components: {{ tool.repository.components | join(' ') }}
-      Architectures: {{ tool.repository.architectures | default(['amd64']) | join(' ') }}
-      Signed-By: /etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg
+      URIs: {{ apt_repository.uris | join(' ') }}
+      Suites: {{ apt_repository.suites | join(' ') }}
+      Components: {{ apt_repository.components | join(' ') }}
+      Architectures: {{ apt_repository.architectures | default(['amd64']) | join(' ') }}
+      Signed-By: /etc/apt/keyrings/orbit-{{ apt_repository.name }}.gpg
     owner: root
     group: root
     mode: "0644"

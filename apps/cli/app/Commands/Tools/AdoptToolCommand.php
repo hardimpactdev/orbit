@@ -21,7 +21,7 @@ final class AdoptToolCommand extends ToolCommand
         {--node= : Numeric target node ID}
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
-        {--repository= : Signed apt repository as a JSON object}
+        {--repository= : Name of the Node\'s ready apt repository to install from}
         {--yes : Skip the ownership confirmation prompt}
         {--json : Return machine-readable JSON}';
 
@@ -32,10 +32,6 @@ final class AdoptToolCommand extends ToolCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $repositoryDefinition = $this->repositoryDefinition($this->option('repository'));
-        if ($repositoryDefinition === false) {
-            return self::FAILURE;
-        }
         $nodeId = $this->nodeId();
         if ($nodeId === null) {
             return self::FAILURE;
@@ -68,7 +64,7 @@ final class AdoptToolCommand extends ToolCommand
         }
 
         try {
-            $adopted = $this->sendOrThrow($connector, new AdoptToolRequest($nodeId, $manager, $package, $constraint, $repositoryDefinition), AdoptedToolResponse::class);
+            $adopted = $this->sendOrThrow($connector, new AdoptToolRequest($nodeId, $manager, $package, $constraint, $this->stringOption('repository')), AdoptedToolResponse::class);
         } catch (GatewayApiException $exception) {
             $agent = NodeAgentResponse::tryFromGatewayData($exception->details()['agent'] ?? null);
             $this->writeAgent($nodeId, $agent);

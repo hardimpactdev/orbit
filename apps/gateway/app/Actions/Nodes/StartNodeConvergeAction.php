@@ -19,7 +19,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\AptRepositoryOutcomes;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Models\Node;
 use App\Models\Operation;
@@ -91,8 +91,9 @@ final readonly class StartNodeConvergeAction
                     $snapshot['intent'] = $intent;
                 }
                 $tools = RouteExecutionProof::objects($snapshot['intent']['tools']);
-                AptSourceTrust::claim($node->id, AptSourceTrust::planned($tools), $operation->id);
                 ToolConvergeIntent::admitDesired($tools);
+                // This convergence publishes each repository its Tools reference, so its outcome decides each one from now on.
+                AptRepositoryOutcomes::claim(array_column(RouteExecutionProof::objects($snapshot['intent']['repositories'] ?? []), 'id'), $operation->id);
                 $toolSeconds = ToolConvergeIntent::phaseSeconds(count($tools));
                 $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic, ...($tools === [] ? [] : ['tools_seconds' => $toolSeconds])];
                 $snapshot['release_inputs'] = [

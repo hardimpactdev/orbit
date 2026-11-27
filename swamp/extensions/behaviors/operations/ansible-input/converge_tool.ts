@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import { allows, exactMatches, PackageInput, safeVersion, ToolRefusal, validateConstraint } from "../tools/contract.ts";
-import { aptWrite, candidate, commands, inventory, refreshed } from "../tools/native.ts";
+import { allows, exactMatches, PackageInput, Repository, safeVersion, ToolRefusal, validateConstraint } from "../tools/contract.ts";
+import { aptWrite, candidate, commands, inventory, preferences, refreshed } from "../tools/native.ts";
 import { candidate as checkCandidate, writeInventory } from "../tools/write_policy.ts";
 
 const Observation = z.object({ rc: z.number().int(), stdout: z.string(), stderr: z.string().default("") });
@@ -9,8 +9,18 @@ const step = (value: unknown) => {
     return { status: "succeeded", outputs: { exitCode: observation.rc, stdout: observation.stdout, stderr: observation.stderr } };
 };
 
+/**
+ * The preferences an apt repository is published with, before its source: priority 990 for the owned Tools that reference it, 1 for every
+ * other package of its origins.
+ */
+export function repositoryState(value: unknown): Record<string, unknown> {
+    const payload = z.object({ repository: Repository, repository_packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/)).max(256) }).parse(value);
+    return { repository_preferences_held: preferences(payload.repository, [...new Set(payload.repository_packages)].sort()) };
+}
+
 /** Local policy only. Ansible owns every machine read, mutation and failure boundary. */
 export function toolState(mode: string, value: unknown): Record<string, unknown> {
+    if (mode === "repository") return repositoryState(value);
     const payload = z.object({
         tool: z.record(z.string(), z.unknown()), node_id: z.number().int().positive(), user: z.string(),
         version: z.unknown().optional(), query: z.unknown().optional(), candidate: z.unknown().optional(),
@@ -30,16 +40,11 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
         return argv;
     }
     if (mode === "pins") {
-        // The held preferences, written before the source is published, name the owned members of its plan and the Tools of its source
-        // this run already installed; this Tool joins them only in the preferences written after it is verified installed.
+        // The preferences this Tool's repository gets once the Tool is verified installed: its owned members, the Tools of the repository
+        // this run already installed, and this one.
         const packages = [...new Set([...input.repository_packages, ...payload.installed])].sort();
-        // A Tool of this source this run already verified installed confirmed the source: its other possible origins are gone, so every
-        // later preference of the run names the confirmed origins alone, as the record that a completed phase verifies does.
-        const { repository_preferences, repository_preferences_held } = commands({
-            ...input, repository_packages: packages, package_owned: payload.tool.owned === true,
-            repository_origins: payload.installed.length === 0 ? input.repository_origins : [],
-        });
-        return { repository_preferences, repository_preferences_held };
+        const { repository_preferences } = commands({ ...input, repository_packages: packages, package_owned: payload.tool.owned === true });
+        return { repository_preferences };
     }
     const raw = inventory(input, step(payload.version), step(payload.query), payload.os ? step(payload.os) : null);
     const { facts, present } = writeInventory(raw);

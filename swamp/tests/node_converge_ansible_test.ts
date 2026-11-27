@@ -216,7 +216,7 @@ Deno.test("repository trust requires exactly one primary fingerprint, not a matc
     const fingerprint = "A".repeat(40);
     const other = "B".repeat(40);
     const key = (kind: string, fpr: string) => `${kind}:-:2048:1:1234:1234::::::scESC:\nfpr:::::::::${fpr}:\nuid:-::::1234::PUBLIC::Fixture public key::::::::::0:\n`;
-    await localPlay({ ...(repair.vars as object), tool: { repository: { signing_key: { fingerprint } } } }, [
+    await localPlay({ ...(repair.vars as object), apt_repository: { signing_key: { fingerprint } } }, [
         { name: "Accept the sole admitted primary with unrelated subkey", "ansible.builtin.assert": { that: condition, quiet: true }, vars: { repository_candidate: { stdout: key("pub", fingerprint) + key("sub", other) } } },
         { name: "A matching trusted key needs no candidate download or publication", vars: { repository_key: { rc: 0, stdout: key("pub", fingerprint) } }, "ansible.builtin.assert": { that: `not (${repair.when})`, quiet: true } },
         ...[key("pub", other) + key("sub", fingerprint), key("pub", fingerprint) + key("pub", other), key("pub", fingerprint) + key("pub", fingerprint), ""].map((candidate) => ({
@@ -537,14 +537,14 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("the Tools phase names every file of each source no Tool names, and only valid source names", async () => {
+Deno.test("the Tools phase names every file of each removed repository, and only valid repository names", async () => {
     const folder = await Deno.makeTempDir();
     try {
         const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tools"))) as Array<Record<string, unknown>>;
-        const removal = tasks.find((task) => task.name === "Remove the Orbit apt sources no Tool names")!;
+        const removal = tasks.find((task) => task.name === "Remove each named apt repository's files")!;
         assertEquals(removal.become, true);
         await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{ hosts: "localhost", connection: "local", gather_facts: false,
-            vars: { intent: { orphan_sources: ["one", "../escape", "two-x"] } },
+            vars: { intent: { removed_repositories: ["one", "../escape", "two-x"] } },
             tasks: [{ name: "Name the files", "ansible.builtin.debug": { msg: (removal["ansible.builtin.file"] as { path: string }).path }, loop: removal.loop }] }]));
         const result = await new Deno.Command("ansible-playbook", { args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
             env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" } }).output();
@@ -585,9 +585,9 @@ switch (mode) {
         assertEquals(phase.code, 0, phase.output);
         assertEquals(phase.recorded, [{ id: 3, status: "installed", installed_version: "2.0" }], phase.output);
         assertEquals((await Deno.readTextFile(refresh)).trim(), "0");
-        // The preference contract, read from what each task does rather than how it is named or how many tasks there are: the source's
-        // preferences are computed by the policy helper on the control host, held to its owned Tools before anything of the source is
-        // published, and joined by this Tool only after the checkpoint records it installed. A failure writes no preference.
+        // The preference contract, read from what each task does rather than how it is named or how many tasks there are: a repository's
+        // add computes its held preferences on the control host and writes them before anything of the repository is published; a Tool
+        // joins its repository's preference only after the checkpoint records it installed. A failure writes no preference.
         type Task = Record<string, unknown>;
         // The tasks that run, in run order: a block stands for its own tasks, never for itself.
         const leaves = (items: Task[]): Task[] => items.flatMap((item) => item.block === undefined ? [item]
@@ -598,32 +598,35 @@ switch (mode) {
         const policy = (item: Task, mode?: string) => Array.isArray(argv(item)) && (argv(item) as string[]).includes("{{ converge_tool_helper }}")
             && (mode === undefined || (argv(item) as string[]).at(-1) === mode);
         const task = parse(await Deno.readTextFile(taskPath("node-converge-tool"))) as Task[];
+        const add = leaves(parse(await Deno.readTextFile(taskPath("node-converge-repository"))) as Task[]);
         const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Task[];
         const steps = leaves(task);
-        const at = (found: (item: Task) => boolean) => steps.findIndex(found);
-        const pins = at((item) => policy(item, "pins"));
-        const publish = at((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml");
-        const checkpoint = at((item) => String(copied(item).dest ?? "").endsWith("/tools-result.json"));
+        const pins = steps.findIndex((item) => policy(item, "pins"));
+        const computed = add.findIndex((item) => policy(item, "repository"));
+        const publish = add.findIndex((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml");
+        const checkpoint = steps.findIndex((item) => String(copied(item).dest ?? "").endsWith("/tools-result.json"));
         const confirmed = steps.filter((item) => writes(item, "repository_preferences"));
-        assertEquals(pins >= 0 && publish > pins, true, "the preferences are computed before the source is published");
+        assertEquals(computed >= 0 && publish > computed, true, "the held preferences are computed before the repository is published");
+        assertEquals(steps.some((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml"), false,
+            "a Tool never publishes its repository");
         assertEquals(confirmed.length, 1, "exactly one task writes the confirmed preference");
         assertEquals(checkpoint >= 0 && steps.indexOf(confirmed[0]) > checkpoint, true, "the confirmed preference is written only after the checkpoint");
         assertEquals(String(confirmed[0].when).includes("'installed'"), true, "the confirmed preference waits for a verified installation");
         const rescue = leaves(task.flatMap((item) => (item.rescue as Task[] | undefined) ?? []));
         assertEquals(rescue.some((item) => writes(item, "repository_preferences") || writes(item, "repository_preferences_held")), false, "a failure writes no preference");
-        // Publishing holds the source first: the held preference is written before the key or the source definition, and nothing else.
+        // Publishing holds the repository first: the held preference is written before the key or the source definition, and nothing else.
         const published = leaves(repository);
         const held = published.findIndex((item) => writes(item, "repository_preferences_held"));
         const firstWrite = published.findIndex((item) => /sources\.list\.d|keyrings/.test(String(copied(item).dest ?? "")) || (argv(item) as string[] | undefined)?.includes("--dearmor") === true);
-        assertEquals(held >= 0 && firstWrite > held, true, "the held preference is written before anything of the source is published");
+        assertEquals(held >= 0 && firstWrite > held, true, "the held preference is written before anything of the repository is published");
         assertEquals(published.some((item) => writes(item, "repository_preferences")), false, "publishing writes only the held preference");
-        // The privilege boundary: every policy helper step, the preferences included, runs on the control host unprivileged; the source runs
-        // privileged on the Node.
-        const helpers = steps.filter((item) => policy(item));
-        assertEquals(helpers.length > 0 && helpers.includes(steps[pins]), true);
+        // The privilege boundary: every policy helper step, the preferences included, runs on the control host unprivileged; the repository
+        // runs privileged on the Node.
+        const helpers = [...steps, ...add].filter((item) => policy(item));
+        assertEquals(helpers.length > 0 && helpers.includes(steps[pins]) && helpers.includes(add[computed]), true);
         assertEquals(helpers.every((item) => item.delegate_to === "localhost" && item.become === false), true, "the policy helper runs on the control host, unprivileged");
-        assertEquals(steps.filter((item) => item.delegate_to === "localhost").every((item) => item.become === false), true);
-        assertEquals(((steps[publish]["ansible.builtin.include_tasks"] as { apply?: { become?: boolean } }).apply?.become), true);
+        assertEquals([...steps, ...add].filter((item) => item.delegate_to === "localhost").every((item) => item.become === false), true);
+        assertEquals(((add[publish]["ansible.builtin.include_tasks"] as { apply?: { become?: boolean } }).apply?.become), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

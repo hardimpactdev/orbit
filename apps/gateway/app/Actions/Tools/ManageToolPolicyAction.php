@@ -6,14 +6,13 @@ namespace App\Actions\Tools;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ActiveToolPolicy;
-use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\AptRepositories;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolPolicy;
 use App\Models\ConnServerNode;
 use App\Models\Tool;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 final readonly class ManageToolPolicyAction
@@ -54,28 +53,23 @@ final readonly class ManageToolPolicyAction
             $after = $mode === 'file' ? $this->policy->fromFile($path) : new ActiveToolPolicy('database', null);
             $tools = $this->memberships();
             $snapshot = $this->snapshot($before, $tools);
-            $sources = [];
-            $recorded = [];
             foreach ($tools as $tool) {
                 if ($tool->withdrawn()) {
                     continue;
                 }
                 $current = $this->definition($before, $tool);
                 ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
-                if ($current->repository !== null) {
-                    $shared = $sources[$tool->node_id][ValidatedData::string($current->repository['name'])] ??= $current->repository;
-                    ToolDefinitionResolver::assertSharedRepository($shared, $current->repository);
-                    $recorded[$tool->node_id] ??= AptSourceTrust::nodeDefinitions($tool->node_id);
-                    AptSourceTrust::assertDistinct($current->repository, [...$recorded[$tool->node_id], ...array_values($sources[$tool->node_id])]);
-                }
                 if ($mode === 'file') {
                     $target = $this->definition($after, $tool);
                     ToolDefinitionResolver::assertRepositoryIdentity($tool, $target);
-                    if (! $target->sameAs($current)) {
+                    // The catalog defines the repository a membership references; a Node record under that name with another definition
+                    // would be republished differently by the next convergence.
+                    if (! $target->sameAs($current) || ($target->repository !== null
+                        && ! AptRepositories::same($tool->aptRepository?->definition, $after->repository($target->repository)))) {
                         $this->conflict('different_coordinate', $tool->id);
                     }
                 }
-                $tool->update(['desired_version' => $current->version, 'version_constraint' => $current->constraint, 'desired_repository' => $current->repository]);
+                $tool->update(['desired_version' => $current->version, 'version_constraint' => $current->constraint]);
             }
             $snapshotId = DB::table('tool_policy_snapshots')->insertGetId([
                 'document' => json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'created_at' => now(),
@@ -109,8 +103,8 @@ final readonly class ManageToolPolicyAction
             $rows[] = ['id' => $tool->id, 'node_id' => $tool->node_id, 'manager' => $tool->manager->name, 'package' => $tool->package,
                 'desired' => $desired?->toArray(), 'installed_version' => $tool->installed_version,
                 'admitted_version' => $tool->desired_version, 'admitted_constraint' => $tool->version_constraint,
-                'admitted_repository' => $tool->desired_repository,
-                'recorded_repository' => $tool->aptRepository?->definition, 'status' => $tool->status->value,
+                'repository' => $tool->aptRepository?->name, 'recorded_repository' => $tool->aptRepository?->definition,
+                'repository_status' => $tool->aptRepository?->status->value, 'status' => $tool->status->value,
                 'failed_operation' => $tool->failed_operation?->value, 'error_code' => $tool->error_code];
         }
 
@@ -127,6 +121,7 @@ final readonly class ManageToolPolicyAction
     private function catalog(ActiveToolPolicy $policy, array $tools): array
     {
         $entries = $policy->packages;
+        $repositories = $policy->repositories;
         foreach ($tools as $tool) {
             if ($tool->withdrawn()) {
                 continue;
@@ -140,15 +135,24 @@ final readonly class ManageToolPolicyAction
                 $this->conflict('per_node_divergence', $tool->id);
             }
             $entries[$key] = $definition;
+            // A catalog defines each repository once: every Node's record a membership references must agree.
+            $repository = $tool->aptRepository;
+            if ($repository !== null) {
+                if (isset($repositories[$repository->name]) && ! AptRepositories::same($repositories[$repository->name], $repository->definition)) {
+                    $this->conflict('per_node_divergence', $tool->id);
+                }
+                $repositories[$repository->name] = $repository->definition;
+            }
         }
         ksort($entries);
+        ksort($repositories);
         $packages = [];
         foreach ($entries as $key => $definition) {
             [$manager, $package] = explode(':', $key, 2);
             $packages[] = ['manager' => $manager, 'package' => $package, ...$definition->toArray()];
         }
 
-        return ['schema' => 1, 'packages' => $packages];
+        return ['schema' => 1, 'repositories' => array_values($repositories), 'packages' => $packages];
     }
 
     private function definition(ActiveToolPolicy $policy, Tool $tool): ToolDefinition
@@ -157,7 +161,7 @@ final readonly class ManageToolPolicyAction
             return $policy->definition($tool->manager->name, $tool->package) ?? $this->conflict('missing_catalog_entry', $tool->id);
         }
 
-        return new ToolDefinition($tool->desired_version, $tool->version_constraint, $tool->desired_repository ?? $tool->aptRepository?->definition);
+        return new ToolDefinition($tool->desired_version, $tool->version_constraint, $tool->aptRepository?->name);
     }
 
     private function conflict(string $reason, int $toolId): never

@@ -18,19 +18,22 @@ sequenceDiagram
   %%> Requirements:
   %%> - the Node is active and SSH-managed on Linux or macOS
   %%> - the caller has access to the Node and no competing write owns a selected manager on this Node
-  %%> - admit all eligible Tools, or only the selected memberships; verify shared signed sources
+  %%> - admit all eligible Tools, or only the selected memberships, and the apt repositories they reference; one on another repository's URI and suite is refused
   alt no registered Tools
     GW-->>CLI: Complete · changed 0
   else registered Tools
     GW->>SW: Start Tools-only Operation
     GW-->>CLI: 202 Accepted
+    SW->>N: Publish apt repositories<br/>over pinned SSH
+    %%> Repositories:
+    %%> - each one is that repository's own add: hold its preferences to its owned Tools, verify the key, write keyring and source, read its index
+    %%> - its outcome makes it ready or failed; a failed one stops only its own Tools
     SW->>N: Reconcile Tools<br/>over pinned SSH
     %%> Result:
     %%> - install missing packages and apply exact desired versions; leave existing unpinned packages alone
     %%> - do not run core, role, network, or host Conn phases
-    %%> - hold each apt source's preferences to its owned Tools before publication; add a Tool only after it is verified installed
-    %%> - without Tool IDs, remove the files of every recorded source no Tool names; the Gateway forgets it only after the phase succeeded
-    SW-->>GW: Report changes<br/>and observed versions
+    %%> - add a Tool to its repository's preference only after it is verified installed
+    SW-->>GW: Report changes, versions<br/>and repository outcomes
     CLI->>GW: Follow the Operation
     GW-->>CLI: Terminal receipt
   end

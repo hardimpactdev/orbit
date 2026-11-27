@@ -1,7 +1,7 @@
 ---
 title: "tool"
 sidebarTitle: "Overview"
-description: "Discover installed packages, adopt one installed package, and install, update, show, and remove one package through apt, Vite+, Composer, or Homebrew."
+description: "Discover installed packages, adopt one installed package, install, update, show, and remove one package through apt, Vite+, Composer, or Homebrew, and manage signed apt repositories."
 covers:
   - apps/cli/app/Commands/Tools/**
   - packages/php-sdk/src/Requests/Tools/**
@@ -23,22 +23,27 @@ The `tool` family manages packages on a Node. A Tool is one package that Orbit m
 | [`tool:update`](/cli/tool/update) | Update one Tool within its constraint. |
 | [`tool:remove`](/cli/tool/remove) | Remove one Tool and delete its record. |
 | [`tool:converge`](/cli/tool/converge) | Apply the desired coordinates of registered Tools on one Node. |
+| [`tool:apt-repository-add`](/cli/tool/apt-repository-add) | Add or republish one signed apt repository on a Node. |
+| [`tool:apt-repository-list`](/cli/tool/apt-repository-list) | List the apt repositories of a Node and their state. |
+| [`tool:apt-repository-show`](/cli/tool/apt-repository-show) | Show one apt repository. |
+| [`tool:apt-repository-remove`](/cli/tool/apt-repository-remove) | Remove one apt repository that no Tool references. |
 | [`tool:mode`](/cli/tool/mode) | Inspect or export the Gateway's active Tool policy. |
 | [`tool:mode:set`](/cli/tool/mode-set) | Switch policy without changing packages on any Node. |
 
-Every command accepts `--json`. Install, update, remove, and converge follow an Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Adopt answers at once from the Node agent's report and prints the agent's liveness first. Scan is a direct read of the same reports. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
+Every command accepts `--json`. Install, update, remove, converge, and the apt repository add and remove follow an Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Adopt answers at once from the Node agent's report and prints the agent's liveness first. Scan is a direct read of the same reports. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
 
 ## Related
 
 - [`node`](/cli/node) adds the Nodes that run the managers.
 - [`doctor`](/cli/doctor) reports Tool drift without changing packages.
 
-## Signed apt repository input
+## Apt repositories
 
-In database mode, `tool:install`, `tool:adopt`, and `tool:update` accept `--repository='<JSON object>'`. The fields and Rex preview definition are in [Signed apt repositories](/reference/tools#signed-apt-repositories). The Gateway validates the same object through API and MCP input. Install and adoption can share an existing name with an identical definition. Update replaces the shared definition under the same name; omitting the option keeps it.
+A signed [apt repository](/reference/tools#apt-repositories) is its own record on a Node. Add it once, then name it on `tool:install`, `tool:adopt`, and `tool:update` with `--repository=NAME`. A Tool write never publishes or changes the repository; it refuses a repository that is missing or not ready.
 
 ```bash
-orbit tool:install rex --node=NODE_ID --manager=apt --repository='{"name":"rex","uris":["https://pkgs.superlogical.com/rex/apt"],"suites":["preview"],"components":["main"],"architectures":["amd64"],"signing_key":{"url":"https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg","fingerprint":"E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}'
+orbit tool:apt-repository-add --node=NODE_ID --name=rex --definition='{"uris":["https://pkgs.superlogical.com/rex/apt"],"suites":["preview"],"components":["main"],"architectures":["amd64"],"signing_key":{"url":"https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg","fingerprint":"E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}'
+orbit tool:install rex --node=NODE_ID --manager=apt --repository=rex
 ```
 
-To change suites later, pass the full definition with `"suites":["stable"]` to `orbit tool:update TOOL_ID --repository='<JSON object>'`. Stable must have a published InRelease. Tool reads and apt scan rows return the stored repository definition. Removal deletes its source and key only after the last Tool using it is removed.
+To move to the stable suite once it has a published InRelease, remove the repository's Tools, add it again with `"suites":["stable"]`, and install them again. Adding the same name and definition again republishes the repository: that is the recovery for a failed or unconfirmed one, and for a key rotation under the same definition. Removing the last Tool leaves the repository; `tool:apt-repository-remove` removes it once no Tool references it.

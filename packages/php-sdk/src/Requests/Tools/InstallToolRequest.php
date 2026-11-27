@@ -18,7 +18,7 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array<string, mixed>|null $repository */
+    /** @param string|null $repository the name of the Node's apt repository the Tool installs from */
     public function __construct(
         private readonly int $nodeId,
         #[\SensitiveParameter]
@@ -29,7 +29,7 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
         private readonly ?string $versionConstraint = null,
         private readonly ?string $idempotencyKey = null,
         #[\SensitiveParameter]
-        private readonly ?array $repository = null,
+        private readonly ?string $repository = null,
         private readonly ?string $desiredVersion = null,
     ) {}
 
@@ -49,7 +49,7 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
         return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string, repository?: array<string, mixed>, desired_version?: string} */
+    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string, repository?: string, desired_version?: string} */
     protected function defaultBody(): array
     {
         return array_filter(

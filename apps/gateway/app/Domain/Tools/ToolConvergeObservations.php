@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -73,8 +74,8 @@ final readonly class ToolConvergeObservations
             $state = ['status' => $installed ? ToolStatus::Installed : ToolStatus::Failed,
                 'failed_operation' => $installed ? null : ($repair ? ToolOperation::Update : ToolOperation::Install),
                 'error_code' => $installed ? null : (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed'))];
-            if ($installed && is_array($repository = $plan['repository'] ?? null)) {
-                $state['apt_repository_id'] = AptSourceTrust::handle($nodeId, ValidatedData::object($repository))->id;
+            if ($installed) {
+                $state['apt_repository_id'] = is_int($plan['repository_id'] ?? null) && AptRepository::query()->whereKey($plan['repository_id'])->exists() ? $plan['repository_id'] : null;
             }
             $tool->receive($operation->id, $state, owned: $installed && array_key_exists('owned', $plan) ? true : null,
                 version: ValidatedData::nullableString($observation['installed_version']), observed: is_string($observation['installed_version']));
@@ -86,29 +87,17 @@ final readonly class ToolConvergeObservations
 
     /**
      * How a convergence's Tools phase ended, the same on time or late (the Operation then stays timed out). Every valid observation it
-     * reports counts, installed or failed, whatever the phase: a phase that finished also proves each source a Tool of it verified and
-     * forgets the orphans it removed; a phase that never ran wrote nothing; a partial one leaves each source uncertain.
+     * reports counts, installed or failed, whatever the phase, and so does each repository outcome: the phase published each repository its
+     * Tools reference before their packages, as that repository's own add.
      *
      * @param  array<int, array<string, mixed>>  $plans
      * @param  list<array<string, mixed>>  $observations  validated observations
-     * @param  string  $phase  `completed`, `skipped` or `partial`
-     * @param  list<string>  $orphans  the sources no Tool named at admission, which a finished phase removed
+     * @param  list<array{name: string, status: string, error_code: ?string}>  $repositories  validated repository outcomes (AptRepositoryOutcomes::validate)
      */
-    public function settle(Operation $operation, array $plans, array $observations, string $phase, array $orphans): void
+    public function settle(Operation $operation, array $plans, array $observations, array $repositories): void
     {
-        $nodeId = ValidatedData::integer($operation->node_id);
         $this->record($operation, $plans, $observations);
-        // A finished phase proves a source through a Tool of it verified installed; one whose Tools all failed may have left it half written.
-        $installed = array_column(array_filter($observations, static fn (array $tool): bool => $tool['status'] === 'installed'), 'id');
-        foreach ([true, false] as $verified) {
-            $named = array_values(array_filter($plans, static fn (array $plan): bool => in_array($plan['id'], $installed, true) === $verified));
-            AptSourceTrust::settlePlans($nodeId, $named, $operation->id, match (true) {
-                $phase === 'skipped' => 'unwritten', $phase === 'completed' && $verified => 'proved', default => 'uncertain',
-            });
-        }
-        if ($phase === 'completed') {
-            AptSourceTrust::forgetOrphans($nodeId, $orphans);
-        }
+        AptRepositoryOutcomes::record(ValidatedData::integer($operation->node_id), $operation->id, $repositories);
     }
 
     /**
