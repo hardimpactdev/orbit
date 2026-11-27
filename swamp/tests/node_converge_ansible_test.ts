@@ -234,6 +234,48 @@ Deno.test("repository trust requires exactly one primary fingerprint, not a matc
     assertEquals(verify < at("Hold the repository to its owned Tools before publishing it") && at("Hold the repository to its owned Tools before publishing it") < at("Publish only the verified repository key"), true);
 });
 
+Deno.test("a binary keyring and an armored key both verify from a private file, and a wrong key leaves nothing to publish", async () => {
+    // The documented Rex key is a binary keyring: module output carries text only, so the candidate is read into a private file.
+    const folder = await Deno.makeTempDir();
+    const gnupg = await Deno.makeTempDir();
+    const server = new Deno.Command("python3", { args: ["-u", "-m", "http.server", "0", "--bind", "127.0.0.1", "--directory", folder], stdout: "piped", stderr: "null" }).spawn();
+    try {
+        const gpg = (...args: string[]) => new Deno.Command("gpg", { args: ["--homedir", gnupg, "--batch", ...args], stdout: "piped", stderr: "piped" }).output();
+        await gpg("--pinentry-mode", "loopback", "--passphrase", "", "--quick-gen-key", "Proof Key <proof@example.test>", "ed25519", "sign", "never");
+        const colons = new TextDecoder().decode((await gpg("--with-colons", "--list-keys")).stdout);
+        const fingerprint = colons.match(/^fpr:::::::::([A-F0-9]+):/m)![1];
+        await Deno.writeFile(`${folder}/binary.gpg`, (await gpg("--export")).stdout);
+        await Deno.writeFile(`${folder}/armored.asc`, (await gpg("--armor", "--export")).stdout);
+        const line = new TextDecoder().decode((await server.stdout.getReader().read()).value);
+        const port = line.match(/port (\d+)/)![1];
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
+        const verify = tasks.find((task) => task.name === "Verify a missing or different repository signing key")!;
+        const run = (key: string, expected: string) => [
+            ...tasks.filter((task) => task.name === "Forget an earlier repository's verified key"),
+            { name: "No recorded keyring", "ansible.builtin.set_fact": { repository_key: { rc: 2, stdout: "" } } },
+            { ...verify, vars: { ...(verify.vars as object), apt_repository: { name: "proof", signing_key: { url: `http://127.0.0.1:${port}/${key}`, fingerprint: expected } } } },
+            { name: "Require the verified candidate as its file", "ansible.builtin.command": { argv: ["gpg", "--batch", "--show-keys", "--with-colons", "{{ repository_verified_key }}"] }, register: "shown", changed_when: false },
+            { name: "Require the recorded primary key in it", "ansible.builtin.assert": { that: `'${expected}' in shown.stdout`, quiet: true } },
+            ...tasks.filter((task) => task.name === "Remove the signing-key candidate"),
+        ];
+        for (const key of ["binary.gpg", "armored.asc"]) {
+            await localPlay({}, run(key, fingerprint), false);
+        }
+        // A key that does not hold the recorded primary fails before any trusted write, and keeps no key to publish.
+        await localPlay({}, [
+            { name: "Record no failure yet", "ansible.builtin.set_fact": { failed_task: "" } },
+            { name: "Verify the wrong key", block: run("binary.gpg", "B".repeat(40)).slice(0, 3),
+                rescue: [{ name: "Record the failed task", "ansible.builtin.set_fact": { failed_task: "{{ ansible_failed_task.name }}" } }] },
+            { name: "Require the fingerprint refusal and no key to publish", "ansible.builtin.assert": { that: ["failed_task == 'Require exactly the recorded primary key'", "repository_verified_key is none"], quiet: true } },
+        ], false);
+    } finally {
+        server.kill();
+        await server.status;
+        await Deno.remove(folder, { recursive: true });
+        await Deno.remove(gnupg, { recursive: true });
+    }
+});
+
 Deno.test("role phases accept generated extra vars without shadowing each role's intent", async () => {
     const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
     const folder = await Deno.makeTempDir();

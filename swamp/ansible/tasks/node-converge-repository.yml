@@ -40,6 +40,10 @@
       ansible.builtin.set_fact:
         repository_results: "{{ repository_results + [{'name': repository_plan.repository.name, 'status': 'ready', 'error_code': none}] }}"
   rescue:
+    - name: Remove a signing-key candidate the failure left
+      when: repository_candidate_dir.path is defined
+      ansible.builtin.file: { path: "{{ repository_candidate_dir.path }}", state: absent }
+      become: true
     - name: Record the repository failure and continue
       ansible.builtin.set_fact:
         repository_results: >-
