@@ -18,6 +18,12 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class RouteWriteNodes
 {
+    /**
+     * Route writers whose Nodes are known only after their start: an Ingress or Router move renders its sites at its step, and a
+     * registration publishes at its step. They are rare, so they and an engine-run Route update fence each other fleet-wide.
+     */
+    public const array LateKinds = ['node.role_relocate', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
+
     /** Plan lists that name Nodes whose files a step writes (NativeRouteUpdatePlan, NativeRouteTargetPlan, route removal). */
     private const array NodeLists = ['site_nodes', 'edge_nodes', 'retire_nodes', 'dns_node_ids'];
 
@@ -47,13 +53,14 @@ final readonly class RouteWriteNodes
         if (! RoutePublicationHolds::tracks($operation->kind)) {
             return;
         }
+        $late = in_array($operation->kind, self::LateKinds, true);
         $nodes = self::of($operation->input ?? []);
-        if ($nodes === []) {
+        if ($nodes === [] && ! $late) {
             return;
         }
         $engine = Operation::query()->where('kind', RouteUpdateEngineFlow::Kind)->whereKeyNot($operation->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->get()
-            ->first(static fn (Operation $open): bool => Engine::owns($open) && array_intersect($nodes, self::written($open)) !== []);
+            ->first(static fn (Operation $open): bool => Engine::owns($open) && ($late || array_intersect($nodes, self::written($open)) !== []));
         if ($engine === null) {
             return;
         }
@@ -72,13 +79,16 @@ final readonly class RouteWriteNodes
      */
     public static function refuseEngineBeside(Operation $operation, array $nodes): void
     {
-        if ($nodes === []) {
-            return;
-        }
         $held = DB::table('route_publication_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operation->id)->exists()
             || DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operation->id)->exists();
-        $other = $held ? null : Operation::query()->whereKeyNot($operation->id)->whereNotIn('status', OperationStatus::terminalValues())->get()
-            ->first(static fn (Operation $open): bool => RoutePublicationHolds::tracks($open->kind) && array_intersect($nodes, self::written($open)) !== []);
+        // A timed-out write whose run is not proven stopped still writes its Nodes until it settles (RoutePublicationHolds::keepsNodes).
+        $other = $held ? null : Operation::query()->whereKeyNot($operation->id)
+            ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
+                ->orWhere(static fn ($expired) => $expired->where('status', OperationStatus::Failed->value)->where('error_code', 'operation.timed_out')))
+            ->get()
+            ->first(static fn (Operation $open): bool => RoutePublicationHolds::tracks($open->kind)
+                && (! $open->status->terminal() || RoutePublicationHolds::keepsNodes($open))
+                && (in_array($open->kind, self::LateKinds, true) || array_intersect($nodes, self::written($open)) !== []));
         if ($held || $other !== null) {
             throw new ResourceOperationException('route.publication_held', 'Another Route write writes a Node of this update.', 409,
                 details: $other === null ? [] : ['operation_id' => $other->id]);

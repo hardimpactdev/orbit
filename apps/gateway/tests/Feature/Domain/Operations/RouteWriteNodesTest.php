@@ -92,3 +92,32 @@ it('keeps a Swamp phase writer out of the Node holds, as on main, so it is never
     expect(RoutePublicationHolds::nodes(swampWriter('edge', 8)))->toBe([])
         ->and(RoutePublicationHolds::nodes(swampWriter('retire', 8)))->toBe([]);
 });
+
+it('refuses an engine update\'s start while an Ingress relocation is open anywhere, as its Nodes are known only at its step', function (): void {
+    routeWriter('node.role_relocate', ['_relocate' => ['role' => 'ingress']]);
+
+    expect(fn () => RouteUpdateEngineFlow::holdNodes(routeWriter('route.update', engineUpdateInput('serving', 8))))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'));
+});
+
+it('refuses an Ingress relocation or a Router change while any engine update is open', function (string $kind): void {
+    routeWriter('route.update', engineUpdateInput('dns', 8), engine: true);
+    $late = routeWriter($kind, []);
+
+    expect(fn () => RouteWriteNodes::refuseBesideEngine($late))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'))
+        ->and($late->refresh()->status)->toBe(OperationStatus::Failed);
+})->with(['an Ingress relocation' => ['node.role_relocate'], 'a Router change' => ['cluster.router_set']]);
+
+it('treats a timed-out Swamp update whose run is not proven stopped as still writing its Nodes', function (string $shape): void {
+    $expired = swampWriter($shape === 'serving' ? 'serving' : 'dns', 8);
+    $expired->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(),
+        'state' => ['native_timeout' => ['budget_seconds' => 60, 'deadline' => now()->toISOString()]]])->save();
+    $engine = routeWriter('route.update', engineUpdateInput($shape, 8));
+
+    expect(fn () => RouteUpdateEngineFlow::holdNodes($engine))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'));
+
+    $expired->forceFill(['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]])->save();
+    RouteUpdateEngineFlow::holdNodes($engine);
+})->with(['a serving Node' => ['serving'], 'a VPN-only Node' => ['dns']]);

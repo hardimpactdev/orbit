@@ -82,6 +82,8 @@ The update is receipt-bound, as `instance.destroy` is. In one transaction the Ga
 
 An engine-run `route.update` and any other Route write never queue behind each other: whichever is second is refused with `route.publication_held` when both write one Node (a serving or edge Node, a Node the old site leaves, or a VPN Node; `RouteWriteNodes`). The engine start checks in its bind transaction; any other Route write checks right after its record exists, before it holds or dispatches. Swamp writes among themselves keep their publication holds and queue as before.
 
+A timed-out write whose run is not proven stopped counts as writing until it settles. The Route writers whose Nodes are known only at their step (`node.role_relocate`, `instance.register`, `cluster.router_set`, `cluster.router_unset`) and an engine-run update refuse each other fleet-wide.
+
 The Operation lock names the old Route, so `route:destroy` of the replacement refuses with `operation.target_busy` while the update is open.
 
 A public Route, a publication or web root change, the Ingress edge, a LAN rule and every URL write (`APP_URL` lines and whole `.env` files) stay on Swamp. Until route.destroy releases the guarded DNS input and the site withdrawal, an update that moves private DNS or withdraws an old leaf also stays on Swamp, whatever its Nodes report.
