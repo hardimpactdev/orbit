@@ -1,0 +1,48 @@
+command: process:start
+chart: process/engine/start
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases:
+  - id: signed-and-swamp-process-control
+    batch: fresh-fleet
+    covers: ["path:engine", "path:receipt-lost", "path:step-failed", "path:swamp", "path:refused"]
+    summary: Stop and start a host systemd, a host Docker and an on-demand host-Instance Process, and enable two retained Node timers, through the signed executor; replay a dropped stop receipt (also with the parent Instance's destroy fenced) and a dropped enable receipt; retry a start that failed half-applied (boot policy enabled, start refused); run the same shapes on Swamp with the family absent; keep a Horizon-shaped stop on Swamp, and a native cron enable on Swamp that sets its serve trigger; a sibling Process keeps its main PID and activation time after every verb.
+    exclusive: true
+    fails_on_base: true
+    timeout: 1800
+    setup:
+      - process_fixture: {}
+    act:
+      - host_instance: {name: host}
+      - process_create: {name: sibling, start: true}
+      - process_create: {name: unit, start: true}
+      - process_create: {name: box, runtime: docker, start: true}
+      - process_create: {name: hosted, start: true, instance: host}
+      - process_create: {name: legacy, start: true}
+      - process_create: {name: horizon}
+      - schedule_create: {name: timer, calendar: "*-*-* 03:00:00", retained: true, instance: host}
+      - schedule_create: {name: dropped, calendar: "*-*-* 05:00:00", retained: true, instance: host}
+      - schedule_create: {name: legacytimer, calendar: "*-*-* 04:00:00", retained: true, instance: host}
+      - schedule_create: {name: cron, calendar: "0 3 * * *"}
+      - process_control: {name: unit, via: engine, sibling: sibling}
+      - process_control: {name: box, via: engine, sibling: sibling}
+      - process_control: {name: hosted, via: engine, sibling: sibling, on_demand: true}
+      - schedule_enable: {name: timer, via: engine}
+      - schedule_enable: {name: dropped, via: engine, fault: receipt}
+      - process_replay: {name: unit}
+      - process_replay: {name: hosted, parent: host}
+      - process_retry: {name: unit}
+      - process_control: {name: legacy, via: swamp, sibling: sibling}
+      - schedule_enable: {name: legacytimer, via: swamp}
+      - process_refused: {name: horizon, kind: process.stop}
+      - process_refused: {name: cron, kind: schedule.enable}
+    expect:
+      - process_compare: {}
+      - process_cleanup: {}
+uncovered:
+  "path:engine": "Host systemd, host Docker and an on-demand host-Instance Process (boot policy disabled while running) on app-dev, and a retained Node timer of a host Instance. Fixture only: Orbit makes no new host (non-container) Instance, so its row comes from the guest helper, with its own Project from the API and its own Git checkout; the public schedule:create makes a native cron Schedule, so the lane sets trigger=node on its own new row and writes the disabled timer pair on the Node."
+  "path:refused": "A Horizon-shaped Node Process (`/usr/bin/php artisan horizon`, the shape GatewayHorizon::runs recognises, not a real Horizon) and a native cron Schedule stay on Swamp here. An Instance-container (Incus) Process has no fleet case: its Processes come only from Project definitions and a deploy (direct process:create is operation.kind_unavailable), and the nested default has no running container. A Gateway release container and a production_control timer need a production release layout the nested fleet does not have. Gateway tests cover those refusals."
+  "path:parent-fence": "instance:destroy of the host Instance is refused with operation.target_busy while its Process's engine stop is outstanding, and is no longer fenced after the terminal receipt. The destroy itself does not run: the removal contract rejects the fixture host row (HTTP 500 gateway.unhandled from its member trigger), so the proof records that answer, not a removal."
+  "path:receipt-lost": "The fault drops a stop receipt and an enable receipt; a lost start receipt is covered by Gateway and executor tests."
+  "path:step-failed": "The failure is a start that applies the boot policy (enable) and then fails to start on a fixture drop-in whose ExecStartPre exits 1 (process.apply_failed). Read-back failures are covered by executor tests."
