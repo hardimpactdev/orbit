@@ -2,7 +2,14 @@
 import json
 import time
 
-from clone_lifecycle import EXECUTOR_UNIT, ENGINE_UNIT, TERMINAL, CloneLane, ProofFailure, require, wait_for
+from clone_lifecycle import (
+    ENGINE_UNIT,
+    EXECUTOR_UNIT,
+    TERMINAL,
+    CloneLane,
+    require,
+    wait_for,
+)
 
 IMAGE = 'busybox:1.37'
 SHOW = ('ActiveState', 'SubState', 'UnitFileState', 'LoadState')
@@ -13,6 +20,7 @@ class ProcessLane(CloneLane):
     before the case is touched."""
     KINDS = ('process.start', 'process.stop', 'schedule.enable')
     FAMILY, PRESENT, ABSENT = 'process', 'process.ensure_state', 'schedule.ensure_timer'
+    ALSO = ()
 
     def __init__(self, run, fleet_contract):
         super().__init__(run, fleet_contract)

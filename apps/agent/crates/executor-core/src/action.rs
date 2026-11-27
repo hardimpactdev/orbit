@@ -72,6 +72,9 @@ pub enum Action {
     InstanceSyncBase,
     /// Remove what a task copy's sync left on the Node and in the copy. Its target is the copy.
     InstanceClearBase,
+    /// Read a copy's workspace Git state beyond its baseline (docs/reference/development-containers.md#workspace-work-state).
+    /// Read-only: no journal record and no target lock. Its target is the copy.
+    InstanceWorkRead,
     /// Converge one host Process, a systemd unit or a Docker container, to running or stopped and
     /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
     ProcessEnsureState,
@@ -92,7 +95,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -116,6 +119,7 @@ impl Action {
         Self::InstanceDestroy,
         Self::InstanceSyncBase,
         Self::InstanceClearBase,
+        Self::InstanceWorkRead,
         Self::ProcessEnsureState,
         Self::ScheduleEnsureTimer,
     ];
@@ -142,9 +146,15 @@ impl Action {
             | Self::InstanceNames
             | Self::InstanceDestroy
             | Self::InstanceSyncBase
-            | Self::InstanceClearBase => Family::Instance,
+            | Self::InstanceClearBase
+            | Self::InstanceWorkRead => Family::Instance,
             Self::ProcessEnsureState | Self::ScheduleEnsureTimer => Family::Process,
         }
+    }
+
+    /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
+    pub fn read_only(self) -> bool {
+        matches!(self, Self::InstanceWorkRead)
     }
 
     /// What the action's target names.
@@ -174,7 +184,8 @@ impl Action {
             | Self::InstanceNames
             | Self::InstanceDestroy
             | Self::InstanceSyncBase
-            | Self::InstanceClearBase => TargetKind::Instance,
+            | Self::InstanceClearBase
+            | Self::InstanceWorkRead => TargetKind::Instance,
         }
     }
 
@@ -213,6 +224,7 @@ impl Action {
             Self::InstanceNames => "instance.names",
             Self::InstanceSyncBase => "instance.sync_base",
             Self::InstanceClearBase => "instance.clear_base",
+            Self::InstanceWorkRead => "instance.work_read",
             Self::ProcessEnsureState => "process.ensure_state",
             Self::ScheduleEnsureTimer => "schedule.ensure_timer",
         }
@@ -252,6 +264,7 @@ impl FromStr for Action {
             "instance.names" => Ok(Self::InstanceNames),
             "instance.sync_base" => Ok(Self::InstanceSyncBase),
             "instance.clear_base" => Ok(Self::InstanceClearBase),
+            "instance.work_read" => Ok(Self::InstanceWorkRead),
             "process.ensure_state" => Ok(Self::ProcessEnsureState),
             "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
             _ => Err(UnknownActionError),

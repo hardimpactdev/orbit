@@ -151,6 +151,7 @@ impl Run for Families {
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
             Action::InstanceDestroy => self.destroy(order),
+            Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames | Action::InstanceSyncBase | Action::InstanceClearBase => instance(order),
@@ -382,6 +383,19 @@ fn process_slot(action: Action, target: &str, input: &serde_json::Value) -> bool
         Action::ScheduleEnsureTimer => input["schedule_id"].as_str().is_some_and(|id| slot == format!("schedule-{id}")),
         _ => input["process_id"].as_u64().is_some_and(|id| slot == format!("process-{id}")),
     }
+}
+
+/// `instance.work_read`: a copy's workspace read, answered as the reader's JSON. A refused input goes to the Gateway as its
+/// code, which the Gateway reads as `unknown` `unreachable`.
+fn work_read(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_instance::work_read(&system, order.target().as_str(), order.input(), order.expires_ms()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |stdout| Outcome::Output { stdout },
+    )
 }
 
 /// The instance family (ADR 0271): an Instance container made from its default's seed, and its files before its first

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Engine;
 
 use App\Domain\Engine\MachineBus;
+use App\Domain\Engine\NodeReadBus;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Support\ValidatedData;
 use Basis\Nats\Client;
@@ -20,7 +21,7 @@ use Throwable;
  * receipts, the state machine's own events and content. Every publish waits for JetStream's acknowledgement and checks
  * its sequence: an unacknowledged publish is a lost instruction, and the caller must know.
  */
-final class EngineBus implements MachineBus
+final class EngineBus implements MachineBus, NodeReadBus
 {
     private const int Second = 1_000_000_000;
 
@@ -154,6 +155,60 @@ final class EngineBus implements MachineBus
         $this->publish('KV_CONTENT', "\$KV.CONTENT.n{$node}.{$digest}", $content, []);
 
         return ['sha256' => $digest];
+    }
+
+    public function read(int $node, SignedExecutorOrder $order, float $deadline): ?array
+    {
+        try {
+            $body = $this->deadlineRequest("orbit.node.{$node}.reads", $order->wire, $deadline);
+        } catch (NotSent $exception) {
+            throw new RuntimeException('engine.read_failed', previous: $exception);
+        }
+        if ($body === null) {
+            return null;
+        }
+        $line = json_decode($body, true);
+
+        return is_array($line) ? ValidatedData::object($line) : [];
+    }
+
+    public function actions(int $node, float $deadline): array
+    {
+        try {
+            $body = $this->deadlineRequest("\$JS.API.DIRECT.GET.KV_NODES.\$KV.NODES.n{$node}", '', $deadline);
+        } catch (Throwable) {
+            return [];
+        }
+        $report = json_decode($body ?? '', true);
+
+        return is_array($report) && is_array($report['actions'] ?? null) ? array_values(array_filter($report['actions'], is_string(...))) : [];
+    }
+
+    public function content(int $node, string $content, float $deadline): ?array
+    {
+        $digest = hash('sha256', $content);
+        try {
+            $ack = $this->deadlineRequest("\$KV.CONTENT.n{$node}.{$digest}", $content, $deadline);
+        } catch (NotSent $exception) {
+            throw new RuntimeException('engine.publish_failed', previous: $exception);
+        }
+        if ($ack === null) {
+            return null;
+        }
+        $stored = json_decode($ack, true);
+        if (! is_array($stored) || ! is_int($stored['seq'] ?? null)) {
+            throw new RuntimeException('engine.publish_unacknowledged');
+        }
+
+        return ['sha256' => $digest];
+    }
+
+    /** @throws NotSent */
+    private function deadlineRequest(string $subject, string $payload, float $deadline): ?string
+    {
+        $host = GatewayBus::address() ?? throw new NotSent('engine.bus_unconfigured');
+
+        return DeadlineRequest::send($host, GatewayBus::port(), GatewayBus::gatewaySeed(), $subject, $payload, $deadline);
     }
 
     /**
