@@ -28,7 +28,7 @@ final readonly class ManageToolPolicyAction
             $result = $this->state($active);
             if ($export !== null) {
                 $tools = $this->memberships();
-                $result['document'] = $export === 'catalog' ? $this->catalog($active, $tools) : $this->snapshot($active, $tools);
+                $result['document'] = $export === 'catalog' ? $this->activatableCatalog($active, $tools) : $this->snapshot($active, $tools);
             }
 
             return $result;
@@ -54,34 +54,8 @@ final readonly class ManageToolPolicyAction
             $after = $mode === 'file' ? $this->policy->fromFile($path) : new ActiveToolPolicy('database', null);
             $tools = $this->memberships();
             $snapshot = $this->snapshot($before, $tools);
-            foreach ($tools as $tool) {
-                if ($tool->withdrawn()) {
-                    continue;
-                }
-                $current = $this->definition($before, $tool);
-                ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
-                if ($mode === 'file') {
-                    $target = $this->definition($after, $tool);
-                    ToolDefinitionResolver::assertRepositoryIdentity($tool, $target);
-                    // The catalog defines the repository a membership references; a Node record under that name with another definition
-                    // would be republished differently by the next convergence.
-                    if (! $target->sameAs($current) || ($target->repository !== null
-                        && ! AptRepositories::same($tool->aptRepository?->definition, $after->repository($target->repository)))) {
-                        $this->conflict('different_coordinate', $tool->id);
-                    }
-                }
-                $changes = ['desired_version' => $current->version, 'version_constraint' => $current->constraint];
-                // Leaving file mode carries the catalog's repository reference onto the membership, only when the Node has that repository
-                // exactly as the catalog defines it; anything else refuses the whole switch.
-                if ($before->mode === 'file' && $mode === 'database' && $current->repository !== null) {
-                    $record = AptRepository::query()->where('node_id', $tool->node_id)->where('name', $current->repository)->first()
-                        ?? $this->conflict('repository_missing', $tool->id, $current->repository);
-                    if (! AptRepositories::same($record->definition, $before->repository($current->repository))) {
-                        $this->conflict('different_repository', $tool->id, $current->repository);
-                    }
-                    $changes['apt_repository_id'] = $record->id;
-                }
-                $tool->update($changes);
+            foreach ($this->activation($before, $after, $tools) as $toolId => $changes) {
+                Tool::query()->whereKey($toolId)->update($changes);
             }
             $snapshotId = DB::table('tool_policy_snapshots')->insertGetId([
                 'document' => json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'created_at' => now(),
@@ -90,6 +64,71 @@ final readonly class ManageToolPolicyAction
 
             return [...$this->state($after), 'snapshot_id' => $snapshotId];
         });
+    }
+
+    /**
+     * The one check of whether `$after` can become the active policy over `$before` with these memberships, as activation and catalog
+     * export both ask it. It changes nothing; it returns the desired state each membership then takes, or throws the conflict.
+     *
+     * @param  list<Tool>  $tools
+     * @return array<int, array<string, mixed>> by Tool ID
+     */
+    private function activation(ActiveToolPolicy $before, ActiveToolPolicy $after, array $tools): array
+    {
+        $changes = [];
+        foreach ($tools as $tool) {
+            if ($tool->withdrawn()) {
+                continue;
+            }
+            $current = $this->definition($before, $tool);
+            ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
+            if ($after->mode === 'file') {
+                $target = $this->definition($after, $tool);
+                ToolDefinitionResolver::assertRepositoryIdentity($tool, $target);
+                // The catalog defines the repository a membership references; the Node's record of that name must hold the same
+                // definition, or the next convergence would publish another one under it. An assignment not yet converged passes when it does.
+                $record = $target->repository === null ? null
+                    : AptRepository::query()->where('node_id', $tool->node_id)->where('name', $target->repository)->first();
+                if (! $target->sameAs($current) || ($target->repository !== null && ! AptRepositories::same($record?->definition, $after->repository($target->repository)))) {
+                    $this->conflict('different_coordinate', $tool->id);
+                }
+            }
+            $change = ['desired_version' => $current->version, 'version_constraint' => $current->constraint];
+            // Leaving file mode carries the catalog's repository reference onto the membership, only when the Node has that repository
+            // exactly as the catalog defines it; anything else refuses the whole switch.
+            if ($before->mode === 'file' && $after->mode === 'database' && $current->repository !== null) {
+                $record = AptRepository::query()->where('node_id', $tool->node_id)->where('name', $current->repository)->first()
+                    ?? $this->conflict('repository_missing', $tool->id, $current->repository);
+                if (! AptRepositories::same($record->definition, $before->repository($current->repository))) {
+                    $this->conflict('different_repository', $tool->id, $current->repository);
+                }
+                $change['apt_repository_id'] = $record->id;
+            }
+            $changes[$tool->id] = $change;
+        }
+
+        return $changes;
+    }
+
+    /**
+     * The catalog export: a document that activates unchanged at a new path, checked by the activation check itself.
+     *
+     * @param  list<Tool>  $tools
+     * @return array<string, mixed>
+     */
+    private function activatableCatalog(ActiveToolPolicy $active, array $tools): array
+    {
+        $catalog = $this->catalog($active, $tools);
+        $document = $this->document($catalog);
+        // The memberships first, so a dropped or renamed repository reports what activation reports for it; then the document's own rules.
+        $this->activation($active, $catalog, $tools);
+        try {
+            $this->policy->fromDocument($document, null);
+        } catch (ResourceOperationException) {
+            $this->conflict('catalog_invalid', null);
+        }
+
+        return $document;
     }
 
     /** @return list<Tool> */
@@ -129,14 +168,13 @@ final readonly class ManageToolPolicyAction
                 'definition' => $repository->definition, 'status' => $repository->status->value, 'error_code' => $repository->error_code])->all();
 
         return ['schema' => 1, ...$this->state($policy), 'memberships' => $rows, 'repositories' => $repositories, 'conn_server_rollout' => $conn,
-            'catalog' => $policy->mode === 'file' ? $this->catalog($policy, [], records: false) : null];
+            'catalog' => $policy->mode === 'file' ? $this->document($this->catalog($policy, [], records: false)) : null];
     }
 
     /** @param list<Tool> $tools
-     * @param  bool  $records  whether every Node's repository record joins the document (an export), or only the active file's own
-     * @return array<string, mixed>
+     * @param  bool  $records  whether every Node's repository record joins the catalog (an export), or only the active file's own
      */
-    private function catalog(ActiveToolPolicy $policy, array $tools, bool $records = true): array
+    private function catalog(ActiveToolPolicy $policy, array $tools, bool $records = true): ActiveToolPolicy
     {
         $entries = $policy->packages;
         $repositories = $policy->repositories;
@@ -165,26 +203,20 @@ final readonly class ManageToolPolicyAction
         }
         ksort($entries);
         ksort($repositories);
+
+        return new ActiveToolPolicy('file', null, $entries, $repositories);
+    }
+
+    /** @return array<string, mixed> */
+    private function document(ActiveToolPolicy $catalog): array
+    {
         $packages = [];
-        foreach ($entries as $key => $definition) {
+        foreach ($catalog->packages as $key => $definition) {
             [$manager, $package] = explode(':', $key, 2);
             $packages[] = ['manager' => $manager, 'package' => $package, ...$definition->toArray()];
         }
 
-        $document = ['schema' => 1, 'repositories' => array_values($repositories), 'packages' => $packages];
-        // The export is a catalog activation accepts: the same rules, two names on one URI and suite included.
-        try {
-            AptRepositories::assertDistinctAmong($document['repositories']);
-        } catch (ResourceOperationException) {
-            $this->conflict('repository_conflict', null);
-        }
-        try {
-            $this->policy->fromDocument($document, null);
-        } catch (ResourceOperationException) {
-            $this->conflict('catalog_invalid', null);
-        }
-
-        return $document;
+        return ['schema' => 1, 'repositories' => array_values($catalog->repositories), 'packages' => $packages];
     }
 
     private function definition(ActiveToolPolicy $policy, Tool $tool): ToolDefinition

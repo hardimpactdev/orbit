@@ -307,7 +307,7 @@ it('refuses a catalog export that activation would reject: one URI and suite und
         'status' => 'installed', 'owned' => true, 'apt_repository_id' => repositoryReady('two', $this->definition, $second)->id]);
 
     repositoryGatewayApi('GET', 'tool-policy?export=catalog')->assertStatus(409)->assertJsonPath('error.code', 'tool.mode_conflict')
-        ->assertJsonPath('error.details.reason', 'repository_conflict');
+        ->assertJsonPath('error.details.reason', 'catalog_invalid');
 });
 
 it('exports every repository record, also one no Tool references, and refuses a catalog of one name defined two ways', function (bool $diverged): void {
@@ -346,3 +346,39 @@ it('publishes an unconfirmed repository in a database-mode convergence, which co
     repositoryApi('GET', "apt-repositories/{$vendor->id}")->assertJsonPath('data.status', 'ready');
     repositoryApi('POST', "tools/{$tree->id}/update", [])->assertAccepted();
 });
+
+it('exports a catalog that activates unchanged at a new path, a repository assignment not yet converged included', function (string $state): void {
+    $vendor = repositoryReady('vendor', $this->definition);
+    $tree = repositoryTool('tree', $state === 'converged' ? $vendor : null);
+    if ($state === 'pending assignment') {
+        // File mode is active; the catalog then assigns the Node's ready `vendor` to `tree`, and no convergence has run since.
+        $packages = [['manager' => 'apt', 'package' => 'tree', 'version' => '1.0']];
+        $active = repositoryCatalog([['name' => 'vendor', ...$this->definition]], $packages);
+        repositoryGatewayApi('PUT', 'tool-policy', ['mode' => 'file', 'catalog_path' => $active])->assertOk();
+        repositoryCatalog([['name' => 'vendor', ...$this->definition]], [[...$packages[0], 'repository' => 'vendor']], $active);
+    }
+
+    $document = repositoryGatewayApi('GET', 'tool-policy?export=catalog')->assertOk()->json('data.document');
+    $copy = repositoryCatalog($document['repositories'], $document['packages'], TestOrbitHome::scratch('copy/tools.yaml'));
+    repositoryGatewayApi('PUT', 'tool-policy', ['mode' => 'file', 'catalog_path' => $copy])->assertOk()->assertJsonPath('data.catalog_path', $copy);
+
+    expect($document['packages'][0]['repository'])->toBe('vendor')->and(Operation::query()->count())->toBe(0)
+        ->and($tree->refresh()->apt_repository_id)->toBe($state === 'converged' ? $vendor->id : null);
+})->with(['converged', 'pending assignment']);
+
+it('refuses a catalog export that drops or renames a membership\'s repository, as activation does', function (string $edit): void {
+    $tree = repositoryTool('tree', repositoryReady('vendor', $this->definition));
+    $entry = ['manager' => 'apt', 'package' => 'tree', 'version' => '1.0'];
+    $active = repositoryCatalog([['name' => 'vendor', ...$this->definition]], [[...$entry, 'repository' => 'vendor']]);
+    repositoryGatewayApi('PUT', 'tool-policy', ['mode' => 'file', 'catalog_path' => $active])->assertOk();
+    $edit === 'drop'
+        ? repositoryCatalog([['name' => 'vendor', ...$this->definition]], [$entry], $active)
+        : repositoryCatalog([['name' => 'renamed', ...$this->definition]], [[...$entry, 'repository' => 'renamed']], $active);
+
+    repositoryGatewayApi('GET', 'tool-policy?export=catalog')->assertStatus(409)->assertJsonPath('error.code', 'tool.repository_conflict');
+    // Activation of that same catalog at a new path gives the same refusal.
+    repositoryGatewayApi('PUT', 'tool-policy', ['mode' => 'file', 'catalog_path' => repositoryCatalog(...($edit === 'drop'
+        ? [[['name' => 'vendor', ...$this->definition]], [$entry]] : [[['name' => 'renamed', ...$this->definition]], [[...$entry, 'repository' => 'renamed']]]),
+        path: TestOrbitHome::scratch('copy/tools.yaml'))])->assertStatus(409)->assertJsonPath('error.code', 'tool.repository_conflict');
+    expect($tree->refresh()->aptRepository?->name)->toBe('vendor');
+})->with(['drop', 'rename']);

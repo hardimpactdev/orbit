@@ -71,7 +71,9 @@ Leaving file mode, each membership takes the repository the catalog names for it
 
 A catalog cannot express different desired coordinates for the same manager and package across Nodes, different definitions under one repository name, two repository names on one URI and suite, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation.
 
-Export includes every repository record, also one no Tool references, and checks its document with the rules activation applies, so an export activates unchanged. Activation also refuses missing or different coordinates, a repository a Node defines differently from the catalog, a membership whose repository the catalog drops or renames (`tool.repository_conflict`), and any active or retained Tool execution hold.
+Export includes every repository record, also one no Tool references. It runs the check activation runs, against the current memberships, so an export activates unchanged at a new path. A catalog assignment of a repository not yet converged passes when the Node's record of that name has the catalog's definition. A catalog that drops or renames a membership's repository is refused at export with `tool.repository_conflict`, as activation refuses it.
+
+Activation also refuses missing or different coordinates, a repository whose Node record differs from the catalog's definition, a membership whose repository the catalog drops or renames (`tool.repository_conflict`), and any active or retained Tool execution hold.
 
 A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
 
