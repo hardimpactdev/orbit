@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy}.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -128,12 +128,16 @@ The `instance` family (enabled on `app-dev`) executes clone lifecycle steps from
 | Primitive | Work |
 | --- | --- |
 | `instance.clone` | Creates the network ACL, copies the default seed snapshot, attaches NIC filters and T3 proxy, and adds UFW route rules |
-| `instance.fetch_branch` | Fetches the requested branch into `/var/lib/orbit/instance-repositories` using an HTTPS credential blob |
+| `instance.fetch_branch` | Fetches the requested branch into `/var/lib/orbit/instance-repositories` using an HTTPS credential blob in a file of its own; with `seed` (feature `instance.fetch_seed`) it makes a missing mirror from the default's |
 | `instance.prepare` | Removes inherited seed units on the stopped copy, assigns a fresh machine ID, and writes files (`files_blob`), JSON merges, symlinks, Orbit root CA / NSS trust, and agent folders |
 | `instance.start` | Verifies NIC guards, unshifts ID maps, boots the copy, configures hostname and `/etc/hosts`, and runs `/usr/local/libexec/orbit-app-user` |
 | `instance.checkout` | Checks out the branch inside the copy, merges `.env` from the seed and Gateway render, and excludes `.env` in `info/exclude` |
 | `instance.t3` | Starts T3, waits up to 30 seconds for readiness, registers the project, and returns sessions (plus optional reserved-clone pairing) sealed to `seal_to` |
 | `instance.destroy` | Force-stops the saved clone, removes its owned Incus storage, ACL and firewall rules, and discards both engines' freeze state before returning `done` |
+| `instance.sync_base` | Imports what a task copy lacks of the pinned mirror head and moves only `refs/remotes/origin/<default>`, then returns the base evidence (`output`) |
+| `instance.clear_base` | Removes a copy sync's Node scratch (`/var/tmp/orbit-task-base-<id>`), its pin in the mirror and the copy's bundle folder (`/tmp/orbit-task-base-<id>`); a repeat finds nothing and answers the same |
+
+`instance.sync_base` bundles the pinned head without the copy's `origin/<default>` and branch commits that the mirror also holds. Root makes the copy's bundle folder; `agent` fetches the bundle into the object store, so every file stays the agent's. Then `git update-ref <ref> <head> <old>` compares the ref with the value read before. Finally the primitive reads back the ref, HEAD and every local branch, and returns `behind_by` and the `work` read.
 
 When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor advertising `instance.t3_pairing` in `features`, it requests `POST /api/auth/pairing-token` using the Gateway session and seals T3's reply beside the sessions. A refused or unreachable pairing link never fails the step.
 
@@ -149,7 +153,11 @@ The executor appends JSON records to `/var/lib/orbit/executor/journal`: `seen` o
 
 At startup, the executor creates the `journal.accepts` marker, marks any `seen`-without-`open` order as `executor.order_expired`, and replays any `open`-without-`done` order under its target lock before accepting new work on that target.
 
-For `instance.destroy`, an order that expires before taking the target lock never settles the step. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
+For the fenced actions (`instance.destroy`, `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`), an order that expires before taking the target lock never settles the step, and a result goes back only after its `done` record is durable. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
+
+### Repeated receipts of a copy sync
+
+The same holds for the `sync` and `clear` steps of [`tasks.sync`](/reference/gateway-engine#taskssync). Their `output` receipts are journaled. For example, a resend after a lost receipt repeats the stored base evidence without importing again.
 
 A signed removal failure can include `detail`, a redacted diagnostic of at most 4 KiB. The executor keeps it with the result so a repeat or a restart does not discard the diagnostic. The Gateway redacts it again against the Instance's stored environment values before recording it for operators.
 

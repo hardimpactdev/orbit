@@ -1093,10 +1093,11 @@ def busy_node(run, args):
     return []
 
 
-def clone_fixture(run, args):
-    from clone_lifecycle import CloneLane, ProofFailure
+def clone_fixture(run, args, lane='CloneLane'):
+    import clone_lifecycle
+    from clone_lifecycle import ProofFailure
 
-    run.clone_lane = CloneLane(run, fleet_module)
+    run.clone_lane = getattr(clone_lifecycle, lane)(run, fleet_module)
     try:
         run.clone_lane.setup(**args)
     except ProofFailure as error:
@@ -1160,4 +1161,6 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'),
                   'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup'),
                   'route_fixture': route_fixture, 'route_create': clone_step('route_create'), 'route_destroy': clone_step('route_destroy'),
-                  'route_clone_destroy': clone_step('route_clone_destroy'), 'route_compare': clone_step('route_compare')})
+                  'route_clone_destroy': clone_step('route_clone_destroy'), 'route_compare': clone_step('route_compare'),
+                  'sync_fixture': lambda run, args: clone_fixture(run, args, 'SyncLane'), 'sync_copy': clone_step('copy'),
+                  'task_sync': clone_step('sync'), 'sync_compare': clone_step('sync_compare')})

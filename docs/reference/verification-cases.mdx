@@ -94,6 +94,8 @@ Run `orbit proof route:destroy --group=ID --json` for the Route withdrawal. The 
 
 During an open copy turn, use `python3 swamp/proof/runner/runner.py batch fresh-fleet --file swamp/proof/instance/destroy.cases.yaml --evidence PATH` from the same copy. It runs the same case on the copy's fleet without the outer command's batch reset. Keep the evidence directory for the source and artifact identities, Operation IDs, receipts and timing comparison.
 
+`swamp/proof/task/sync.cases.yaml` proves `task:sync` of a task copy the same way. The `sync_fixture` step is `clone_fixture` with the `tasks.sync` route enabled too. The `sync_copy` step creates a sibling and a clone through the engine, binds the clone to a new external group as its copy, as `task:start` leaves one, and gives it a local branch, staged, unstaged, untracked and stashed work and a stale `origin/<default>`. Each `task_sync` step moves that ref back, posts `tasks/{group}/sync`, and checks that only the ref moved, to the mirror head the result names, with no root-owned file, no credential form in the copy's processes, files or Git configuration or in the Operation record, no base scratch, and the sibling unchanged. Its `receipt` fault drops the fetch receipt; its `held-ref` fault holds the ref's lock so the import fails after the fetch, then retries. The `sync_compare` step compares the signed and Swamp syncs of the same copy.
+
 ## Batches and concurrency
 
 `swamp/proof/batches.yaml` defines shared batches and their setup steps. Each batch starts from a `base` restore (45-second health bound); read-only cases with no setup run first on a fresh copy so the copy only resets after a mutating batch.

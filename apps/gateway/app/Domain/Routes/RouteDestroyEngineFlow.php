@@ -7,7 +7,6 @@ namespace App\Domain\Routes;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
-use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -29,7 +28,7 @@ use RuntimeException;
  * `--offline`, a replacement, LAN rules, the Ingress edge and any URL write start on Swamp ([EngineUnsupported]). Step
  * labels map onto the Swamp chart's, so a failure records the same `failed_step` and error code.
  */
-final readonly class RouteDestroyEngineFlow implements EngineDefinition, ReceiptBoundDefinition
+final readonly class RouteDestroyEngineFlow implements EngineDefinition
 {
     /** The input a VPN Node must take: per-file digests of what the Gateway rendered from. */
     public const string GuardedDns = 'dns.guarded_records';
@@ -306,15 +305,5 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
     private static function plan(Operation $operation): array
     {
         return ValidatedData::object(ValidatedData::object($operation->input['route_lifecycle'] ?? [])['plan'] ?? []);
-    }
-
-    public function terminalStatuses(string $action): array
-    {
-        return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
-    }
-
-    public function terminalFailure(string $action, string $code): bool
-    {
-        return ! str_starts_with($code, 'blob.');
     }
 }

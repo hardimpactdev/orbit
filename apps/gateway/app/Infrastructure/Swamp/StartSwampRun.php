@@ -8,7 +8,6 @@ use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\InstanceMigration\InstanceMigration;
-use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
@@ -18,6 +17,7 @@ use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
@@ -79,15 +79,24 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
+            // Before routing and any credential: a copy's sync never starts beside a confirmed removal of that copy, on either engine.
+            TaskSyncEngineFlow::refuseConfirmedRemoval($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
+                // An engine-eligible copy sync never starts beside its copy's removal: it is refused, not sent to Swamp. A plan the
+                // engine does not cover took the unchanged Swamp path above.
+                TaskSyncEngineFlow::assertCopyFree($operation);
                 $runId = EngineRun::runIdOf($operation->id);
-                if ($operation->kind === InstanceDestroyEngineFlow::Kind) {
-                    $lock = OperationStore::lockKey('instance', $operation->target_id);
+                if (Engine::receiptBound($operation->kind)) {
+                    $lock = Engine::fenceKey($operation);
                     try {
-                        app(Engine::class)->start($operation, fn () => $this->bind($operation, $runId, $lock));
+                        app(Engine::class)->start($operation, function () use ($operation, $runId, $lock): void {
+                            // In the bind's transaction: a removal of the copy admitted since routing refuses the sync's start.
+                            TaskSyncEngineFlow::assertCopyFree($operation);
+                            $this->bind($operation, $runId, $lock);
+                        });
                     } catch (UniqueConstraintViolationException $exception) {
-                        throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the Instance lock.', 409, previous: $exception);
+                        throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);
                     }
                 } else {
                     $this->bind($operation, $runId);

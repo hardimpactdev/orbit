@@ -51,6 +51,27 @@ fn the_gateway_signed_route_withdrawal_and_guarded_dns_records_verify_with_their
     }
 }
 
+#[test]
+fn the_gateway_signed_copy_sync_orders_target_the_copy_and_keep_their_input() {
+    for (text, action, operation) in [
+        (include_str!("../../../contract/fixtures/executor-instance-sync-base.json"), Action::InstanceSyncBase, "42:sync"),
+        (include_str!("../../../contract/fixtures/executor-instance-clear-base.json"), Action::InstanceClearBase, "42:clear_after_failure"),
+    ] {
+        let fixture: serde_json::Value = serde_json::from_str(text).expect("fixture");
+        let keys = PinnedKeys::parse(field(&fixture, "public_key")).expect("fixture key");
+        let enabled = Enabled::parse("instance").expect("valid");
+        let node = field(&fixture["fields"], "node").parse().expect("Node ID");
+        let checks = Checks { keys: &keys, enabled: &enabled, node: &node };
+        let now = fixture["now_ms"].as_u64().expect("now");
+        let order = check_with_target(field(&fixture, "wire").as_bytes(), &checks, now, |found, target| {
+            found == action && found.target_kind() == TargetKind::Instance && target.as_str() == "12"
+        })
+        .expect("the fixture verifies");
+        assert_eq!(order.operation().as_str(), operation);
+        assert_eq!(order.input(), &fixture["fields"]["input"]);
+    }
+}
+
 fn field<'a>(fixture: &'a serde_json::Value, name: &str) -> &'a str {
     fixture[name].as_str().expect("a string field")
 }

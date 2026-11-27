@@ -7,7 +7,6 @@ namespace App\Domain\Instances;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
-use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -30,7 +29,7 @@ use Throwable;
  * `sibling-<node>` checks another Route there still answers, and `release` records the withdrawal on the removal and frees the
  * Route Nodes, as the Swamp run's release step does. Then `remove` deletes the container.
  */
-final readonly class InstanceDestroyEngineFlow implements EngineDefinition, ReceiptBoundDefinition
+final readonly class InstanceDestroyEngineFlow implements EngineDefinition
 {
     public const string Kind = 'instance.destroy';
 
@@ -271,11 +270,6 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
             'caddy' => ['from_sha256' => RouteDestroyEngineFlow::digest($caddy, 'from_sha256'), 'content' => ['blob' => ['content' => ValidatedData::string($caddy['content'])]]]];
     }
 
-    public function terminalStatuses(string $action): array
-    {
-        return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
-    }
-
     /**
      * Records the withdrawal on the removal and frees the Route Nodes, as the Swamp run's release step does: a refused release never
      * fails the removal (the Operation's end frees the hold then), and its line says whether it happened, which the result carries.
@@ -296,10 +290,5 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
 
         // Released only when a hold row was actually freed; the Instance's own Operation lock stays until the removal ends.
         return json_encode(['route_hold_released' => $released, 'http_status' => $released ? '200' : '000'], JSON_THROW_ON_ERROR);
-    }
-
-    public function terminalFailure(string $action, string $code): bool
-    {
-        return ! str_starts_with($code, 'blob.');
     }
 }

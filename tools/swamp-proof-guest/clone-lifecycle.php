@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Engine\NodeBusAccess;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Infrastructure\Engine\GatewayBus;
@@ -46,9 +47,16 @@ if ($mode === 'configuration') {
     $node = (int) $argv[2];
     $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
     $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? []];
+} elseif ($mode === 'extension' && in_array($argv[2] ?? '', ['tasks', 'conn'], true) && in_array($argv[3] ?? '', ['read', 'on', 'off'], true)) {
+    // Fixture only: the nested fleet has no AI router (Valkey and CLIProxyAPI), so the proof sets the stored state directly, past the
+    // dependency check of extension:enable, and restores exactly what it read. Model routing is not under test.
+    $store = $app->make(ExtensionStore::class);
+    if ($argv[3] !== 'read') {
+        $store->set($argv[2], $argv[3] === 'on');
+    }
+    $result = ['extension' => $argv[2], 'enabled' => $store->enabled($argv[2])];
 } elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && in_array(count($argv), [5, 7], true)
-    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && ctype_digit($argv[4])
-    && preg_match('/\A[a-z0-9-]+\z/', $argv[5] ?? 'remove') === 1 && preg_match('/\A[a-z_]+\.[a-z_]+\z/', $argv[6] ?? 'instance.destroy') === 1) {
+    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && preg_match('/\A[0-9][0-9a-z:-]*\z/', $argv[4]) === 1) {
     [$node, $operation, $target] = array_slice($argv, 2, 3);
     [$step, $action] = [$argv[5] ?? 'remove', $argv[6] ?? 'instance.destroy'];
     $isOrder = $mode === 'pending-order';
@@ -67,9 +75,14 @@ if ($mode === 'configuration') {
         } else {
             $line = json_decode($data, true, flags: JSON_THROW_ON_ERROR)['line'];
         }
+        // Until this step's own message is the latest on the subject, there is nothing to read yet: the caller waits.
         if ($message['subject'] !== $subject || $line['operation'] !== $operation.':'.$step || $line['target'] !== $target
-            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : ! in_array($line['status'], ['done', 'applied'], true))) {
-            throw new RuntimeException('The queued message does not belong to this proof destroy.');
+            || $line['action'] !== $action || ($isOrder && $line['node'] !== $node)) {
+            echo "null\n";
+            exit;
+        }
+        if (! $isOrder && ! in_array($line['status'], ['done', 'applied', 'output'], true)) {
+            throw new RuntimeException('The queued receipt of this proof step is not a success.');
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
             throw new RuntimeException('The proof receipt was not dropped.');

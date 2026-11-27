@@ -60,6 +60,8 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
     'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'site withdrawal' => ['executor-route-withdraw-site.json', ExecutorOrderSigner::StepExpiresAfterMs],
     'guarded DNS records' => ['executor-dns-guarded-records.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'copy sync import' => ['executor-instance-sync-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'copy sync scratch' => ['executor-instance-clear-base.json', ExecutorOrderSigner::StepExpiresAfterMs],
 ]);
 
 it('gives every order a new nonce', function (): void {

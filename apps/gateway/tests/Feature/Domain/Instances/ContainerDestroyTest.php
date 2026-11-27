@@ -1100,6 +1100,31 @@ it('preserves the registration and storage of a production release before and af
         ->and($instance->fresh())->not->toBeNull();
 })->with([false, true]);
 
+it('settles a signed removal only by its own done or failed receipt, never by another action\'s output or applied status', function (): void {
+    $clone = destroyClone(destroyDefault());
+    destroyOrderBus(function (string $subject): object {
+        if (str_starts_with($subject, '$JS.API.DIRECT.GET.KV_NODES.')) {
+            return new Payload('{"actions":["instance.destroy"]}');
+        }
+
+        return str_starts_with($subject, '$JS.API.CONSUMER.CREATE.ORDERS.') ? (object) [] : new Payload('{"seq":1}');
+    });
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    $engine = app(Engine::class);
+    $engine->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $line = ['action' => 'instance.destroy', 'target' => (string) $clone->id, 'operation' => $operation->id.':remove'];
+
+    foreach ([['status' => 'output', 'stdout' => '{}'], ['status' => 'applied', 'changes' => 1], ['status' => 'failed', 'code' => 'blob.missing']] as $fields) {
+        $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, ...$fields]]);
+    }
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail()->status)->toBe('sent');
+
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'done']]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
 /** A signed destroy of a clone that owns Route 42 on its Node, with the after-state the admission renders for the engine. */
 function routeOwningDestroy(Instance $clone, array $engine = []): Operation
 {

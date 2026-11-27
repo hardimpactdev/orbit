@@ -322,6 +322,12 @@ swamp/workflows/workflow-route-withdraw-node.yaml  instance:create instance:dest
 swamp/workflows/workflow-route-withdraw.yaml  instance:create instance:destroy
 
 swamp/ansible/instance/destroy-git.py  instance:destroy
+swamp/workflows/workflow-operation-task-sync-copy.yaml  task:sync
+swamp/ansible/tasks/task-instance-workspace-phase.yml  task:sync
+swamp/ansible/tasks/task-copy-base-names.yml  task:sync
+swamp/proof/task/sync.cases.yaml  task:sync
+apps/gateway/app/Domain/Tasks/TaskSyncEngineFlow.php  task:sync
+apps/agent/crates/instance/src/sync.rs  task:sync
 swamp/extensions/behaviors/operations/certificates/manifest.yaml  instance:clone instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-dev-command/manifest.yaml  instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-source-command/manifest.yaml  instance:clone

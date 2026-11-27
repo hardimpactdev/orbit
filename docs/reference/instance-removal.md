@@ -43,6 +43,8 @@ Physical slots do not belong to a database and never block removal. MySQL, Valke
 
 The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. It first withdraws the clone's private Routes with `route.withdraw_site` and guarded DNS steps. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
 
+While a task copy's [sync on the engine](/reference/gateway-engine#taskssync) holds the copy's Instance lock, removal of that copy, including the one `task:cancel` starts, refuses with HTTP 409 `operation.target_busy` until the sync ends.
+
 Removal follows the [`instance:destroy` chart](/cli/instance/destroy):
 
 1. **Schedules and work checks:** Admission removes Schedule triggers. For non-forced host checkouts, Orbit fetches origin and refuses dirty or unpushed work (ignoring Orbit-rendered `.env` and `.env.testing`). `gh_cli` Projects require `--force` on host checkouts.

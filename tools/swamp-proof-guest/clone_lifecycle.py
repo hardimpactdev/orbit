@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import tomllib
 from datetime import datetime
@@ -95,6 +96,14 @@ def stage_executor(log=False):
     return manifest
 
 
+def parsed(source, text):
+    # A reply that is not JSON names its source and size only: the text itself may hold what a scan found, so it never reaches a receipt.
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        raise ProofInfrastructure(f'{source}: not JSON ({len(text)} bytes)') from None
+
+
 def wait_for(read, message, seconds, interval=0.25):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -135,7 +144,9 @@ class CloneLane:
     def guest(self, node, *argv, stdin=None, timeout=45):
         result = self.run.fleet.sh(node, shlex.join(map(str, argv)), timeout=timeout, stdin_text=stdin)
         if result.returncode != 0:
-            raise ProofInfrastructure(f'{node}: {argv[0]} {argv[1] if len(argv) > 1 else ""} failed ({result.returncode})')
+            # Inside a container, the command run there and its first word; never an argument that could carry content.
+            inner = [str(word) for word in argv[argv.index('--') + 1:] if str(word) not in ('runuser', '-u', 'agent', '--')][:2] if '--' in argv else []
+            raise ProofInfrastructure(f'{node}: {argv[0]} {argv[1] if len(argv) > 1 else ""} {" ".join(inner)} failed ({result.returncode})'.replace('  ', ' '))
         return result.stdout.strip()
 
     def push(self, node, source, path):
@@ -145,10 +156,10 @@ class CloneLane:
         require(result.returncode == 0, f'{node}: could not install {Path(path).name}')
 
     def db(self, sql):
-        return json.loads(self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '-json', GATEWAY_DB, sql) or '[]')
+        return parsed('sqlite3', self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '-json', GATEWAY_DB, sql) or '[]')
 
     def helper(self, *args):
-        return json.loads(self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.guest_helper, *args))
+        return parsed('helper ' + args[0], self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.guest_helper, *args))
 
     def gateway_php(self, *args, timeout=45):
         self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.gateway_app + '/artisan', *args, timeout=timeout)
@@ -288,8 +299,10 @@ class CloneLane:
         result = subprocess.run(argv, capture_output=True, text=True, timeout=50)
         require(result.returncode == 0, f'{method} {path}: curl failed ({result.returncode})')
         payload, code = result.stdout.rsplit('\n', 1)
-        answer = json.loads(payload)
-        return int(code), answer.get('data'), (answer.get('error') or {}).get('code')
+        answer = parsed(f'{method} {path} HTTP {code}', payload)
+        error = answer.get('error') or {}
+        fields = sorted((error.get('details') or {}).items()) if error.get('code') == 'validation.failed' else None
+        return int(code), answer.get('data'), f'{error["code"]} {fields}' if fields else error.get('code')
 
     def admitted(self, method, path, body, key):
         code, row, error = self.api(method, path, body, key)
@@ -328,7 +341,7 @@ for line in open('/var/lib/orbit/executor/journal'):
         found.append({key: row.get(key) for key in ('record', 'operation', 'action', 'target', 'at_ms')}
                      | {'outcome': {key: row.get('outcome', {}).get(key) for key in ('status', 'code')}})
 print(json.dumps(found))'''
-        return json.loads(self.guest(self.node, 'python3', '-c', code, operation))
+        return parsed('executor journal', self.guest(self.node, 'python3', '-c', code, operation))
 
     def operation(self, operation, via):
         summary = self.db(f'''SELECT id,kind,target_id,status,request_id,lock_key,created_at,started_at,finished_at,error_code,
@@ -364,11 +377,11 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                             self.gateway_app + '/storage/logs', operation)
         return json.loads(answer or '{}')
 
-    def create(self, name, via, seed=False):
+    def create(self, name, via, seed=False, attempt=''):
         require(re.fullmatch('[a-z][a-z0-9-]{0,20}', name) and via in ('engine', 'swamp'), 'invalid clone case')
         advertised = self.set_capability(via == 'engine' or seed)
         started = time.monotonic()
-        admitted = self.admitted('POST', 'instances', {'project_id': self.project, 'node_id': self.node_id, 'name': name}, name + '-create')
+        admitted = self.admitted('POST', 'instances', {'project_id': self.project, 'node_id': self.node_id, 'name': name}, name + '-create' + attempt)
         operation, instance = int(admitted['id']), int(admitted['target_id'])
         if seed:
             self.default = instance
@@ -642,6 +655,393 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
             systemctl daemon-reload
         ''', 'sh', GUEST_STATE, self.gateway_app)
         self.systemctl('gateway', 'restart', *APP_SERVICES)
+
+
+SYNC_STEPS = ('fetch', 'sync', 'clear')
+SYNC_FIELDS = {'default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start', 'work'}
+CREDENTIAL = ('x-access-token', 'ghs_', 'github_pat_')
+# The scan builds its patterns from pieces, so neither its own argv nor its script text holds one and matches itself. It prints only
+# where a credential form is and how often, never a value: a process (environment or argv), a file anywhere in the copy's checkout and
+# its home and temporary folders, or Git configuration.
+CREDENTIAL_SCAN = '''
+a="x-access-"'token'; b="ghs"'_'; c="github_"'pat_'
+for path in /proc/[0-9]*/environ /proc/[0-9]*/cmdline; do
+  n=$(tr '\\0' '\\n' < "$path" 2>/dev/null | grep -a -c -e "$a" -e "$b" -e "$c" || :)
+  if [ "${n:-0}" -gt 0 ]; then echo "$path $n"; fi
+done
+grep -r -I -c -s -e "$a" -e "$b" -e "$c" /srv/workspace /home /root /etc /tmp /var/tmp /run 2>/dev/null | grep -v ':0$' || :
+n=$(git -C /srv/workspace config --list 2>/dev/null | grep -c -e "$a" -e "$b" -e "$c" -e extraheader -e 'credential\\.' || :)
+if [ "${n:-0}" -gt 0 ]; then echo "git-config $n"; fi
+'''
+# A credential form the scan must find in a worktree file: built from pieces, written for the self-check and removed at once.
+SENTINEL = 'x-access-' + 'token:proof-sentinel@example.invalid'
+
+
+class SyncLane(CloneLane):
+    """Task-copy syncs of one ready clone through the signed executor and through Swamp, read back inside the copy."""
+    KINDS = ('instance.create', 'instance.destroy', 'tasks.sync')
+
+    def counts(self):
+        containers = [row['name'] for row in parsed('incus list', self.incus('list', '--project', POOL, '--format=json'))]
+        volumes = [row['name'] for row in parsed('incus volumes', self.incus('storage', 'volume', 'list', POOL, '--project', POOL, '--format=json'))]
+        return {'containers': sorted(containers), 'volumes': sorted(volumes), 'instances': self.db('SELECT count(*) AS total FROM instances')[0]['total']}
+
+    def create(self, name, via, seed=False, attempt=''):
+        try:
+            return super().create(name, via, seed, attempt)
+        except ProofFailure as error:
+            # The Swamp container phase can lose its mktemp file in the new container's /tmp while it boots
+            # (instance-container-phase.yml, "Move the app account to www-data"). Not this group's code: the fixture's default retries once.
+            failed = self.db("SELECT id, json_extract(state,'$.native_failure.detail') AS detail FROM operations WHERE kind='instance.create' "
+                             "AND status='failed' ORDER BY id DESC LIMIT 1")
+            if not seed or attempt or not failed or "cannot stat '/tmp/" not in (failed[0]['detail'] or ''):
+                raise
+            self.record('default-create-boot-race', {'operation': failed[0]['id'], 'error': str(error)})
+            wait_for(lambda: not self.db(f"SELECT id FROM instances WHERE project_id={self.project}"), 'the failed default was not removed', 180, 2)
+            return super().create(name, via, seed, '-retry')
+
+    def setup(self, repository, branch):
+        self.start_counts = None
+        self.branch = branch
+        self.groups = {}
+        self.syncs = {}
+        self.extensions = None
+        self.start_counts = self.counts()
+        self.record('start-counts', self.start_counts)
+        super().setup(repository, branch)
+        # task:start and task:sync need the tasks extension. Fixture only: the nested fleet has no AI router, so the helper sets the stored
+        # state directly and cleanup restores exactly what it read; Conn is read and left alone.
+        self.extensions = {name: self.helper('extension', name, 'read')['enabled'] for name in ('tasks', 'conn')}
+        if not self.extensions['tasks']:
+            require(self.helper('extension', 'tasks', 'on')['enabled'], 'the tasks extension did not turn on')
+        self.record('extensions-before', self.extensions)
+
+    def cleanup(self):
+        # Groups first: a discarding cancel ends each group and removes its copy, so the Project can go. The extension state goes back
+        # while the guest helper still runs, then the base cleanup, then the fleet must be back at the counts the run started from.
+        try:
+            if self.installed and not self.closed:
+                self.set_capability(True)
+                for name, group in list(self.groups.items()):
+                    # The copy is read from the group, not from what start returned: a lost start answer still leaves a copy to remove.
+                    def owned(group=group):
+                        return [row['id'] for row in self.db(f'SELECT id FROM instances WHERE task_workspace_owner_id={group}')]
+                    copies = owned()
+                    group_row = self.db(f'SELECT status FROM tasks WHERE id={group}')
+                    if group_row and group_row[0]['status'] not in ('cancelled', 'completed'):
+                        admitted = self.admitted('POST', f'tasks/{group}/cancel', {'discard': True}, name + '-cancel')
+                        self.terminal(int(admitted['id']), seconds=400)
+                    wait_for(lambda: not owned(), f'the copy of group {group} outlived its cancelled group', 300, 2)
+                    for instance in copies:
+                        wait_for(lambda: self.runtime(instance) is None, f'copy {instance} outlived its cancelled group', 300, 2)
+                        require(not any(self.resources(instance).values()), f'copy {instance} left Node resources after its cancelled group')
+                    self.clones.pop(name, None)
+                    del self.groups[name]
+        finally:
+            try:
+                if self.extensions is not None:
+                    after = {name: self.helper('extension', name, 'off' if name == 'tasks' and not self.extensions[name] else 'read')['enabled']
+                             for name in self.extensions}
+                    require(after == self.extensions, 'the extension state was not restored')
+                    self.record('extensions-after', after)
+                    self.extensions = None
+            finally:
+                super().cleanup()
+        if self.start_counts is not None:
+            # Every destroy ends before the next run: the Node and Gateway are back at the counts this run started from.
+            back = wait_for(lambda: (lambda now: now if now == self.start_counts else None)(self.counts()),
+                            'the fleet did not return to its start counts', 300, 3)
+            self.record('end-counts', back)
+            self.start_counts = None
+
+    def copy(self, name, sibling):
+        self.create(sibling, 'engine')
+        self.set_capability(True)
+        code, group, error = self.api('POST', 'tasks', {'project_id': self.project, 'title': 'Sync proof ' + name, 'brief': 'Task-copy sync proof.',
+                                                        'status': 'todo', 'orchestration': 'external',
+                                                        'deliverables': [{'id': 'sync', 'type': 'file', 'description': 'Sync proof.', 'path': 'proof-sync.txt', 'change': 'created'}]})
+        require(code == 201, f'task group admission: HTTP {code} {error}')
+        group = int(group['id'])
+        self.groups[name] = group
+        started = time.monotonic()
+        operation = int(self.admitted('POST', f'tasks/{group}/start', {}, name + '-start')['id'])
+        self.terminal(operation, seconds=600)
+        found = self.db(f"""SELECT i.id, i.branch, i.starting_commit, i.task_workspace_owner_id, r.clone_source_instance_id FROM tasks t
+            JOIN instances i ON i.id=t.taskable_id JOIN instance_runtimes r ON r.instance_id=i.id WHERE t.id={group}""")
+        require(found and found[0]['task_workspace_owner_id'] == group and found[0]['branch'] == f'task-{group}'
+                and found[0]['clone_source_instance_id'] == self.default, f'task:start {operation} did not leave the group its own copy')
+        instance = int(found[0]['id'])
+        self.clones[name] = {'instance': instance, 'create': operation}
+        wait_for(lambda: self.api('GET', f'instances/{instance}')[1]['status'] == 'active', f'copy {instance} is not active', 120, 2)
+        start_ms = round((time.monotonic() - started) * 1000)
+        local = f'task-{group}'
+        require(self.work(instance, 'symbolic-ref', 'HEAD') == 'refs/heads/' + local, f'copy {instance} is not on {local}')
+        self.tip = self.work(instance, 'rev-parse', 'HEAD')
+        # The copy goes back three commits and loses every ref and reflog entry that still reaches its old head, so the head the mirror
+        # holds is missing here and each sync imports it (`bundled`). The work below is made on the older commit.
+        self.work(instance, 'reset', '--quiet', '--hard', 'HEAD~3')
+        self.work(instance, 'update-ref', f'refs/remotes/origin/{self.branch}', 'HEAD')
+        for line in self.work(instance, 'for-each-ref', '--contains', self.tip, '--format=%(refname)', 'refs/heads').splitlines():
+            self.work(instance, 'update-ref', line, 'HEAD')
+        self.work(instance, 'branch', 'proof-local', 'HEAD~1')
+        tracked = self.work(instance, 'ls-files').splitlines()[0]
+        self.workfile(instance, 'proof-stashed.txt', 'stashed\n')
+        self.work(instance, '-c', 'user.name=proof', '-c', 'user.email=proof@orbit.invalid', 'stash', 'push', '--quiet', '--include-untracked', '-m', 'proof')
+        self.workfile(instance, 'proof-staged.txt', 'staged\n')
+        self.work(instance, 'add', 'proof-staged.txt')
+        self.workfile(instance, tracked, 'unstaged\n', append=True)
+        self.workfile(instance, 'proof-untracked.txt', 'untracked\n')
+        self.strip(instance)
+        state = self.state(instance)
+        require(state['stash'] and state['untracked'] and state['staged'] != state['unstaged'], 'the copy work fixture is incomplete')
+        self.record(name + '-copy', {'instance': instance, 'group': group, 'start_operation': self.operation_row(operation),
+                                     'request_through_start_ms': start_ms, 'copy': found[0], 'state': state,
+                                     'sibling': self.clones[sibling]['instance']})
+
+    def operation_row(self, operation):
+        return self.db(f"SELECT id,kind,status,error_code,json_extract(state,'$.swamp_run_id') AS run FROM operations WHERE id={operation}")[0]
+
+    def container(self, instance, *argv, user='agent', stdin=None):
+        prefix = ['runuser', '-u', user, '--'] if user else []
+        return self.guest(self.node, 'incus', 'exec', f'instance-{instance}', '--project', POOL, '--cwd', '/srv/workspace', '--',
+                          *prefix, *argv, stdin=stdin, timeout=60)
+
+    def work(self, instance, *args):
+        return self.container(instance, 'git', *args)
+
+    def workfile(self, instance, path, content, append=False):
+        self.container(instance, 'sh', '-eu', '-c', 'cat >> "$1"' if append else 'cat > "$1"', 'sh', path, stdin=content)
+
+    def strip(self, instance):
+        # Puts origin/<default> back on HEAD and prunes every object only the mirror head reached; the stash reflog is kept.
+        ref = f'refs/remotes/origin/{self.branch}'
+        self.work(instance, 'update-ref', ref, self.work(instance, 'rev-parse', 'HEAD'))
+        # A pruned head has no ref left that reaches it, and `--contains` refuses a missing object.
+        reaching = self.work(instance, 'for-each-ref', '--contains', self.tip, '--format=%(refname)') if self.holds(instance, self.tip) else ''
+        for line in reaching.splitlines():
+            require(not line.startswith(('refs/heads/', 'refs/stash')), f'copy {instance}: {line} still reaches the mirror head')
+            self.work(instance, 'update-ref', '-d', line)
+        logs = [line for line in self.work(instance, 'for-each-ref', '--format=%(refname)').splitlines() if line != 'refs/stash']
+        self.work(instance, 'reflog', 'expire', '--expire=now', '--expire-unreachable=now', 'HEAD', *logs)
+        self.work(instance, 'gc', '--quiet', '--prune=now')
+        require(not self.holds(instance, self.tip), f'copy {instance} still holds the mirror head after the strip')
+
+    def holds(self, instance, commit):
+        return self.container(instance, 'sh', '-c', 'git cat-file -e "$1^{commit}" 2>/dev/null && echo yes || echo no', 'sh', commit) == 'yes'
+
+    def imported_owners(self, instance, since):
+        # Owners of the object files written since the sync started: the import must leave them agent's.
+        return sorted(set(self.container(instance, 'find', '/srv/workspace/.git/objects', '-type', 'f', '-newermt', f'@{since}',
+                                         '-printf', '%u\\n', user=None).split()))
+
+    def state(self, instance):
+        def hashed(*args):
+            return hashlib.sha256(self.work(instance, *args).encode()).hexdigest()
+
+        return {'head': self.work(instance, 'symbolic-ref', 'HEAD'), 'head_commit': self.work(instance, 'rev-parse', 'HEAD'),
+                'refs': self.work(instance, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/stash').splitlines(),
+                'stash': self.work(instance, 'stash', 'list', '--format=%H %gs').splitlines(),
+                'staged': hashed('diff', '--cached', '--binary'), 'unstaged': hashed('diff', '--binary'),
+                'untracked': self.container(instance, 'sh', '-c', 'git ls-files -z -o --exclude-standard | xargs -0 -r sha256sum').splitlines(),
+                'origin': self.work(instance, 'rev-parse', f'refs/remotes/origin/{self.branch}'), 'holds_tip': self.holds(instance, self.tip),
+                'root_owned': self.container(instance, 'find', '/srv/workspace', '-xdev', '-user', 'root', '-print', '-quit', user=None),
+                'owners': self.container(instance, 'stat', '-c', '%U:%G', '/srv/workspace/.git', '/srv/workspace/.git/objects', user=None).splitlines()}
+
+    def credential_hits(self, instance, operation=None):
+        # Locations and counts only. The Operation record is searched here, in Python, and reports its row and count.
+        found = self.container(instance, 'sh', '-c', CREDENTIAL_SCAN, user=None).splitlines()
+        if operation is not None:
+            row = json.dumps(self.db(f'SELECT input,state,result FROM operations WHERE id={operation}'))
+            count = sum(row.count(token) for token in CREDENTIAL)
+            found += [f'operation {operation} {count}'] if count else []
+        return found
+
+    def scan_check(self, instance):
+        # The scan must see a credential form in an ordinary worktree file before its silence counts.
+        self.workfile(instance, 'proof-sentinel.txt', SENTINEL + '\\n')
+        try:
+            seen = self.credential_hits(instance)
+        finally:
+            self.container(instance, 'rm', '-f', 'proof-sentinel.txt')
+        require(seen == ['/srv/workspace/proof-sentinel.txt:1'], f'the credential scan did not find exactly its worktree sentinel ({len(seen)} places)')
+        require(not self.credential_hits(instance), 'the credential scan found a credential form before any sync')
+        return seen
+
+    def watched(self, instance, act):
+        # Scans the copy again and again while `act` runs, then once more after it.
+        hits, failures, stop = [], [], threading.Event()
+
+        def watch():
+            try:
+                while not stop.is_set():
+                    hits.extend(self.credential_hits(instance))
+            except Exception as error:
+                # A scan that could not run found nothing: it must fail the check, not read as no hits.
+                failures.append(type(error).__name__)
+
+        watcher = threading.Thread(target=watch, daemon=True)
+        watcher.start()
+        try:
+            value = act()
+        finally:
+            stop.set()
+            watcher.join(60)
+        if failures or watcher.is_alive():
+            raise ProofInfrastructure(f'the credential scan during the sync did not run through ({failures or "still running"})')
+        return value, sorted(set(hits))
+
+    def bundled(self, operation):
+        output = self.db(f"SELECT output FROM operation_engine_steps WHERE operation_id={operation} AND name='sync'")[0]['output']
+        receipt = parsed('sync receipt', output) if isinstance(output, str) else output
+        receipt = parsed('sync receipt stdout', receipt['stdout']) if isinstance(receipt, dict) and 'stdout' in receipt else receipt
+        return receipt.get('bundled')
+
+    def credential_digest(self, operation):
+        # What the run minted, as its digest: an anonymous read mints the empty line, so no credential exists to leak.
+        found = self.db(f"SELECT json_extract(state,'$.engine_credential.sha256') AS sha, json_extract(state,'$.engine_credential.source_access') AS access "
+                        f"FROM operations WHERE id={operation}")[0]
+        return {**found, 'empty': found['sha'] == hashlib.sha256(b'').hexdigest()}
+
+    def mirror_head(self, instance):
+        return self.guest(self.node, 'git', '--git-dir', f'/var/lib/orbit/instance-repositories/{instance}.git', 'rev-parse', f'refs/heads/{self.branch}')
+
+    def scratch(self, instance):
+        # The exact per-copy paths: the Node's base folder and the mirror's seeding repository, the mirror pin, and the copy's bundle folder.
+        mirror = f'/var/lib/orbit/instance-repositories/{instance}.git'
+        node = self.guest(self.node, 'sh', '-c', 'for path in "$1" "$2"; do test ! -e "$path" || echo "$path"; done; '
+                          'git --git-dir "$3" for-each-ref --format="%(refname)" "$4"', 'sh',
+                          f'/var/tmp/orbit-task-base-{instance}', mirror + '.seeding', mirror, f'refs/orbit/task-base-{instance}').splitlines()
+        guest = self.container(instance, 'sh', '-c', 'test ! -e "$1" || echo "$1"', 'sh', f'/tmp/orbit-task-base-{instance}', user=None).splitlines()
+        return node + guest
+
+    def drop_receipt(self, group, instance, key):
+        target, path = f'{self.node_id}:fetch-{instance}', f'tasks/{group}/sync'
+        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        try:
+            operation = int(self.admitted('POST', path, {}, key)['id'])
+
+            def published():
+                rows = [row for row in self.steps(operation) if row['name'] == 'fetch']
+                return rows if rows and rows[0]['first_order_expires_ms'] else None
+
+            dispatch = wait_for(published, f'Sync {operation} did not publish its fetch', 15)
+            queued = wait_for(lambda: self.helper('pending-order', self.node_id, operation, target, 'fetch', 'instance.fetch_branch'),
+                              f'Sync {operation} had no signed fetch order on JetStream', 5)
+            self.systemctl('gateway', 'stop', ENGINE_UNIT)
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, target, 'fetch', 'instance.fetch_branch'),
+                               f'Sync {operation} did not leave the expected fetch receipt', 90)
+            held = self.db(f'SELECT status,lock_key FROM operations WHERE id={operation}')[0]
+            replay = self.admitted('POST', path, {}, key)
+            beside = self.api('POST', path, {}, key + '-beside')
+            require(held['status'] not in TERMINAL and held['lock_key'] == f'instance:{instance}' and replay['id'] == operation
+                    and beside[:3:2] == (409, 'operation.target_busy')
+                    and [row['status'] for row in self.steps(operation) if row['name'] == 'fetch'] != ['done'],
+                    f'Sync {operation} did not stay fenced without its fetch receipt')
+            self.record('dropped-receipt', {'dispatch': dispatch, 'queued_signed_order': queued, 'dropped': dropped, 'held': held,
+                                            'http_replay': {'id': replay['id'], 'status': replay['status']},
+                                            'beside': {'status': beside[0], 'code': beside[2]}})
+            return operation
+        finally:
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            self.systemctl('gateway', 'start', ENGINE_UNIT)
+
+    def held_ref(self, name, instance, group, key, before):
+        lock = f'/srv/workspace/.git/refs/remotes/origin/{self.branch}.lock'
+        self.workfile(instance, lock, '')
+        try:
+            failed, hits = self.watched(instance, lambda: self.held_sync(group, key))
+        finally:
+            self.container(instance, 'rm', '-f', lock)
+        summary, after = self.operation(failed, 'engine'), self.state(instance)
+        statuses = {step['name']: step['status'] for step in summary['steps']}
+        hits += self.credential_hits(instance, failed)
+        left = self.scratch(instance)
+        require(statuses.get('fetch') == 'done' and statuses.get('sync') == 'failed' and statuses.get('clear_after_failure') == 'done'
+                and {field: value for field, value in after.items() if field != 'holds_tip'} == {field: value for field, value in before.items() if field != 'holds_tip'}
+                and not left and not hits, f'Sync {failed} did not fail at the import and leave the copy unchanged '
+                f'({len(left)} scratch paths, {len(hits)} credential places)')
+        self.record(name + '-failed-import', {'operation': summary, 'state': after, 'scratch': left, 'credential_hits': hits})
+
+    def held_sync(self, group, key):
+        failed = int(self.admitted('POST', f'tasks/{group}/sync', {}, key + '-held')['id'])
+        self.terminal(failed, expect='failed', seconds=400)
+        return failed
+
+    def sync(self, name, via, sibling, fault=None, key=None):
+        require(via in ('engine', 'swamp') and (fault is None or (via == 'engine' and fault in ('receipt', 'held-ref'))), 'invalid sync case')
+        key = key or name
+        instance, group, other = self.clones[name]['instance'], self.groups[name], self.clones[sibling]['instance']
+        advertised = self.set_capability(via == 'engine')
+        self.strip(instance)
+        if not self.syncs and fault is None:
+            self.record('credential-scan-check', {'found_sentinel': self.scan_check(instance)})
+        before, other_before = self.state(instance), (self.state(other), self.resources(other))
+        if fault == 'held-ref':
+            # Only the injected lock goes; the retry recovers from what the failure left. The failed import already brought the head in,
+            # so the retry moves origin/<default> without another bundle.
+            self.held_ref(name, instance, group, key, before)
+            before = self.state(instance)
+            require(before['holds_tip'] and before['origin'] != self.tip, 'the failed import did not leave the head in the copy with origin/<default> unmoved')
+        since = int(time.time()) - 1
+        started = time.monotonic()
+
+        def act():
+            operation = self.drop_receipt(group, instance, key) if fault == 'receipt' else int(self.admitted('POST', f'tasks/{group}/sync', {}, key)['id'])
+            return operation, self.terminal(operation, seconds=400), round((time.monotonic() - started) * 1000)
+
+        (operation, row, elapsed), during = self.watched(instance, act)
+        summary, after = self.operation(operation, via), self.state(instance)
+        result = row.get('result') or {}
+        behind = int(self.work(instance, 'rev-list', '--count', f'{after["head"]}..refs/remotes/origin/{self.branch}'))
+        owners = self.imported_owners(instance, since)
+        bundled = self.bundled(operation) if via == 'engine' else None
+        if fault == 'held-ref':
+            require(after['holds_tip'] and bundled is False and owners in ([], ['agent']),
+                    f'Sync {operation} did not recover from the failed import without a new bundle (bundled {bundled}, {owners})')
+        else:
+            require(not before['holds_tip'] and after['holds_tip'] and owners == ['agent'] and bundled in (True, None),
+                    f'Sync {operation} did not import the missing head as agent ({owners}, bundled {bundled})')
+        require(before['origin'] != after['origin'] == self.mirror_head(instance) == self.tip == result.get('default_commit')
+                and result.get('behind_by') == behind and result.get('branch_commit') == after['head_commit'] and SYNC_FIELDS <= set(result),
+                f'Sync {operation} did not advance origin/{self.branch} to the mirror head with its result')
+        require({field: value for field, value in after.items() if field not in ('origin', 'holds_tip')}
+                == {field: value for field, value in before.items() if field not in ('origin', 'holds_tip')}
+                and not after['root_owned'], f'Sync {operation} changed HEAD, a branch, the index, work, a stash or ownership')
+        require(self.reachable(other) and (self.state(other), self.resources(other)) == other_before, f'Sync {operation} changed the sibling')
+        hits = sorted(set(during + self.credential_hits(instance, operation)))
+        left = self.scratch(instance)
+        require(not hits and not left, f'Sync {operation} left {len(hits)} credential places and {len(left)} scratch paths')
+        replay = self.admitted('POST', f'tasks/{group}/sync', {}, key)
+        require(replay['id'] == operation and replay['status'] == 'succeeded' and self.state(instance) == after,
+                'the same admission key did not return the terminal sync unchanged')
+        if via == 'engine':
+            done = {step['name']: step for step in summary['steps'] if step['status'] == 'done'}
+            journal = summary['journal']
+            require(set(SYNC_STEPS) <= set(done) and all(sum(item['record'] == 'open' and item['operation'] == f'{operation}:{step}' for item in journal) == 1
+                                                         for step in SYNC_STEPS), f'Sync {operation} did not execute each step once on the Node')
+            if fault == 'receipt':
+                require(done['fetch']['sends'] == 2 and sum(item['record'] == 'seen' and item['operation'] == f'{operation}:fetch' for item in journal) >= 2,
+                        f'Sync {operation} did not resend its fetch')
+        outcome = {'instance': instance, 'group': group, 'sibling': other, 'advertisement': advertised, 'before': before, 'after': after,
+                   'operation': summary, 'result': result, 'credential_hits': hits, 'bundled': bundled, 'imported_owners': owners,
+                   'credential': self.credential_digest(operation), 'http_replay': {'id': replay['id'], 'status': replay['status']},
+                   'request_through_terminal_ms': elapsed}
+        self.syncs[key] = outcome
+        self.record(key + '-sync', outcome)
+
+    def sync_compare(self, engine, swamp):
+        signed, legacy = self.syncs[engine], self.syncs[swamp]
+        comparison = {'engine_ms': signed['request_through_terminal_ms'], 'swamp_ms': legacy['request_through_terminal_ms'],
+                      'swamp_production_median_ms': 24500, 'same_copy': signed['instance'] == legacy['instance'],
+                      'engine_steps_ms': {step['name']: step['done_ms'] - step['first_sent_ms'] for step in signed['operation']['steps'] if step['done_ms']},
+                      'swamp_gateway_start_ms': legacy['operation'].get('dispatch_timing'),
+                      'same_result': signed['result'] == legacy['result'],
+                      'bundled_engine': signed['bundled'], 'both_imported': not signed['before']['holds_tip'] and not legacy['before']['holds_tip']}
+        differs = sorted(field for field in set(signed['result']) | set(legacy['result']) if signed['result'].get(field) != legacy['result'].get(field))
+        require(comparison['same_copy'] and comparison['same_result'] and comparison['both_imported'],
+                f'the engine and Swamp syncs of the same copy state differ in {differs}')
+        self.record('sync-comparison', comparison)
 
 
 if __name__ == '__main__':

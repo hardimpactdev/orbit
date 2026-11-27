@@ -208,7 +208,7 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
     // An older executor refuses an input it does not know, so the Gateway sends one only to a Node that names it here.
     let mut features: Vec<&str> = Vec::new();
     if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
-        features.push("instance.t3_pairing");
+        features.extend(["instance.t3_pairing", "instance.fetch_seed"]);
     }
     if settings.enabled.allows(orbit_executor_core::action::Action::DnsPublishRecords) {
         features.push("dns.guarded_records");
@@ -494,7 +494,7 @@ mod tests {
             .collect();
         assert!(node_targets.contains(&"instance.club_key"));
         assert!(!node_targets.contains(&"instance.checkout"));
-        assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing"]));
+        assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing", "instance.fetch_seed"]));
     }
 
     #[test]

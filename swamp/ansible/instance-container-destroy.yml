@@ -219,6 +219,8 @@
                 task_base_instance: "{{ container.mirror | basename | regex_replace('[.]git$', '') }}"
             - name: Remove the Node task base scratch
               ansible.builtin.file: { path: "{{ base_node }}", state: absent }
+            - name: Remove the copy's mirror seed staging
+              ansible.builtin.file: { path: "{{ base_seeding }}", state: absent }
             # A default's spares and its spare builder go with its inner volume (docs/reference/development-containers.md#spare-volumes).
             - name: Read the custom volumes beside the inner volume
               when: container.inner_volume is defined
