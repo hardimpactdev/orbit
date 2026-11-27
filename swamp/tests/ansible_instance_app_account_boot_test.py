@@ -53,7 +53,7 @@ class AppAccountBoot(unittest.TestCase):
         self.env = {"PATH": f"{shims}:{os.environ['PATH']}", "TMPDIR": str(self.tmp)}
 
     def run_wrapper(self, content, **env):
-        return subprocess.run(wrapper(self.target), input=content, capture_output=True, text=True, env={**self.env, **env})
+        return subprocess.run(wrapper(self.target), check=False, input=content, capture_output=True, text=True, env={**self.env, **env})
 
     def test_the_swap_file_installs_and_runs_while_tmp_is_replaced(self):
         content = "#!/bin/sh\necho 'orbit-app-user: already www-data'\n"
