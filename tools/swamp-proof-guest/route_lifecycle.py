@@ -472,6 +472,7 @@ print("\\n".join(sorted(names)))'''
         self.set_dns(via == 'engine')
         before = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
         require(self.present(before['route']) and before['resources']['incus'] == ['Running'], f'Route-owning clone {instance} is not live')
+        names_before = self.served_names(domain)
         started = time.monotonic()
         boundary = None
         if fault == 'boundary':
@@ -492,7 +493,10 @@ print("\\n".join(sorted(names)))'''
                 and not self.runtime(instance) and self.absent(after['route']) and not any(after['resources'].values())
                 and not self.db(f"SELECT id FROM routes WHERE domain='{domain}'") and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'Destroy {operation} did not withdraw the Route, free its holds and remove the clone')
+        names_after = self.served_names(domain)
+        require(names_after == names_before, f'Destroy {operation} changed what the VPN Node answers for other names: {names_before} -> {names_after}')
         result = {'instance': instance, 'domain': domain, 'operation': summary, 'removal': removal, 'before': before, 'after': after,
+                  'served_names': {'before': names_before, 'after': names_after},
                   'sibling': {'before': sibling_before, 'during': sibling_during, 'after': self.healthy(sibling)}, 'request_through_terminal_ms': elapsed,
                   'cli': cli, 'boundary': boundary}
         if via == 'engine':
