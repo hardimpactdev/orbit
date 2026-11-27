@@ -50,11 +50,13 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 
 The engine runs the admitted `route_create` plan while preserving Route holds and waiting-create Caddyfile refreshes. Its steps run in this order:
 
-1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node. The Gateway sends the folder, its owner and modes, and the subject. Admission requires `tls.csr_input` in the leaf Node's `features`; without it the Route runs on Swamp.
+1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node.
 2. `sign-<i>`: The Gateway signs the request using `operation:direct:certificate-sign`. It refuses any pending cancellation.
 3. `site-<node>`: `route.publish_site` configures Caddy access, `APP_URL`, symlinks, PHP-FPM pools, leaf certificates, Orbit root trust, and the Caddyfile.
 4. `dns-<i>`: `dns.publish_records` updates changed private DNS records on each VPN Node alongside site publication.
 5. `probe-<i>`: The Gateway completes a TLS handshake with each serving Node over its WireGuard address, trusting only the Orbit root.
+
+For `csr-<i>`, the Gateway sends the folder, its owner and modes, and the subject. Admission requires `tls.csr_input` in the leaf Node's `features`. Without it, the Route runs on Swamp.
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
