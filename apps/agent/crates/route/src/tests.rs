@@ -136,11 +136,39 @@ impl System for Fake {
 
 const DIRECTORY: &str = "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef";
 
+/// The input the Gateway sends: folder, owner, modes and subject are all its own.
+fn csr_input(directory: &str, domain: &str) -> serde_json::Value {
+    json!({"directory": directory, "user": "root", "group": "caddy", "directory_mode": "0750", "key_mode": "0640", "subject": "/CN=Orbit", "domain": domain})
+}
+
+#[test]
+fn a_csr_takes_its_folder_owner_modes_and_subject_from_the_input() {
+    let fake = Fake::new();
+    let directory = "/srv/elsewhere/leaf";
+    fs::create_dir_all(fake.path(directory)).expect("folder");
+    let mut input = csr_input(directory, "shop.test");
+    input["user"] = json!("keeper");
+    input["group"] = json!("readers");
+    input["directory_mode"] = json!("0700");
+    input["key_mode"] = json!("0600");
+    input["subject"] = json!("/CN=Someone Else");
+    ensure_csr(&fake, &input).expect("a request");
+    let commands = fake.commands.borrow();
+    assert!(commands.iter().any(|argv| argv == &strings_of(&["/usr/bin/install", "-d", "-o", "keeper", "-g", "readers", "-m", "0700", directory])));
+    assert!(commands.iter().any(|argv| argv.first().is_some_and(|program| program == "/usr/bin/chown") && argv.contains(&"keeper:readers".to_owned())));
+    assert!(commands.iter().any(|argv| argv.first().is_some_and(|program| program == "/usr/bin/chmod") && argv.contains(&"0600".to_owned())));
+    assert!(commands.iter().any(|argv| argv.contains(&"/CN=Someone Else".to_owned())));
+}
+
+fn strings_of(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
 #[test]
 fn a_csr_makes_the_key_once_and_reuses_it() {
     let fake = Fake::new();
     fs::create_dir_all(fake.path(DIRECTORY)).expect("version folder");
-    let input = json!({"directory": DIRECTORY, "domain": "shop.orbit"});
+    let input = csr_input(DIRECTORY, "shop.orbit");
 
     let first = ensure_csr(&fake, &input).expect("first request");
     let second = ensure_csr(&fake, &input).expect("repeat");
@@ -157,10 +185,18 @@ fn a_csr_makes_the_key_once_and_reuses_it() {
 #[test]
 fn a_csr_refuses_a_folder_or_domain_outside_its_shape() {
     let fake = Fake::new();
+    let with = |key: &str, value: serde_json::Value| {
+        let mut input = csr_input(DIRECTORY, "shop.orbit");
+        input[key] = value;
+        input
+    };
     for input in [
-        json!({"directory": "/etc/passwd", "domain": "shop.orbit"}),
-        json!({"directory": DIRECTORY, "domain": "shop.orbit -addext x"}),
-        json!({"directory": DIRECTORY, "domain": "shop.orbit", "extra": true}),
+        csr_input("/etc/../passwd", "shop.orbit"),
+        csr_input(DIRECTORY, "shop.orbit -addext x"),
+        with("extra", json!(true)),
+        with("subject", json!("/CN=Orbit -x\n")),
+        with("key_mode", json!("0640 -R")),
+        with("user", json!("root;x")),
     ] {
         assert_eq!(ensure_csr(&fake, &input).expect_err("refused").code, "route.input_invalid");
     }
@@ -293,7 +329,7 @@ fn a_broken_key_is_replaced_once() {
     let fake = Fake::new();
     fake.write(&format!("{DIRECTORY}/key.pem"), "BROKEN");
 
-    ensure_csr(&fake, &json!({"directory": DIRECTORY, "domain": "shop.orbit"})).expect("a request for a new key");
+    ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for a new key");
 
     assert_eq!(fake.ran("genpkey"), 1);
     assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");

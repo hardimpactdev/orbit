@@ -150,6 +150,8 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
+            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
+            | Action::ConfigApply | Action::HttpProbe => host(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -349,6 +351,28 @@ fn route(order: &VerifiedOrder) -> Outcome {
 fn dns(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_dns::NodeSystem::new(bus::BLOBS_PATH);
     orbit_executor_dns::publish_records(&system, order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |changes| Outcome::Applied { changes },
+    )
+}
+
+/// The host family (ADR 0271 N3): one host resource per order, every path, name, lock and digest from the input. A failure's
+/// code goes to the Gateway, its detail only to the log.
+fn host(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
+    let primitive: fn(&orbit_executor_host::NodeSystem, &serde_json::Value) -> Result<u32, orbit_executor_host::Failure> = match order.action() {
+        Action::FileEnsure => orbit_executor_host::file_ensure,
+        Action::DotenvEnsure => orbit_executor_host::dotenv_ensure,
+        Action::PosixAclEnsure => orbit_executor_host::acl_ensure,
+        Action::CaTrustEnsure => orbit_executor_host::trust_ensure,
+        Action::SystemdUnitEnsure => orbit_executor_host::unit_ensure,
+        Action::ConfigApply => orbit_executor_host::config_apply,
+        _ => orbit_executor_host::probe,
+    };
+    primitive(&system, order.input()).map_or_else(
         |failure| {
             log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
             Outcome::failed(failure.code)

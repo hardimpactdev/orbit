@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RouteWriteNodes;
 use App\Domain\Routes\NativeRouteUpdateInput;
+use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
@@ -64,7 +65,7 @@ final class BindLockBus implements MachineBus
 
     public function nodeFeatures(int $node): array
     {
-        return [];
+        return [RouteEngineFlow::CsrFeature];
     }
 
     public function nodeTargetActions(int $node): array

@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-process-restart-output,executor-schedule-ensure-timer}.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/host/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-instance-sync-base,executor-instance-clear-base,executor-instance-work-read,executor-process-ensure-state,executor-process-read-instance,executor-process-restart,executor-process-restart-output,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -122,19 +122,19 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | Primitive | Resource | State | Replaces |
 | --- | --- | --- | --- |
 | `ufw.ensure_rule` | One ufw rule, port or route | Built for port rules; route rules planned | The `ufw route allow` call inside `instance.clone`; the rule removals of `instance.destroy` |
-| `tls.ensure_csr` | One private key and its signing request | Built; its folder pattern, owner, mode and certificate subject move into the input | |
-| `file.ensure` | One file, folder or link: content, owner, mode, an optional digest it must still hold, or absent | Planned | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
+| `tls.ensure_csr` | One private key and its signing request | Built; its folder, owner, modes and certificate subject arrive in the input (feature `tls.csr_input`) | |
+| `file.ensure` | One file, folder or link: content, owner, mode, an optional digest it must still hold, or absent | Built | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
 | `file.line.ensure` | One line or one marked block of lines in a file | Planned | The `/etc/hosts` and NSS edits of `instance.start` and `instance.prepare` |
 | `file.read` | The content of one small file, read only | Planned | The seed manifest and seed take reads of `instance.clone` and `instance.prepare` |
-| `dotenv.ensure` | Keys of one dotenv file | Planned | The `APP_URL` edit of `route.publish_site`; the `.env` merge of `instance.checkout` |
+| `dotenv.ensure` | Keys of one dotenv file | Built | The `APP_URL` edit of `route.publish_site`; the `.env` merge of `instance.checkout` |
 | `json.ensure` | Keys of one JSON file | Planned | The JSON merges of `instance.prepare` |
-| `posix.acl.ensure` | The access list of one path | Planned | The `setfacl` calls of `route.publish_site` |
-| `ca.trust.ensure` | One certificate in a trust store | Planned | The trust steps of `route.publish_site` and `instance.prepare` |
+| `posix.acl.ensure` | The access list of one path | Built | The `setfacl` calls of `route.publish_site` |
+| `ca.trust.ensure` | One certificate in a trust store | Built | The trust steps of `route.publish_site` and `instance.prepare` |
 | `hostname.ensure` | The host name of one machine | Planned | The host name steps of `instance.start` and `instance.names` |
 | `account.ensure` | One user account and its group | Planned | The app-account step of `instance.start` |
-| `config.apply` | One set of configuration files that share a lock | Planned | `dns.publish_records`; the Caddy and PHP-FPM parts of `route.publish_site` and `route.withdraw_site` |
-| `http.probe` | One HTTP answer, read with a bounded wait and a typed expectation | Planned | The Caddy read-back of `route.withdraw_site`; the readiness waits of `instance.t3` and `instance.fleet_ready` |
-| `systemd.unit.ensure` | One unit: enabled, running or stopped | Planned | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
+| `config.apply` | One set of configuration files that share a lock | Built | `dns.publish_records`; the Caddy and PHP-FPM parts of `route.publish_site` and `route.withdraw_site` |
+| `http.probe` | One HTTP answer, read with a bounded wait and a typed expectation | Built | The Caddy read-back of `route.withdraw_site`; the readiness waits of `instance.t3` and `instance.fleet_ready` |
+| `systemd.unit.ensure` | One unit: enabled, running or stopped | Built | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
 | `systemd.unit.restart`, `systemd.unit.signal` | One run of one unit, restarted or signalled at most once per order | Planned | `process.read_instance` and `process.restart` for units; the reload of `instance.names` |
 | `docker.container.ensure`, `docker.container.restart` | One Docker container | Planned | The container branches of the process family |
 | `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Planned | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
@@ -192,7 +192,7 @@ The executor implements these action families today. Only `proof.noop` meets the
 | `proof.noop` | `proof` | No-op diagnostic targeting the Node |
 | `sleep`, `wake`, `discard` | `power` | Signed container freeze, memory restore/unfreeze, and plan cleanup |
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
-| `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
+| `tls.ensure_csr` | `route` | Creates the RSA 2048 key once and returns a CSR (`output`) for a domain; folder, owner, modes and subject come from the input |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile; `route.update` sends it twice, the side-by-side and then the lasting Caddyfile, never with `APP_URL` |
 | `route.withdraw_site` | `route` | Withdraws a Route from the Node: guarded Caddyfile and pools without it, leaf folders removed, Caddy reloaded, admin API read back |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
@@ -210,6 +210,34 @@ It merges a shared pool by scope: a scope it changes must still hold its rendere
 `systemctl reload caddy` returns before Caddy loads the new configuration, so it then reads `127.0.0.1:2019/config/` again within one 5 s budget that its reads and 250 ms waits share. Each read may take what is left of it, at least 0.5 s. It succeeds at the first answer that names no withdrawn domain, and fails `route.withdraw_unverified` at the bound when Caddy still names one or the admin API never answered.
 
 An executor with the `dns` family reports the `dns.guarded_records` feature. `dns.publish_records` holds the Node's DNS lock, `/run/lock/orbit-dnsmasq.lock`. With it, each `dns.publish_records` file may carry `from_sha256`, the digest of the bytes the Gateway rendered from. A file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict`, and neither file is written.
+
+### The host family
+
+The `host` family (`crates/host`) holds the host-resource primitives of the [catalogue](#the-catalogue). App-dev and vpn enable it from agent 0.36.0 (`NodeExecutorInput::FamilySince`), because the Route steps run there. No flow sends them yet: the Route rewrite moves `route.create`, `route.destroy` and `route.update` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node. The Gateway sends every path, owner, mode, unit, lock and digest. Content arrives as a blob.
+
+| Primitive | Input | Work |
+| --- | --- | --- |
+| `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
+| `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
+| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads the entry with `getfacl` and sets it only when it differs. A recursive entry is applied below on every run. |
+| `ca.trust.ensure` | A `<name>.crt` and a PEM certificate, or `absent` | Places the certificate in `/usr/local/share/ca-certificates/` and runs `update-ca-certificates` only on a change. |
+| `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped` | Enables, disables, starts or stops only what differs, then reads the unit back. |
+| `config.apply` | Lock path, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
+| `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
+
+A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
+
+`config.apply` takes the lock the input names, for example `/etc/caddy/.orbit-publish.lock` or `/run/lock/orbit-dnsmasq.lock`, so it shares the lock with Swamp's writers of the same files. Under it, each live file must hold its `from_sha256` or already the desired bytes, or be absent when the input names no digest. Otherwise it refuses `owned_revision_conflict` before any write. It writes the changed files, runs each validator, and reloads or restarts each unit on every run. A validator comes from a fixed list, and Rust builds its command:
+
+| Validator | Command |
+| --- | --- |
+| `caddy` (`config`, `user`) | `runuser -u <user> -- caddy validate --config <config> --adapter caddyfile` |
+| `php-fpm` (`version`, optional `fpm_config`, `ini_scan_dir`) | `php-fpm<version> -t`, with `--fpm-config` and `PHP_INI_SCAN_DIR` when given |
+| `dnsmasq` | `dnsmasq --test` |
+
+A failed write or validation puts every file back to its exact prior bytes, owner and mode, or removes a new one (`config.write_failed`, `config.validate_failed`). A failed reload or restart puts the files back and loads the units again (`config.load_failed`). A scope-by-scope pool merge is the Gateway's: it renders the whole file.
+
+An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends root, `caddy`, `0750`, `0640` and `/CN=Orbit`. A Route whose leaf Node lacks the feature runs on Swamp.
 
 ### The instance family
 
