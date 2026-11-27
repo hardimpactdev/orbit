@@ -1,8 +1,9 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -17,13 +18,21 @@ struct Fake {
     inactive: bool,
     /// What Caddy's admin API answers.
     admin: String,
+    /// What Caddy's admin API answers first, one read each, before [`Fake::admin`] answers at once, and how long each answer
+    /// takes: a reload Caddy has not loaded yet, or an admin API that answers slowly.
+    loading: RefCell<VecDeque<(Duration, Result<String, String>)>>,
+    /// The waits between read-backs, recorded instead of slept.
+    sleeps: RefCell<Vec<Duration>>,
+    /// The fake monotonic clock: [`Fake::now`] is `start` plus the time slept and read so far.
+    start: Instant,
+    elapsed: RefCell<Duration>,
     /// Whole commands that fail.
     failing_argv: Vec<Vec<&'static str>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("scratch root"), commands: RefCell::default(), blobs: HashMap::new(), failing: Vec::new(), inactive: false, admin: String::new(), failing_argv: Vec::new() }
+        Self { root: tempfile::tempdir().expect("scratch root"), commands: RefCell::default(), blobs: HashMap::new(), failing: Vec::new(), inactive: false, admin: String::new(), loading: RefCell::default(), sleeps: RefCell::default(), start: Instant::now(), elapsed: RefCell::default(), failing_argv: Vec::new() }
     }
 
     /// The current user and group: what a file the tests make gets.
@@ -79,7 +88,13 @@ impl System for Fake {
             }
             [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
-            ["/usr/bin/curl", ..] => Ok(self.admin.clone()),
+            ["/usr/bin/curl", .., "--max-time", limit, _] => {
+                // A read takes its answer's time, or curl gives up at its --max-time.
+                let limit = Duration::from_secs_f64(limit.parse().expect("--max-time in seconds"));
+                let (takes, answer) = self.loading.borrow_mut().pop_front().unwrap_or_else(|| (Duration::ZERO, Ok(self.admin.clone())));
+                *self.elapsed.borrow_mut() += takes.min(limit);
+                if takes > limit { Err("operation timed out".to_owned()) } else { answer }
+            }
             ["/usr/bin/getent", "group", gid] if gid.chars().all(|c| c.is_ascii_digit()) => Ok(format!("staff:x:{gid}:\n")),
             [_, "is-active", ..] if self.inactive => Err("inactive".to_owned()),
             _ => Ok(String::new()),
@@ -103,6 +118,15 @@ impl System for Fake {
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
         self.blobs.get(sha256).cloned().ok_or_else(|| "missing".to_owned())
+    }
+
+    fn now(&self) -> Instant {
+        self.start + *self.elapsed.borrow()
+    }
+
+    fn sleep(&self, duration: Duration) {
+        self.sleeps.borrow_mut().push(duration);
+        *self.elapsed.borrow_mut() += duration;
     }
 
     fn superuser(&self) -> u32 {
@@ -351,7 +375,62 @@ fn a_withdrawal_fails_its_read_back_while_caddy_still_serves_the_name() {
     fake.admin = r#"{"routes":[{"match":[{"host":["shop.orbit"]}]}]}"#.to_owned();
     let input = withdraw_input(&mut fake, WITH);
 
-    assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_unverified");
+    let failure = withdraw_site(&fake, &input).expect_err("unverified");
+    assert_eq!(failure.code, "route.withdraw_unverified");
+    assert_eq!(failure.detail, "Caddy still serves a withdrawn name");
+    assert_eq!(fake.ran("http://127.0.0.1:2019/config/"), 20, "an instant answer is read every 250 ms while the 5 s last");
+    assert_eq!(*fake.elapsed.borrow(), Duration::from_secs(5), "it fails at the bound, never later");
+}
+
+#[test]
+fn a_slow_admin_answer_counts_toward_the_bound_and_is_accepted_within_it() {
+    let absent = r#"{"routes":[{"match":[{"host":["other.orbit"]}]}]}"#.to_owned();
+    let present = r#"{"routes":[{"match":[{"host":["shop.orbit"]}]}]}"#.to_owned();
+    let slow = Duration::from_millis(2250);
+    let run = |loading: Vec<(Duration, Result<String, String>)>| {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        fake.admin.clone_from(&present);
+        *fake.loading.borrow_mut() = loading.into();
+        let input = withdraw_input(&mut fake, WITH);
+        let result = withdraw_site(&fake, &input).map_err(|failure| failure.detail);
+        let elapsed = *fake.elapsed.borrow();
+        (result, fake.ran("http://127.0.0.1:2019/config/"), elapsed)
+    };
+
+    // An admin API that answers the configuration without the Route after 2.25 s: the first read gets the whole budget.
+    let (result, reads, elapsed) = run(vec![(slow, Ok(absent))]);
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!((reads, elapsed), (1, slow));
+
+    // An admin API that never answers: one read that gives up at the bound, not one 2 s read after another.
+    let (result, reads, elapsed) = run(vec![(Duration::from_secs(3600), Ok(String::new()))]);
+    assert_eq!(result.expect_err("unverified"), "Caddy admin API");
+    assert_eq!((reads, elapsed), (1, Duration::from_secs(5)));
+
+    // An admin API that still names the Route after 2.25 s each time: two reads and two waits use the 5 s.
+    let (result, reads, elapsed) = run(vec![(slow, Ok(present.clone())), (slow, Ok(present.clone()))]);
+    assert_eq!(result.expect_err("unverified"), "Caddy still serves a withdrawn name");
+    assert_eq!((reads, elapsed), (2, Duration::from_secs(5)));
+}
+
+#[test]
+fn a_withdrawal_waits_for_caddy_to_load_the_reloaded_configuration() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    fake.write(&format!("{DIRECTORY}/cert.pem"), "LEAF");
+    let old = r#"{"routes":[{"match":[{"host":["shop.orbit","other.orbit"]}]}]}"#.to_owned();
+    // Op 35060: Caddy answers its old configuration right after `systemctl reload caddy`, then refuses once while it swaps,
+    // then serves the configuration without the Route.
+    let instant = Duration::ZERO;
+    *fake.loading.borrow_mut() = VecDeque::from([(instant, Ok(old.clone())), (instant, Ok(old.clone())), (instant, Ok(old)), (instant, Err("connection refused".to_owned()))]);
+    fake.admin = r#"{"routes":[{"match":[{"host":["other.orbit"]}]}]}"#.to_owned();
+    let input = withdraw_input(&mut fake, WITH);
+
+    assert!(withdraw_site(&fake, &input).expect("withdrawn without a retry") >= 3);
+    assert_eq!(fake.ran("http://127.0.0.1:2019/config/"), 5, "it stops reading once Caddy no longer names the Route");
+    assert_eq!(fake.sleeps.borrow().len(), 4);
+    assert_eq!(fake.reloads("caddy"), 1, "the wait only reads back; it never reloads again");
 }
 
 #[test]

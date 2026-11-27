@@ -498,6 +498,29 @@ async function compiledSwamp(folder: string) {
     await Deno.chmod(path, 0o755);
     return path;
 }
+// The Tool phase reads and writes apt as root through Ansible's `become`; CI runs fixtures without sudo. This stand-in for sudo accepts
+// only Ansible's non-interactive elevation to root, then runs the command as the test user with FIXTURE_BECOME_USER naming the target,
+// so a fixture command can tell an elevated step from one that ran unprivileged.
+async function fixtureSudo(folder: string) {
+    const path = `${folder}/sudo`;
+    await Deno.writeTextFile(path, `#!/bin/sh
+user=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -u) user=$2; shift 2 ;;
+    -H|-S|-n) shift ;;
+    -p) shift 2 ;;
+    --) shift; break ;;
+    -*) echo "fixture sudo: unexpected option $1" >&2; exit 64 ;;
+    *) break ;;
+  esac
+done
+[ "$user" = root ] || { echo "fixture sudo: elevation to '$user', not root" >&2; exit 65; }
+FIXTURE_BECOME_USER=$user exec "$@"
+`);
+    await Deno.chmod(path, 0o755);
+    return path;
+}
 async function toolsPhase(folder: string, runtime: string, tools: unknown[] | null = null, helper = toolHelper) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
@@ -508,7 +531,8 @@ async function toolsPhase(folder: string, runtime: string, tools: unknown[] | nu
     const tool = { id: 3, manager: "apt", package: "tree", version_constraint: null, protected: ["tree"], repository: null };
     await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false, tasks,
-        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: helper, orbit_run: folder },
+        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: helper, orbit_run: folder,
+            ansible_become_exe: await fixtureSudo(folder) },
     }]));
     const result = await new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
@@ -620,10 +644,10 @@ const refreshed = ${JSON.stringify(refresh)};
 switch (mode) {
   case "check": console.log('{"ready":true}'); break;
   case "plan": console.log(JSON.stringify({version:["/bin/true"], inventory:["cat", observed],
-    refresh:${JSON.stringify(["/bin/sh", "-c", 'id -u > "$1"', "fixture", refresh])}, candidate:["/bin/true"]})); break;
+    refresh:${JSON.stringify(["/bin/sh", "-c", 'printf %s "$FIXTURE_BECOME_USER" > "$1"', "fixture", refresh])}, candidate:["/bin/true"]})); break;
   case "inspect": console.log(JSON.stringify({needs_write: input.query.stdout !== "2.0"})); break;
   case "candidate":
-    if (Deno.readTextFileSync(refreshed).trim() !== "0") throw new Error("no privileged refresh before selection");
+    if (Deno.readTextFileSync(refreshed).trim() !== "root") throw new Error("no privileged refresh before selection");
     console.log(JSON.stringify({write:${JSON.stringify(["/bin/sh", "-c", 'printf 2.0 > "$1"', "fixture", installed])}})); break;
   case "verify": console.log(JSON.stringify({installed_version: input.query.stdout})); break;
 }`);
@@ -631,7 +655,7 @@ switch (mode) {
         const phase = await toolsPhase(folder, Deno.execPath(), [tool], helper);
         assertEquals(phase.code, 0, phase.output);
         assertEquals(phase.recorded, [{ id: 3, status: "installed", installed_version: "2.0" }], phase.output);
-        assertEquals((await Deno.readTextFile(refresh)).trim(), "0");
+        assertEquals((await Deno.readTextFile(refresh)).trim(), "root");
         // The preference contract, read from what each task does rather than how it is named or how many tasks there are: a repository's
         // add computes its held preferences on the control host and writes them before anything of the repository is published; a Tool
         // joins its repository's preference only after the checkpoint records it installed. A failure writes no preference.
