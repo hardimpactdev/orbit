@@ -160,6 +160,8 @@ enum NodeFactKind: string
                 'formulae' => ['sometimes', 'array', 'list', 'max:5000'],
                 'formulae.*.name' => ['required', 'string', 'max:255'],
                 'formulae.*.versions' => ['present', 'array', 'list', 'max:64'],
+                // The version `opt/<name>` links to; agents before it, and a formula without a link, leave it out.
+                'formulae.*.linked' => ['sometimes', 'string', 'max:255'],
                 'formulae.*.tap' => ['present', 'nullable', 'string', 'max:255'],
                 'formulae.*.on_request' => ['present', 'nullable', 'boolean'],
                 'formulae.*.dependencies' => ['present', 'array', 'list', 'max:1000'],

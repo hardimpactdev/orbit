@@ -78,9 +78,17 @@ The observer reads each Tool Manager's local state files directly without invoki
 | `apt` | `/var/lib/dpkg/status`, `/etc/apt/sources.list*`, `/etc/apt/keyrings`, `/usr/share/keyrings` |
 | `composer` | Global `composer.json` and `vendor/composer/installed.json` |
 | `vp` | Vite+ home `bins/*.json` |
-| `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json` and `Caskroom/<cask>/<version>` |
+| `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json`, the `opt/<formula>` link and `Caskroom/<cask>/<version>` |
 
 The `apt` fact lists each `install ok installed` package and each `hold ok installed` package, a held one marked `"held": true`. The observer has no capability to read past file modes, so a `brew` formula appears only when others can read its Cellar folder; Orbit keeps the Linux prefix [readable](/reference/tools#readable-homebrew-prefix).
+
+Each `brew` formula lists every Cellar folder in `versions`, since Homebrew keeps an old version after an upgrade until `brew cleanup`. When `opt/<formula>` links to `../Cellar/<formula>/<version>` and that version is in the list, the formula also carries it as `linked`:
+
+```json
+{"name": "fzf", "versions": ["0.74.3", "0.75.0"], "linked": "0.75.0", "tap": "homebrew/core", "on_request": true, "dependencies": []}
+```
+
+The linked version is the installed one. Doctor and adoption read it, and use the only entry of `versions` when there is no link. With several versions and no link, the installed version is unknown: Doctor reports `tool.inspection_failed` and adoption is blocked with `version_unreadable`.
 
 [`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node. The observer reports what is installed; the Gateway stores [Tool membership and desired versions](/reference/tools#tool-modes) separately.
 
