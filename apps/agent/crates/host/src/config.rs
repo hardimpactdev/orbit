@@ -29,6 +29,8 @@ static UNIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9@_.:-]{1
 struct Input {
     /// The lock file every writer of these files takes.
     lock: String,
+    /// The folder the executor keeps this lock's recovery record in, outside every managed path.
+    recovery_dir: String,
     files: Vec<File>,
     #[serde(default)]
     validators: Vec<Validator>,
@@ -135,6 +137,8 @@ impl Validator {
 /// the desired bytes; `config.write_failed`, `config.validate_failed` or `config.load_failed`, each after every file is put
 /// back.
 pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
+    // The order's identity: the same input is the same order, so a retry of a step finds its own record.
+    let order = sha256(&serde_json::to_vec(input).map_err(|error| invalid(&error.to_string()))?);
     let input: Input = parse(input)?;
     validate(&input)?;
     let mut desired = Vec::new();
@@ -151,9 +155,15 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
     }
     let _lock = lock::exclusive(system, &input.lock, lock::WAIT)?;
 
-    // A run under this lock that stopped before its end left its record: its files go back to the state it found first.
-    let record = Record::at(system, &input.lock);
-    record.recover(system)?;
+    // A run under this lock that stopped before its end left its record. A replay of that same order restores the prior
+    // state and loads it again in the units the record reached; any other order refuses and touches nothing.
+    let record = Record { folder: system.path(&input.recovery_dir).join(sha256(input.lock.as_bytes())), order };
+    if let Some(pending) = record.pending()? {
+        if pending.order != record.order {
+            return Err(Failure::new("config.recovery_pending", format!("{} holds the record of another order", input.lock)));
+        }
+        record.recover(system, &pending, &input.units)?;
+    }
 
     // Every guard holds before the first write. Each file's restore point is what it held before this run: absent, or its
     // bytes with owner and mode. Only a live file that holds neither digest refuses.
@@ -203,13 +213,24 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
         }
     }
     for (index, unit) in input.units.iter().enumerate() {
+        // The record names the units reached before each one loads, so a replay loads the prior state in them again.
+        if let Err(error) = record.reach(index + 1) {
+            return Err(undo("config.write_failed", format!("recovery record: {error}"), &replaced));
+        }
         if let Err(detail) = load(system, unit) {
-            // The old files go back and load again in the units this run reached, so each runs what it ran before.
-            let mut failure = undo("config.load_failed", detail, &replaced);
+            // The old files go back and load again in the units this run reached, so each runs what it ran before. The
+            // record goes only once both hold, so a replay finishes a recovery that failed here.
+            let mut failure = match fs::restore(&replaced) {
+                Ok(()) => Failure::new("config.load_failed", detail),
+                Err(restore) => return Err(Failure::new("config.restore_failed", format!("{detail}; restore: {restore}"))),
+            };
             for reached in &input.units[..=index] {
                 if let Err(again) = load(system, reached) {
                     failure = Failure::new("config.restore_failed", format!("{}; reload {}: {again}", failure.detail, reached.unit));
                 }
+            }
+            if failure.code == "config.load_failed" {
+                record.drop();
             }
             return Err(failure);
         }
@@ -219,10 +240,20 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
     Ok(changes)
 }
 
-/// The prior state of one run's files, kept in the executor's own recovery folder, one record per lock. Every file in it was
-/// written by this executor; nothing beside a managed file is.
+/// The prior state of one run's files under one lock, kept in the order's recovery folder with the order's identity and the
+/// units it reached. Every file in it was written by this executor; nothing beside a managed file is.
 struct Record {
     folder: PathBuf,
+    order: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Listing {
+    order: String,
+    priors: Vec<Prior>,
+    /// How many of the order's units, in order, a load was started in.
+    reached: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -235,24 +266,25 @@ struct Prior {
 }
 
 impl Record {
-    fn at(system: &impl System, lock: &str) -> Self {
-        Self { folder: system.recovery().join(sha256(lock.as_bytes())) }
-    }
-
-    /// Restores every file of a stopped run's record to its prior state, then drops the record.
-    fn recover(&self, system: &impl System) -> Result<(), Failure> {
+    /// The record a stopped run left, if any.
+    fn pending(&self) -> Result<Option<Listing>, Failure> {
         let failed = |detail: String| Failure::new("config.restore_failed", detail);
-        let listing = match std::fs::read(self.folder.join("record.json")) {
-            Ok(listing) => listing,
+        match std::fs::read(self.folder.join("record.json")) {
+            Ok(listing) => serde_json::from_slice(&listing).map(Some).map_err(|error| failed(error.to_string())),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 self.drop();
-                return Ok(());
+                Ok(None)
             }
-            Err(error) => return Err(failed(error.to_string())),
-        };
-        let priors: Vec<Prior> = serde_json::from_slice(&listing).map_err(|error| failed(error.to_string()))?;
+            Err(error) => Err(failed(error.to_string())),
+        }
+    }
+
+    /// Restores every file of this order's record to its prior state, loads it again in the units the record reached, then
+    /// drops the record. A failure keeps the record, so the next replay tries again.
+    fn recover(&self, system: &impl System, listing: &Listing, units: &[Unit]) -> Result<(), Failure> {
+        let failed = |detail: String| Failure::new("config.restore_failed", detail);
         let mut replaced = Vec::new();
-        for prior in priors {
+        for prior in &listing.priors {
             let content = match prior.held {
                 Some((uid, gid, mode)) => Some((std::fs::read(self.folder.join(prior.index.to_string())).map_err(|error| failed(error.to_string()))?, Ids { uid, gid, mode })),
                 None => None,
@@ -260,6 +292,9 @@ impl Record {
             replaced.push((system.path(&prior.path), Previous { content }));
         }
         fs::restore(&replaced).map_err(failed)?;
+        for unit in units.iter().take(listing.reached) {
+            load(system, unit).map_err(|detail| failed(format!("reload {}: {detail}", unit.unit)))?;
+        }
         self.drop();
         Ok(())
     }
@@ -269,26 +304,37 @@ impl Record {
         self.drop();
         std::fs::create_dir_all(&self.folder)?;
         std::fs::set_permissions(&self.folder, std::fs::Permissions::from_mode(0o700))?;
-        let own = Ids { uid: 0, gid: 0, mode: 0o600 };
         let mut priors = Vec::new();
         for (index, (path, (_, previous))) in paths.iter().zip(replaced).enumerate() {
             let held = match &previous.content {
                 Some((bytes, ids)) => {
-                    fs::write_new(&self.folder.join(index.to_string()), bytes, own)?;
+                    fs::write_new(&self.folder.join(index.to_string()), bytes, OWN)?;
                     Some((ids.uid, ids.gid, ids.mode))
                 }
                 None => None,
             };
             priors.push(Prior { path: (*path).to_owned(), held, index });
         }
-        let listing = serde_json::to_vec(&priors).map_err(std::io::Error::other)?;
-        fs::write_new(&self.folder.join("record.json"), &listing, own)
+        self.list(&Listing { order: self.order.clone(), priors, reached: 0 })
+    }
+
+    /// Records that a load starts in the first `reached` units.
+    fn reach(&self, reached: usize) -> std::io::Result<()> {
+        let listing: Listing = serde_json::from_slice(&std::fs::read(self.folder.join("record.json"))?).map_err(std::io::Error::other)?;
+        self.list(&Listing { reached, ..listing })
+    }
+
+    fn list(&self, listing: &Listing) -> std::io::Result<()> {
+        fs::write_new(&self.folder.join("record.json"), &serde_json::to_vec(listing).map_err(std::io::Error::other)?, OWN)
     }
 
     fn drop(&self) {
         let _ = std::fs::remove_dir_all(&self.folder);
     }
 }
+
+/// The mode of the executor's own record files.
+const OWN: Ids = Ids { uid: 0, gid: 0, mode: 0o600 };
 
 /// A path with its folder's links resolved, where the folder exists.
 fn resolved(path: &std::path::Path) -> PathBuf {
@@ -309,6 +355,11 @@ fn load(system: &impl System, unit: &Unit) -> Result<String, String> {
 fn validate(input: &Input) -> Result<(), Failure> {
     if !absolute(&input.lock) {
         return Err(invalid("lock"));
+    }
+    // The record folder is the executor's: no managed file or lock lies in it.
+    let inside = |path: &str| path == input.recovery_dir || path.starts_with(&format!("{}/", input.recovery_dir));
+    if !absolute(&input.recovery_dir) || inside(&input.lock) || input.files.iter().any(|file| inside(&file.path)) {
+        return Err(invalid("recovery_dir"));
     }
     if input.files.is_empty()
         || !input.files.iter().all(|file| {

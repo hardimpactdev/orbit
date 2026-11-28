@@ -225,16 +225,18 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
 | `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads each affected path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; answers the paths it changed |
-| `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and rebuilds the store until the host trusts it |
+| `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and runs the plain updater after a change |
 | `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` from 1 s to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
-| `config.apply` | Lock path, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
+| `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
 
-`ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Trust is the certificate's identity: the bundle holds it, and a subject-hash link reaches a file that holds it, whatever its name. It runs `update-ca-certificates`, never with `--fresh`, only when the file changed or the trust does not match. `absent` runs nothing when the file is gone and the certificate is trusted nowhere, and fails when the bundle still holds it after the update.
+`ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Route creation needs it: it installs the managed root CA, as `route.publish_site` does today. After a change it runs the plain `update-ca-certificates`, never `--fresh`. It then checks with `openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt` that the certificate is trusted and has a subject-hash link (`present`), or is not trusted (`absent`).
+
+`absent` removes the named source only when it holds the given certificate; other bytes fail `trust.source_mismatch` and nothing changes. When the plain updater leaves the trust other than asked, for example after the last source's removal or a rotation it does not converge, the primitive fails `trust.not_converged` and changes nothing more. It never rebuilds the whole store.
 
 `systemd.unit.ensure` never counts `activating` or `deactivating` as running or stopped. It starts and stops with `--no-block`, bounds every `systemctl` call by the time left, and waits for a settled state within `budget_ms`, or fails.
 
@@ -246,11 +248,19 @@ A `file.ensure` file with `from_sha256` that holds neither that digest nor the d
 | `php-fpm` (`version`, optional `fpm_config`, `ini_scan_dir`) | `php-fpm<version> -t`, with `--fpm-config` and `PHP_INI_SCAN_DIR` when given |
 | `dnsmasq` (`conf_file`, `conf_dir`, `skip_suffixes`) | `dnsmasq --test --conf-file=<conf_file> --conf-dir=<conf_dir>,<suffixes>`, the configuration the service loads |
 
-Paths have one spelling: no `.`, `..` or empty part. A file named twice, also through a linked folder, or as the lock refuses. Before the first write, the executor records each file's prior state in its own folder, `/var/lib/orbit/executor/config-apply/<sha256 of the lock path>/`: absent, or its bytes with owner and mode. The next run under the same lock restores a record that a stopped run left, then applies. Nothing is kept beside a managed file. Temporary files take a new name the run creates exclusively, so scratch work never touches a file it did not make.
+Paths have one spelling: no `.`, `..` or empty part. A file named twice, also through a linked folder, or as the lock refuses.
+
+Before the first write, the executor records each file's prior state in the order's `recovery_dir`, an absolute folder outside every managed path, under `<sha256 of the lock path>/`: absent, or its bytes with owner and mode. The record carries the order's identity (the SHA-256 of its input) and the units the run reached. A replay of the same order restores the prior state, loads it again in those units, then applies.
+
+Any other order that finds a pending record refuses `config.recovery_pending` and touches nothing, so it never restores over a later writer; the Gateway retries the same step with the same input. Nothing is kept beside a managed file. Temporary files take a new name the run creates exclusively, so scratch work never touches a file it did not make.
 
 A failed write, read-back or validation puts every file back to its recorded prior state: its exact bytes, owner and mode, or absence (`config.write_failed`, `config.validate_failed`). A failed reload or restart puts the files back and loads again the units the run reached (`config.load_failed`). A restore or reload that fails during recovery answers `config.restore_failed`. A scope-by-scope pool merge is the Gateway's: it renders the whole file.
 
-An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `key`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends `<directory>/key.pem`, root, `caddy`, `0750`, `0640` and `/CN=Orbit`. It keeps any key `openssl pkey` reads as PEM or DER, and replaces a key only when openssl reports for both forms that it found no key. A timeout or a command that cannot start fails the order and keeps the key. It puts an existing key's owner and mode right without touching its bytes, and writes a new key through a file it creates, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
+An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `key`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends `<directory>/key.pem`, root, `caddy`, `0750`, `0640` and `/CN=Orbit`.
+
+It replaces an existing key file only when it is decisively not a key: empty, or holding no PEM block of any kind and failing `openssl pkey -inform DER`. A file with any PEM block that `openssl pkey` cannot read, an encrypted key included, fails `tls.key_unreadable` and stays. A timeout or a command that cannot start fails the order and keeps the key.
+
+On main, the action never replaced an existing file: an empty or unreadable one failed the request with `app-dev.certificate_request_failed`. It puts an existing key's owner and mode right without touching its bytes, and writes a new key through a file it creates, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
 
 ### The instance family
 

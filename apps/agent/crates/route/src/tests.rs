@@ -657,7 +657,7 @@ fn a_csr_keeps_its_key_when_the_inspection_is_inconclusive() {
     // Review counterexample: one inspection timeout replaced a healthy key.
     fake.failing_argv.push(vec!["/usr/bin/openssl", "pkey", "-inform", "PEM", "-noout", "-in", "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem"]);
     let failure = ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("an inconclusive inspection");
-    assert_eq!(failure.code, "app-dev.certificate_request_failed");
+    assert_eq!(failure.code, "tls.key_unreadable");
     assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY);
     assert_eq!(fake.ran("genpkey"), 0);
 }
@@ -675,4 +675,24 @@ fn a_csr_keeps_any_key_openssl_reads() {
         assert_eq!(fs::read(&key).expect("key"), held);
     }
     assert_eq!(fake.ran("genpkey"), 0);
+}
+
+#[test]
+fn a_csr_rotates_only_a_file_that_is_decisively_not_a_key() {
+    let fake = Fake::new();
+    let key = fake.path(&format!("{DIRECTORY}/key.pem"));
+    fs::create_dir_all(key.parent().expect("folder")).expect("folder");
+    // Review finding 6: an encrypted key, or any PEM block openssl cannot read, fails and stays.
+    for held in ["-----BEGIN ENCRYPTED PRIVATE KEY-----\nSECRET\n-----END ENCRYPTED PRIVATE KEY-----\n", "-----BEGIN CERTIFICATE-----\nONLY\n-----END CERTIFICATE-----\n"] {
+        fs::write(&key, held).expect("key");
+        assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("unreadable").code, "tls.key_unreadable");
+        assert_eq!(fs::read_to_string(&key).expect("key"), held);
+    }
+    assert_eq!(fake.ran("genpkey"), 0);
+    // An empty file, or bytes with no PEM block that fail DER parsing, are decisively not a key.
+    for held in ["", "BROKEN"] {
+        fs::write(&key, held).expect("key");
+        ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a new key");
+        assert_eq!(fs::read_to_string(&key).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
+    }
 }

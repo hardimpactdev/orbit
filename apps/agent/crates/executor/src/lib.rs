@@ -362,7 +362,7 @@ fn dns(order: &VerifiedOrder) -> Outcome {
 /// The host family (ADR 0271 N3): one host resource per order, every path, name, lock and digest from the input. A failure's
 /// code goes to the Gateway, its detail only to the log.
 fn host(order: &VerifiedOrder) -> Outcome {
-    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH, bus::RECOVERY_PATH);
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
     let primitive: fn(&orbit_executor_host::NodeSystem, &serde_json::Value) -> Result<u32, orbit_executor_host::Failure> = match order.action() {
         Action::FileEnsure => orbit_executor_host::file_ensure,
         Action::DotenvEnsure => orbit_executor_host::dotenv_ensure,

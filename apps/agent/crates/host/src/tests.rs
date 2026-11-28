@@ -126,6 +126,13 @@ impl System for Fake {
             Some(&"/usr/bin/openssl") => {
                 let file = words.last().expect("a file");
                 let file = if file.starts_with(&*self.root().to_string_lossy()) { Path::new(file).to_path_buf() } else { self.path(file) };
+                // `verify -CAfile <bundle> <file>`: trusted when the bundle holds the file's certificate.
+                if words.contains(&"verify") {
+                    let squash = |bytes: Vec<u8>| String::from_utf8_lossy(&bytes).split_whitespace().collect::<String>().replace("-----BEGINCERTIFICATE-----", "").replace("-----ENDCERTIFICATE-----", "");
+                    let held = squash(fs::read(&file).unwrap_or_default());
+                    let bundle = squash(fs::read(words[3]).unwrap_or_default());
+                    return if !held.is_empty() && bundle.contains(&held) { Ok(format!("{}: OK\n", file.display())) } else { Err("unable to get local issuer certificate".to_owned()) };
+                }
                 match fs::read(file) {
                     Ok(bytes) if bytes.starts_with(b"-----BEGIN CERTIFICATE-----") => Ok(format!("{}\n", &sha256(&bytes)[..8])),
                     _ => Err("unable to load certificate".to_owned()),
@@ -174,10 +181,6 @@ impl System for Fake {
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
         self.blobs.get(digest).cloned().ok_or_else(|| "missing".to_owned())
     }
-
-    fn recovery(&self) -> std::path::PathBuf {
-        self.path("/executor-recovery")
-    }
 }
 
 fn owner() -> serde_json::Value {
@@ -187,7 +190,7 @@ fn owner() -> serde_json::Value {
 fn apply(fake: &mut Fake, desired: &[u8], from: &[u8], validators: &serde_json::Value) -> Result<u32, Failure> {
     let content = fake.put(desired);
     let input = json!({
-        "lock": "/tmp-lock/given.lock",
+        "lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery",
         "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(from), "owner": owner()}],
         "validators": validators,
         "units": [{"unit": "web.service", "load": "reload"}],
@@ -269,7 +272,7 @@ fn config_apply_refuses_a_validator_outside_the_list_and_a_relative_lock() {
         assert_eq!(failure.code, "host.input_invalid");
     }
     let content = fake.put(b"new\n");
-    let relative = json!({"lock": "given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}]});
+    let relative = json!({"lock": "given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}]});
     assert_eq!(config_apply(&fake, &relative).expect_err("a relative lock").code, "host.input_invalid");
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
     assert!(fake.ran.borrow().is_empty());
@@ -283,7 +286,7 @@ fn config_apply_waits_on_the_lock_the_input_names() {
     held.lock().expect("held by another writer");
     fs::create_dir_all(fake.path("/conf")).expect("conf folder");
     let content = fake.put(b"new\n");
-    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}]});
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}]});
     // The fake's clock does not wait: the real budget elapses through sleep; take a short lock wait through the helper.
     let failure = lock::exclusive(&fake, "/tmp-lock/given.lock", std::time::Duration::from_millis(300)).expect_err("busy");
     assert_eq!(failure.code, "host.lock_busy");
@@ -438,7 +441,7 @@ fn config_apply_replay_after_a_stop_restores_the_prior_state_absence_and_metadat
     };
     // Review counterexample: the first creation stops after install and before validation; the replay must remove it.
     let content = fake.put(b"new\n");
-    let created = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}], "validators": validators});
+    let created = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}], "validators": validators});
     stopped(&fake, &created);
     assert_eq!(fake.read("/conf/site.conf"), b"new\n", "the stop left the unvalidated file");
     assert_eq!(config_apply(&fake, &created).expect_err("invalid").code, "config.validate_failed");
@@ -447,14 +450,14 @@ fn config_apply_replay_after_a_stop_restores_the_prior_state_absence_and_metadat
     fake.fail.borrow_mut().clear();
     fake.write("/conf/site.conf", b"old\n");
     fs::set_permissions(fake.path("/conf/site.conf"), fs::Permissions::from_mode(0o644)).expect("mode");
-    let changed = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": fake.put(b"new\n"), "from_sha256": sha256(b"old\n"), "owner": owner()}], "validators": validators});
+    let changed = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": fake.put(b"new\n"), "from_sha256": sha256(b"old\n"), "owner": owner()}], "validators": validators});
     stopped(&fake, &changed);
     assert_eq!(config_apply(&fake, &changed).expect_err("invalid").code, "config.validate_failed");
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
     // Review counterexample: a change of metadata only; the replay puts the prior mode back.
     fake.fail.borrow_mut().clear();
     fs::set_permissions(fake.path("/conf/site.conf"), fs::Permissions::from_mode(0o600)).expect("mode");
-    let metadata = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": fake.put(b"old\n"), "from_sha256": null, "owner": owner()}], "validators": validators});
+    let metadata = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": fake.put(b"old\n"), "from_sha256": null, "owner": owner()}], "validators": validators});
     stopped(&fake, &metadata);
     assert_eq!(fs::metadata(fake.path("/conf/site.conf")).expect("meta").mode() & 0o7777, 0o644, "the stop left the new mode");
     assert_eq!(config_apply(&fake, &metadata).expect_err("invalid").code, "config.validate_failed");
@@ -462,7 +465,7 @@ fn config_apply_replay_after_a_stop_restores_the_prior_state_absence_and_metadat
     // A run that ends drops its record.
     fake.fail.borrow_mut().clear();
     assert_eq!(config_apply(&fake, &metadata), Ok(1));
-    assert!(fs::read_dir(fake.recovery()).expect("recovery").next().is_none());
+    assert!(fs::read_dir(fake.path("/recovery")).expect("recovery").next().is_none());
 }
 
 #[test]
@@ -472,7 +475,7 @@ fn config_apply_reloads_on_recovery_only_the_units_it_reached() {
     fake.write("/conf/site.conf", b"old\n");
     fake.fail.borrow_mut().push("first.service");
     let content = fake.put(b"new\n");
-    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
         "units": [{"unit": "first.service", "load": "reload"}, {"unit": "second.service", "load": "restart"}]});
     let failure = config_apply(&fake, &input).expect_err("a failed load");
     assert_eq!(failure.code, "config.restore_failed", "the recovery reload of the failed unit fails too, and says so");
@@ -488,11 +491,11 @@ fn config_apply_refuses_aliases_and_paths_in_another_spelling() {
     let content = fake.put(b"x\n");
     let file = |path: &str| json!({"path": path, "content": content.clone(), "from_sha256": null, "owner": owner()});
     for files in [vec![file("/conf/a"), file("/conf/./a")], vec![file("/conf/a"), file("/conf/b/../a")], vec![file("/conf//a")], vec![file("/tmp-lock/given.lock")]] {
-        let input = json!({"lock": "/tmp-lock/given.lock", "files": files});
+        let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": files});
         assert_eq!(config_apply(&fake, &input).expect_err("an alias").code, "host.input_invalid");
     }
     std::os::unix::fs::symlink(fake.path("/conf"), fake.path("/alias")).expect("alias");
-    let input = json!({"lock": "/tmp-lock/given.lock", "files": [file("/conf/a"), file("/alias/a")]});
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [file("/conf/a"), file("/alias/a")]});
     assert_eq!(config_apply(&fake, &input).expect_err("one file by two names").code, "host.input_invalid");
     assert!(!fake.path("/conf/a").exists());
     assert_eq!(file_ensure(&fake, &json!({"state": "absent", "path": "/.", "recursive": true})).expect_err("root").code, "host.input_invalid");
@@ -567,10 +570,6 @@ impl System for Late {
         self.fake.blob(digest)
     }
 
-    fn recovery(&self) -> std::path::PathBuf {
-        self.fake.recovery()
-    }
-
     fn now(&self) -> std::time::Instant {
         std::time::Instant::now() + std::time::Duration::from_secs(u64::from(*self.reads.borrow()) * 3600)
     }
@@ -584,13 +583,13 @@ fn config_apply_checks_dnsmasq_with_the_configuration_it_loads_and_refuses_befor
     fake.fail.borrow_mut().push("/usr/sbin/dnsmasq");
     let content = fake.put(b"bad\n");
     let validator = json!({"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf", "skip_suffixes": [".bak"]});
-    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
         "validators": [validator], "units": [{"unit": "dnsmasq.service", "load": "restart"}]});
     assert_eq!(config_apply(&fake, &input).expect_err("rejected").code, "config.validate_failed");
     assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/dnsmasq", "--test", "--conf-file=/conf/dnsmasq.conf", "--conf-dir=/conf,.bak"])), "the folder the service loads, not the one file");
     assert_eq!(fake.ran("restart"), 0, "a rejected set never restarts the service");
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
-    let comma = json!({"lock": "/tmp-lock/given.lock", "files": input["files"].clone(), "validators": [{"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf,*.x"}]});
+    let comma = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": input["files"].clone(), "validators": [{"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf,*.x"}]});
     assert_eq!(config_apply(&fake, &comma).expect_err("an extra list item").code, "host.input_invalid");
 }
 
@@ -603,7 +602,7 @@ fn config_apply_restores_the_last_usable_state_and_never_deletes_a_file_that_exi
     fake.fail.borrow_mut().push("validate");
     let content = fake.put(b"live\n");
     let validators = json!([{"kind": "caddy", "config": "/conf/site.conf", "user": "web"}]);
-    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}], "validators": validators});
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}], "validators": validators});
     assert_eq!(config_apply(&fake, &input).expect_err("invalid").code, "config.validate_failed");
     assert_eq!(fake.read("/conf/site.conf"), b"live\n", "a file that existed before the run is never deleted");
     // Review counterexample: A→B loads, B→C fails, and a replay of A→B must not meet a false conflict.
@@ -630,7 +629,7 @@ fn scratch_work_never_touches_a_file_the_executor_did_not_create() {
     let partial = format!("/conf/.a.partial-{}", std::process::id());
     fake.write(&partial, b"mine\n");
     let validators = json!([{"kind": "caddy", "config": "/conf/a", "user": "web"}]);
-    let one = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/a", "content": fake.put(b"new\n"), "from_sha256": from, "owner": owner()}], "validators": validators});
+    let one = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/a", "content": fake.put(b"new\n"), "from_sha256": from, "owner": owner()}], "validators": validators});
     fake.fail.borrow_mut().push("validate");
     assert_eq!(config_apply(&fake, &one).expect_err("invalid").code, "config.validate_failed");
     fake.fail.borrow_mut().clear();
@@ -773,4 +772,68 @@ fn unit_ensure_keeps_its_budget_across_the_whole_action() {
     assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped", "budget_ms": 20})).expect_err("below the floor").code, "host.input_invalid");
     assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped", "budget_ms": 1000})), Ok(1));
     assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/bin/systemctl", "stop", "--no-block", "web.service"])), "systemctl never waits past the budget");
+}
+
+#[test]
+fn config_apply_replay_of_the_same_order_restores_and_reloads_the_units_it_reached() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"old\n");
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery",
+        "files": [{"path": "/conf/site.conf", "content": fake.put(b"new\n"), "from_sha256": sha256(b"old\n"), "owner": owner()}],
+        "units": [{"unit": "first.service", "load": "reload"}, {"unit": "second.service", "load": "restart"}]});
+    // The run stops while the second unit restarts: the first already loaded the new file.
+    *fake.stop.borrow_mut() = Some("second.service");
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| config_apply(&fake, &input))).is_err());
+    *fake.stop.borrow_mut() = None;
+    fake.fail.borrow_mut().push("second.service");
+    let before = fake.ran("first.service");
+    // Review finding 2: the replay restores the prior file and reloads the units the record reached before it applies again.
+    assert_eq!(config_apply(&fake, &input).expect_err("the second unit still fails").code, "config.restore_failed");
+    assert_eq!(fake.read("/conf/site.conf"), b"old\n");
+    assert!(fake.ran("first.service") > before, "the reached unit loads the restored file");
+}
+
+#[test]
+fn config_apply_refuses_another_order_while_a_record_is_pending() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"old\n");
+    let validators = json!([{"kind": "caddy", "config": "/conf/site.conf", "user": "web"}]);
+    let first = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": fake.put(b"first\n"), "from_sha256": sha256(b"old\n"), "owner": owner()}], "validators": validators});
+    *fake.stop.borrow_mut() = Some("validate");
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| config_apply(&fake, &first))).is_err());
+    *fake.stop.borrow_mut() = None;
+    // Review finding 1: a later writer changed the file; another order must not restore over it.
+    fake.write("/conf/site.conf", b"later writer\n");
+    let other = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery", "files": [{"path": "/conf/site.conf", "content": fake.put(b"other\n"), "from_sha256": sha256(b"later writer\n"), "owner": owner()}]});
+    assert_eq!(config_apply(&fake, &other).expect_err("pending").code, "config.recovery_pending");
+    assert_eq!(fake.read("/conf/site.conf"), b"later writer\n");
+}
+
+#[test]
+fn config_apply_takes_its_recovery_folder_from_the_order() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    let file = json!([{"path": "/conf/site.conf", "content": fake.put(b"x\n"), "from_sha256": null, "owner": owner()}]);
+    for input in [
+        json!({"lock": "/tmp-lock/given.lock", "files": file}),
+        json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "recovery", "files": file}),
+        json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/conf", "files": file}),
+    ] {
+        assert_eq!(config_apply(&fake, &input).expect_err("refused").code, "host.input_invalid");
+    }
+    assert!(!fake.path("/conf/site.conf").exists());
+}
+
+#[test]
+fn trust_ensure_removes_only_a_source_that_holds_the_given_certificate() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
+    fake.write("/usr/local/share/ca-certificates/r.crt", b"-----BEGIN CERTIFICATE-----\nTHEIRS\n-----END CERTIFICATE-----\n");
+    // Review finding 5: other bytes under the name are not this certificate's source.
+    let absent = json!({"state": "absent", "name": "r.crt", "certificate": fake.put(b"-----BEGIN CERTIFICATE-----\nOURS\n-----END CERTIFICATE-----\n")});
+    assert_eq!(trust_ensure(&fake, &absent).expect_err("mismatch").code, "trust.source_mismatch");
+    assert!(fake.read("/usr/local/share/ca-certificates/r.crt").windows(6).any(|window| window == b"THEIRS"));
+    assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 0);
 }
