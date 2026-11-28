@@ -935,30 +935,32 @@ it('keeps a current Node current for the rest of the pass while the next Node co
         ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(2);
 });
 
-it('counts a role converge run by hand during the pass, but never for a later pass or a recreated assignment', function (): void {
+it('converges a Node after delivery with the full Node converge even when its release inputs are unchanged, and leaves out a Node outside the rollout', function (): void {
     prepareReleaseTarget();
+    $inputs = app(ReleaseNodeInputs::class);
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs,
+        'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->node))]])->save();
+    // A Node without a managed agent stays out of the rollout, so the pass never converges it.
+    $unmanaged = nextReleaseNode();
+    $unmanaged->forceFill(['ssh_host_fingerprint' => null])->save();
     $release = releaseWithRow(['status' => 'pending']);
-    $this->travel(1)->seconds();
-    $hand = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod']);
-    $hand->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
     $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    // The converge `orbit node:converge` starts: the base and every role, with the Node's recorded phase digests deciding what runs.
+    expect($converge->node_id)->toBe($this->node->id)
+        ->and($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBeFalse()
+        ->and($converge->input['_converge']['network']['base'])->toBeFalse()
+        ->and($converge->input['_converge']['tool_scope'])->toBeTrue()
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'running', 'host' => 'unchanged', 'role_operation_id' => $converge->id]);
+    succeedConverge($converge);
 
     expect($fleet->execute($release))->toBeNull()
         ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
-        ->and($release->phases['fleet']['nodes'][$this->node->id]['roles']['app-prod'])->toBe('converged')
+        ->and($release->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
+        ->and($release->phases['fleet']['nodes'])->not->toHaveKey($unmanaged->id)
         ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
-
-    // A day later the assignment is recreated while other work holds the Node: the next pass needs its own converge.
-    $this->travel(1)->days();
-    $this->node->roles()->where('role', RoleName::AppProd)->delete();
-    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
-    $holder = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'test', null);
-    expect($fleet->execute($release))->toBe(15);
-    $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
-
-    expect($fleet->execute($release))->toBe(10)
-        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('running')
-        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(2);
 });
 
 it('marks a Node whose role converge failed, never retries it within the pass, and finishes the later Nodes', function (): void {
@@ -994,7 +996,7 @@ function succeedConverge(Operation $converge): void
     }
 }
 
-it('converges each Node whose host inputs changed with the full Node converge, and leaves an unchanged Node alone', function (): void {
+it('converges every Node with the full Node converge, whether or not the release changed its host inputs', function (): void {
     prepareReleaseTarget();
     $next = nextReleaseNode();
     $third = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'third', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -1015,7 +1017,7 @@ it('converges each Node whose host inputs changed with the full Node converge, a
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
 
-    foreach ([$this->node, $third] as $member) {
+    foreach ([$this->node, $next, $third] as $member) {
         expect($fleet->execute($release))->toBe(10);
         $converge = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
         $capture = $converge->input['_converge'];
@@ -1026,7 +1028,7 @@ it('converges each Node whose host inputs changed with the full Node converge, a
             ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
             ->and(array_column($capture['intent']['tools'], 'package'))->toBe($member->is($this->node) ? ['tree', 'nano', 'ed', 'ripgrep'] : [])
             ->and($capture['release_inputs']['host'])->toBe($inputs->host(node: $member))
-            ->and($release->refresh()->phases['fleet']['nodes'][$member->id]['host'])->toBe('pending');
+            ->and($release->refresh()->phases['fleet']['nodes'][$member->id]['host'])->toBe($member->is($next) ? 'unchanged' : 'pending');
         succeedConverge($converge);
     }
 
@@ -1035,9 +1037,8 @@ it('converges each Node whose host inputs changed with the full Node converge, a
     expect($fleetPhase['status'])->toBe('current')
         ->and($fleetPhase['nodes'][$this->node->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
         ->and($fleetPhase['nodes'][$third->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
-        ->and($fleetPhase['nodes'][$next->id])->toMatchArray(['status' => 'current', 'host' => 'unchanged'])
+        ->and($fleetPhase['nodes'][$next->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
         ->and(json_encode($fleetPhase))->not->toContain('fleet.host_inputs_changed')
-        ->and(Operation::query()->where('kind', 'node.converge')->where('node_id', $next->id)->exists())->toBeFalse()
         ->and($this->node->refresh()->release_inputs['host'])->toBe($inputs->host(node: $this->node));
 });
 
@@ -1079,7 +1080,9 @@ it('converges the serving Gateway Node\'s changed host inputs itself, last', fun
     $fleet = app(ContinueReleaseFleetAction::class);
 
     expect($fleet->execute($release))->toBe(10);
-    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    succeedConverge(Operation::query()->where('kind', 'node.converge')->where('node_id', $this->node->id)->sole());
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
     expect($converge->node_id)->toBe($this->control->id)
         ->and($converge->input['_converge']['intent']['selected_roles'])->toBe(['swamp', 'gateway'])
         ->and($converge->input['_converge']['release_inputs']['host'])->toBe($inputs->host(node: $this->control));
@@ -1090,7 +1093,7 @@ it('converges the serving Gateway Node\'s changed host inputs itself, last', fun
         ->and($release->phases['fleet']['nodes'][$this->control->id])->toMatchArray(['status' => 'current', 'host' => 'converged']);
 });
 
-it('admits a release role converge and a CI runner\'s full host converge without reading release inputs or the CLI catalog under the SQLite writer', function (bool $host): void {
+it('admits a CI runner\'s full Node converge without reading release inputs or the CLI catalog under the SQLite writer', function (bool $host): void {
     prepareReleaseTarget();
     $this->node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     $release = releaseWithRow(['status' => 'pending']);
@@ -1127,17 +1130,14 @@ it('admits a release role converge and a CI runner\'s full host converge without
     expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10);
 
     $converge = Operation::query()->where('kind', 'node.converge')->sole();
-    expect($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBe(! $host)
-        ->and(array_keys($converge->input['_converge']['release_inputs']['roles']))->toBe($host ? $this->node->roles()->where('role', '!=', RoleName::Gateway)->orderBy('id')->pluck('id')->all()
-            : $this->node->roles()->whereIn('role', [RoleName::AppProd, RoleName::CiRunner])->orderBy('id')->pluck('id')->all())
-        ->and($converge->input['_converge']['release_inputs']['host'])->toBe($host ? $inputs->host(node: $this->node) : null)
+    expect($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBeFalse()
+        ->and(array_keys($converge->input['_converge']['release_inputs']['roles']))->toBe($this->node->roles()->where('role', '!=', RoleName::Gateway)->orderBy('id')->pluck('id')->all())
+        ->and($converge->input['_converge']['release_inputs']['host'])->toBe($inputs->host(node: $this->node))
         ->and(array_unique(array_column($reads->getArrayCopy(), 1)))->toBe([$outside])
         ->and(array_column($reads->getArrayCopy(), 0))->toContain('host', 'roles')
         ->and(array_filter($lookups->getArrayCopy(), static fn (int $level): bool => $level !== $outside))->toBe([]);
-    if ($host) {
-        expect($converge->input['_converge']['intent']['cli']['release']['version'] ?? null)->toBe($cli->version);
-    }
-})->with(['a role-only release converge' => false, 'a full host converge' => true]);
+    expect($converge->input['_converge']['intent']['cli']['release']['version'] ?? null)->toBe($cli->version);
+})->with(['unchanged host inputs' => false, 'changed host inputs' => true]);
 
 it('admits a host converge by the automatic converge rules: task work never blocks it, Instance work queues it', function (): void {
     prepareReleaseTarget();

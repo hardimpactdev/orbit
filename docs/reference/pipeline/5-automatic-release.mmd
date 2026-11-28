@@ -68,7 +68,7 @@ sequenceDiagram
     Note over GW: Record the release<br/>verified
     %%> Result:
     %%> - preserve every eligible Node’s prior host baseline before admitting any rollout work
-    %%> - the existing fleet admission job delivers the agent and converges changed roles one Node at a time
+    %%> - the existing fleet admission job delivers the agent and runs the Node converge on each Node, one Node at a time
     %%> - once every Node is current, the Gateway admits the nested-fleet refresh (stage 6); the daily fleet pass rechecks membership, pins and pending work even after fleet current
   else verification failed
     SW--xGW: Run failed<br/>switch-back result · alert

@@ -43,7 +43,6 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -419,7 +418,7 @@ final readonly class ContinueReleaseFleetAction
             // never stays listed.
             unset($row['waiting_for']);
             try {
-                $delay = $this->visit($release, $node, $row, $prepared['nodes'][$node->id], $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
+                $delay = $this->visit($release, $node, $row, $prepared['nodes'][$node->id], $cli, $cliUnavailable);
                 if ($delay !== null) {
                     $this->save($release, $phase, 'pending');
 
@@ -575,7 +574,7 @@ final readonly class ContinueReleaseFleetAction
      * @param  array<string,mixed>  $row
      * @param  NodeInputs  $inputs
      */
-    private function visit(GatewayRelease $release, Node $node, array &$row, array $inputs, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, array $inputs, ?DesiredCliReleaseData $cli, bool $cliUnavailable): ?int
     {
         $recorded = $node->release_inputs ?? [];
         if ($inputs['host'] instanceof Throwable) {
@@ -649,20 +648,20 @@ final readonly class ContinueReleaseFleetAction
                 $locked->forceFill(['release_inputs' => $recorded])->save();
             }
         }
+        // Each Node converges once per pass, after delivery: the same full Node converge an operator runs. Its own phase digests
+        // decide which phases run, and a succeeded one records the host and role digests (NodeConvergeProjection).
+        $settled = false;
         if ($roleOperation !== null) {
-            // The full converge started for changed host inputs records the host digest when it succeeds (NodeConvergeProjection).
-            $hostConverge = data_get($roleOperation->input, '_converge.intent.release_roles_only') !== true;
             if ($roleOperation->status !== OperationStatus::Succeeded) {
                 foreach ($changed as $role) {
                     $row['roles'][$role['role']] = 'failed';
                 }
-                if ($hostConverge) {
+                if ($row['host'] === 'pending') {
                     $row['host'] = 'failed';
                 }
-                throw new ResourceOperationException($roleOperation->error_code ?? ($hostConverge ? 'fleet.host_converge_failed' : 'fleet.role_converge_failed'),
-                    $hostConverge ? 'Host converge failed.' : 'Role converge failed.', 409);
+                throw new ResourceOperationException($roleOperation->error_code ?? 'fleet.node_converge_failed', 'Node converge failed.', 409);
             }
-            if ($hostConverge && $row['host'] === 'unchanged') {
+            if ($row['host'] === 'unchanged') {
                 $row['host'] = 'converged';
             }
             if (($roleOperation->result['t3_restart_deferred'] ?? []) !== []) {
@@ -671,22 +670,12 @@ final readonly class ContinueReleaseFleetAction
                     return FleetReleaseLag::RetryAfterSeconds;
                 }
             } else {
+                $settled = true;
                 $capture = ValidatedData::object($roleOperation->input['_converge']);
                 $intent = ValidatedData::object($capture['intent']);
                 foreach (ValidatedData::stringList($intent['selected_roles']) as $role) {
-                    if (($row['roles'][$role] ?? null) === 'unchanged') {
-                        $row['roles'][$role] = 'converged';
-                    }
+                    $row['roles'][$role] = 'converged';
                 }
-            }
-        }
-        // A role converge that succeeded during this pass, its own or one run by hand, applied the role assignment it captured.
-        // Instance work on the Node moves the digest on while it waits, so the recorded digest alone never settles it.
-        $converged = $this->convergedAssignments($node, $passStarted);
-        foreach ($changed as $id => $role) {
-            if (in_array($id, $converged, true)) {
-                $row['roles'][$role['role']] = 'converged';
-                unset($changed[$id]);
             }
         }
         if ($needsDelivery($recorded)) {
@@ -703,18 +692,14 @@ final readonly class ContinueReleaseFleetAction
             return 10;
         }
         $row['agent'] ??= 'unchanged';
-        if ($row['host'] === 'pending' || $changed !== []) {
-            // Changed host inputs need the full Node converge an operator runs: the base and every role, and it records the host
-            // digest. A busy refusal queues either converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
-            $full = $row['host'] === 'pending';
-            if ($full && $inputs['gateway'] instanceof Throwable) {
+        if (! $settled) {
+            // A busy refusal queues the converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
+            if ($inputs['gateway'] instanceof Throwable) {
                 throw $inputs['gateway'];
             }
-            $prepared = ['roles' => $full ? $desired + $inputs['gateway'] : $desired, 'host' => $host];
+            $prepared = ['roles' => $desired + $inputs['gateway'], 'host' => $host];
             ksort($prepared['roles']);
-            $row['role_operation_id'] = ($full
-                ? app(StartNodeConvergeAction::class)->execute($node, automatic: true, releaseInputs: $prepared, cli: $cli)
-                : app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true, releaseInputs: $prepared))->id;
+            $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, automatic: true, releaseInputs: $prepared, cli: $cli)->id;
 
             return 10;
         }
@@ -723,25 +708,6 @@ final readonly class ContinueReleaseFleetAction
         return null;
     }
 
-    /**
-     * Role assignment IDs that a succeeded, not T3-deferred `node.converge` of the Node admitted since the pass started applied.
-     *
-     * @return list<int>
-     */
-    private function convergedAssignments(Node $node, Carbon $since): array
-    {
-        $ids = [];
-        foreach (Operation::query()->where('kind', 'node.converge')->where('node_id', $node->id)
-            ->where('status', OperationStatus::Succeeded->value)->where('created_at', '>=', $since)->cursor() as $operation) {
-            if (($operation->result['t3_restart_deferred'] ?? []) === []) {
-                array_push($ids, ...array_map(intval(...), array_keys((array) data_get($operation->input, '_converge.release_inputs.roles', []))));
-            }
-        }
-
-        return array_values(array_unique($ids));
-    }
-
-    /** @param array<string,mixed> $row */
     private function operation(array $row, string $key): ?Operation
     {
         return isset($row[$key]) ? Operation::query()->findOrFail(ValidatedData::integer($row[$key])) : null;
