@@ -79,7 +79,9 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
     expect(array_map(static fn ($step): array => [$step->name, $step->node, $step->action, $step->after], $steps))->toBe([
         ['site-3-account-0', 3, 'account.read', []],
         ['site-3-accounts', 0, 'account.check', ['site-3-account-0']],
-        ['csr-0', 3, 'tls.ensure_csr', ['site-3-accounts']],
+        ['site-3-read-trust', 3, 'file.read', []],
+        ['site-3-trustcheck', 0, 'trust.check', ['site-3-read-trust']],
+        ['csr-0', 3, 'tls.ensure_csr', ['site-3-accounts', 'site-3-trustcheck']],
         ['sign-0', 0, 'certificate.sign', ['csr-0']],
         ['site-3-url-0', 3, 'dotenv.ensure', ['sign-0']],
         ['site-3-link-0', 3, 'file.ensure', ['site-3-url-0']],
@@ -94,10 +96,7 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['site-3-key-0', 3, 'file.ensure', ['site-3-folder-0']],
         ['site-3-copy-0', 3, 'file.ensure', ['site-3-key-0']],
         ['site-3-copylink-0', 3, 'file.ensure', ['site-3-copy-0']],
-        ['site-3-read-trust', 3, 'file.read', ['site-3-copylink-0']],
-        ['site-3-untrust', 3, 'file.ensure', ['site-3-read-trust']],
-        ['site-3-cafile', 3, 'file.ensure', ['site-3-untrust']],
-        ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-cafile']],
+        ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-copylink-0']],
         ['site-3-read-caddy', 3, 'file.read', ['site-3-trust']],
         ['site-3-unlink-caddy', 3, 'file.ensure', ['site-3-read-caddy']],
         ['site-3-caddy', 3, 'config.apply', ['site-3-unlink-caddy']],
@@ -133,7 +132,7 @@ it('sends APP_URL, links, the leaf, the account\'s copies and the root trust wit
         ->and($input('site-3-copy-0'))->toBe(['state' => 'file', 'path' => $copy.'/versions/0123456789abcdef/cert.pem', 'content' => $leaf,
             'owner' => ['user' => 'orbit', 'group' => 'orbit', 'mode' => '0600']])
         ->and($input('site-3-copylink-0'))->toBe(['state' => 'link', 'path' => $copy.'/current', 'target' => 'versions/0123456789abcdef', 'user' => 'orbit', 'group' => 'orbit'])
-        ->and($input('site-3-trust'))->toBe(['state' => 'present', 'name' => RouteHostSteps::trustName(routePlan()['root_certificate']), 'certificate' => ['blob' => ['content' => routePlan()['root_certificate']]],
+        ->and($input('site-3-trust'))->toBe(['state' => 'present', 'name' => 'orbit-managed-root-ca.crt', 'certificate' => ['blob' => ['content' => routePlan()['root_certificate']]],
             'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]);
 });
 
@@ -350,28 +349,41 @@ it('gives each config.apply step its own recovery folder, so a pending record bl
         ->toBe(json_encode($flow->input(routeOperation($plan), 'site-3-reload', routeRun())));
 });
 
-it('rotates the Orbit root: removes the old root\'s source, writes the new one to the fixed CA file, then trusts it', function (): void {
-    $old = "-----BEGIN CERTIFICATE-----\nT0xE\n-----END CERTIFICATE-----\n";
-    $new = "-----BEGIN CERTIFICATE-----\nTkVX\n-----END CERTIFICATE-----\n";
+it('installs the root only under the one trust anchor main and Swamp use, so either publisher replaces it', function (string $case, string $read): void {
     $flow = app(RouteEngineFlow::class);
-    $plan = routePlan(['root_certificate' => $new]);
-    // The fixed CA file still holds the old root: its digest names the old root's source, as this flow named it.
-    $rotated = routeRun(['site-3-read-trust' => routeRead(hash('sha256', $old))]);
+    $root = routePlan()['root_certificate'];
+    $run = routeRun(['site-3-read-trust' => $read]);
 
-    expect(RouteHostSteps::trustName($new))->not->toBe(RouteHostSteps::trustName($old))
-        ->and($flow->input(routeOperation($plan), 'site-3-read-trust', $rotated))->toBe(['path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
-        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', $rotated))->toBeFalse()
-        // The old root is no longer a source, so the update that follows stops trusting it.
-        ->and($flow->input(routeOperation($plan), 'site-3-untrust', $rotated))->toBe(['state' => 'absent', 'path' => '/usr/local/share/ca-certificates/'.RouteHostSteps::trustName($old)])
-        // The fixed file the TLS probes read holds the new root.
-        ->and($flow->input(routeOperation($plan), 'site-3-cafile', $rotated))->toBe(['state' => 'file', 'path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            'content' => ['blob' => ['content' => $new]], 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']])
-        // The new root is trusted under its own name, and the trust update runs after that change.
-        ->and($flow->input(routeOperation($plan), 'site-3-trust', $rotated))->toMatchArray(['state' => 'present', 'name' => RouteHostSteps::trustName($new),
-            'certificate' => ['blob' => ['content' => $new]]])
-        // No rotation, or no fixed file yet: nothing is removed, and unrelated roots are never named.
-        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', routeRun(['site-3-read-trust' => routeRead(hash('sha256', $new))])))->toBeTrue()
-        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', routeRun(['site-3-read-trust' => '{"state":"absent"}'])))->toBeTrue();
+    // engine→engine, or Swamp rotated first and the engine create comes with the new root: the anchor already holds it, so the
+    // check passes and ca.trust.ensure finds nothing to change (it answers 0). A Node without the anchor gets it installed.
+    expect($flow->local(routeOperation(routePlan()), 'site-3-trustcheck', $run))->toBeString()
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-read-trust', $run))->toBe(['path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-trust', $run))->toBe(['state' => 'present', 'name' => 'orbit-managed-root-ca.crt',
+            'certificate' => ['blob' => ['content' => $root]], 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']])
+        ->and(array_filter(array_map(static fn ($step): string => $step->name, $flow->steps(routeOperation(routePlan()))),
+            static fn (string $name): bool => str_contains($name, 'untrust') || str_contains($name, 'cafile')))->toBe([]);
+})->with([
+    'engine→engine with the same root' => ['same', routeRead(hash('sha256', routePlan()['root_certificate']))],
+    'Swamp rotated, then an engine create with the new root' => ['swamp', routeRead(hash('sha256', routePlan()['root_certificate']))],
+    'no anchor yet' => ['absent', '{"state":"absent"}'],
+]);
+
+it('refuses before any request when the trust anchor holds another root, so no same-name rotation runs on the engine', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $old = "-----BEGIN CERTIFICATE-----\nT0xE\n-----END CERTIFICATE-----\n";
+    $run = routeRun(['site-3-read-trust' => routeRead(hash('sha256', $old))]);
+    $steps = array_values(array_map(static fn ($step): array => [$step->name, $step->after], $flow->steps(routeOperation(routePlan()))));
+    $csr = array_values(array_filter($steps, static fn (array $step): bool => $step[0] === 'csr-0'))[0];
+
+    try {
+        $flow->local(routeOperation(routePlan()), 'site-3-trustcheck', $run);
+        $this->fail('The check passed.');
+    } catch (EngineStepRefusal $refusal) {
+        // The check is the Node's site step, so the Route records route.publish_failed; the first request waits for it.
+        expect($refusal->errorCode)->toBe('route.trust_rotation')
+            ->and(RouteEngineFlow::chartStep('site-3-trustcheck'))->toBe('Install cert, publish site-3')
+            ->and($csr[1])->toContain('site-3-trustcheck');
+    }
 });
 
 it('guards the DNS write with the admission digests, so a payload that went stale while it waited refuses instead of erasing a sibling', function (): void {

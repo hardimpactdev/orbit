@@ -31,6 +31,9 @@ sequenceDiagram
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Read each account<br/>account.read · account-k
     %%> First, on each site Node: the Node's account (leaf copies, pools) and each other link owner; the recorded answer keeps a retry byte for byte, and its canonical `user` owns the account's files
+    EN->>N: Read the trust anchor<br/>file.read · read-trust
+    Note over EN: Check the trust anchor<br/>Gateway step · trustcheck
+    %%> The anchor must hold this root or be absent; another root (a rotation) refuses here, before any request, as the Node's site step (`route.publish_failed`). During an Orbit root CA rotation, route.create is turned off in ORBIT_ENGINE_KINDS until every development Node has the new root (Swamp rotates it); then it goes back on.
     Note over EN: Check the accounts<br/>Gateway step · accounts
     %%> An account NSS does not resolve now (`absent`) refuses here, before any request, so nothing has changed; the step is the Node's site step, so the Route records `route.publish_failed`
     EN->>N: Make a CSR on the Node<br/>tls.ensure_csr · csr-i
@@ -49,7 +52,7 @@ sequenceDiagram
     EN->>N: Install leaf, copies<br/>file.ensure · cert-i …
     %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
     EN->>N: Trust the Orbit root<br/>ca.trust.ensure · trust
-    %%> `read-trust` reads the fixed CA file `orbit-managed-root-ca.crt`, which existing TLS probes use; on a rotation (it holds another root) `untrust` removes that root's source, named after the SHA-256 of its PEM; `cafile` writes the new root to the fixed file, root:root 0644; `trust` places the new root under `orbit-managed-root-ca-<16 hex>.crt` and runs the plain `update-ca-certificates` after a change; unrelated roots are never named
+    %%> The one trust anchor `orbit-managed-root-ca.crt`, root:root 0644, as main and Swamp place it; it already holds this root in every create outside a rotation, so nothing changes (the update runs only after a change); unrelated roots are never named
     EN->>N: Read the Caddyfile<br/>file.read · read-caddy
     EN->>N: Apply the Caddyfile<br/>config.apply · site-node-caddy
     %%> Under `/etc/caddy/.orbit-publish.lock`: the whole Caddyfile, root:caddy 0640, with the digest its read recorded; validated as `caddy`; Caddy reloads on every run; a failed validation or reload restores the file

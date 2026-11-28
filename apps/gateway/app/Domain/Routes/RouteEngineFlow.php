@@ -97,6 +97,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             }
             // The Gateway checks the answers as the Node's site step: an absent account fails it with main's code, `route.publish_failed`.
             $steps[] = new StepSpec($checks[] = "site-{$node}-accounts", 0, 'account.check', 'gateway', $reads, budgetMs: 10_000);
+            if (in_array($node, ValidatedData::integerList($plan['trust']), true)) {
+                // The trust anchor must already hold this root, or be absent: a rotation refuses here, before any request.
+                $steps[] = new StepSpec("site-{$node}-read-trust", $node, 'file.read', (string) $node, budgetMs: 30_000, resendMs: 10_000);
+                $steps[] = new StepSpec($checks[] = "site-{$node}-trustcheck", 0, 'trust.check', 'gateway', ["site-{$node}-read-trust"], budgetMs: 10_000);
+            }
         }
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             $node = ValidatedData::integer($leaf['node_id']);
@@ -140,16 +145,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         return $steps;
     }
 
-    /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked); an untrust step only on a rotation. */
+    /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked). */
     public function skips(Operation $operation, string $step, EngineRun $run): bool
     {
-        if (str_ends_with($step, '-untrust')) {
-            // Only a rotation removes a source: the fixed CA file held another root, by the digest of its PEM.
-            $before = RouteHostSteps::digest($run->output(substr($step, 0, -strlen('untrust')).'read-trust'));
-
-            return $before === null || $before === hash('sha256', ValidatedData::string(self::plan($operation)['root_certificate']));
-        }
-
         return str_contains($step, '-unlink-') && ! RouteHostSteps::linked($run->output(str_replace('-unlink-', '-read-', $step)));
     }
 
@@ -238,9 +236,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             }
         }
         if (in_array($node, ValidatedData::integerList($plan['trust']), true)) {
-            // A rotation removes the source of the root the fixed CA file held, writes the new root there, then trusts it.
-            $parts = [...$parts, ['read-trust', 'file.read', [], 30_000], ['untrust', 'file.ensure', [], 30_000], ['cafile', 'file.ensure', [], 30_000],
-                ['trust', 'ca.trust.ensure', [], 120_000]];
+            $parts[] = ['trust', 'ca.trust.ensure', [], 120_000];
         }
         if ($mine('caddy') !== []) {
             $parts[] = ['read-caddy', 'file.read', [], 30_000];
@@ -279,7 +275,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         return match ($kind) {
             'sign' => $this->sign($operation, RouteExecutionProof::objects($plan['leaves'])[(int) $index], $run->output("csr-{$index}") ?? '', $run),
             'probe' => $this->probe(RouteExecutionProof::objects($plan['probes'])[(int) $index]),
-            'site' => self::accounts($plan, (int) $index, $run),
+            'site' => str_ends_with($index, '-trustcheck') ? self::trustCheck($plan, (int) $index, $run) : self::accounts($plan, (int) $index, $run),
             default => throw new LogicException("Step [{$step}] runs on a Node."),
         };
     }
@@ -425,6 +421,28 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
+     * Checks that the trust anchor already holds the Route's root, or is absent. An Orbit root rotation is not run here: a
+     * same-name replacement leaves the new root without its subject-hash link, which `ca.trust.ensure` refuses. The create
+     * refuses before any request, as the Node's site step (`route.publish_failed`); during a rotation route.create is off in
+     * `ORBIT_ENGINE_KINDS` until Swamp has rotated every development Node.
+     *
+     * @param  array<string, mixed>  $plan
+     */
+    private static function trustCheck(array $plan, int $node, EngineRun $run): string
+    {
+        $read = $run->output("site-{$node}-read-trust");
+        $answer = is_string($read) ? json_decode($read, true) : null;
+        if (is_array($answer) && ($answer['state'] ?? null) === 'absent') {
+            return "no trust anchor on node {$node} yet";
+        }
+        if (RouteHostSteps::digest($read) !== hash('sha256', ValidatedData::string($plan['root_certificate']))) {
+            throw new EngineStepRefusal('route.trust_rotation', "Node {$node} trusts another Orbit root: rotate it on Swamp first.");
+        }
+
+        return "node {$node} trusts the root";
+    }
+
+    /**
      * An account as its recorded `account.read` answered it: `[group, home, gid, user]`, the primary group by NSS on the Node and
      * the canonical name NSS answered, which owns the account's files. `absent` means NSS does not resolve it now
      * (RouteEngineFlow::accounts refuses before anything changed).
@@ -513,11 +531,8 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'key' => RouteHostSteps::copy($copies().$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $who($account)[3], $who($account)[0], '0600'),
             'copy' => RouteHostSteps::plain($copies().$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $who($account)[3], $who($account)[0], '0600'),
             'copylink' => RouteHostSteps::link($copies().$leaf()[0].'/current', $leaf()[1], $who($account)[3], $who($account)[0]),
-            'trust' => ['state' => 'present', 'name' => RouteHostSteps::trustName(ValidatedData::string($plan['root_certificate'])), 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
+            'trust' => ['state' => 'present', 'name' => RouteHostSteps::TrustName, 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
-            'untrust' => RouteHostSteps::absent(RouteHostSteps::TrustFolder.RouteHostSteps::trustNamed(RouteHostSteps::digest($output("site-{$node}-read-trust"))
-                ?? throw new LogicException('No earlier root to remove.'))),
-            'cafile' => RouteHostSteps::plain(RouteHostSteps::TrustFile, ValidatedData::string($plan['root_certificate']), 'root', 'root', '0644'),
             'unlink' => RouteHostSteps::absent(ValidatedData::string($this->hostInput($plan, $node, 'read-'.substr($part, strlen('unlink-')), $output)['path'])),
             // A read names the file its write replaces: the Caddyfile, or the pool at an index.
             'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ($part === 'read-trust' ? RouteHostSteps::TrustFile : ValidatedData::string(RouteHostSteps::pools(

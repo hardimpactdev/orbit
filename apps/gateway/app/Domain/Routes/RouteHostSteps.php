@@ -34,25 +34,13 @@ final readonly class RouteHostSteps
 
     public const string Catalog = '/var/lib/orbit/private-dns/catalog.json';
 
-    /** The fixed CA file existing TLS probes read: it holds the Orbit root the Node trusts, as `route.publish_site` placed it. */
-    public const string TrustFile = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
-
-    public const string TrustFolder = '/usr/local/share/ca-certificates/';
-
     /**
-     * The trust source of an Orbit root, named after the SHA-256 of its PEM (the leaves' `root_hash`): a new root gets a new name
-     * and so its own subject-hash link, as `route.publish_site`'s replacement did. A read of the fixed CA file gives the digest
-     * of the root the Node trusted before, and so its name. Other roots in the store are left as they are.
+     * The one trust anchor of the Orbit root, as `route.publish_site` and Swamp's site phase place it: either publisher replaces
+     * it, and the plain update then drops a retired root. Other roots in the store are left as they are.
      */
-    public static function trustName(string $pem): string
-    {
-        return self::trustNamed(hash('sha256', $pem));
-    }
+    public const string TrustName = 'orbit-managed-root-ca.crt';
 
-    public static function trustNamed(string $sha256): string
-    {
-        return 'orbit-managed-root-ca-'.substr($sha256, 0, 16).'.crt';
-    }
+    public const string TrustFile = '/usr/local/share/ca-certificates/'.self::TrustName;
 
     /** @return array{state: string, path: string} */
     public static function absent(string $path): array
