@@ -128,7 +128,7 @@ final readonly class NativeRouteCreatePlan
             $artifact = static fn (mixed $index): mixed => is_int($index) && is_array($dnsArtifacts) ? ($dnsArtifacts[$index] ?? null) : null;
             if ($after['dns'] !== null && $artifact($after['dns']) != $artifact($before['dns']) && is_array($render['dns'])) {
                 $dns = ValidatedData::object($render['dns']);
-                $plan['dns'][] = ['node_id' => $nodeId, 'records' => $dns['records'], 'catalog' => $dns['catalog']];
+                $plan['dns'][] = ['node_id' => $nodeId, 'records' => $dns['records'], 'catalog' => $dns['catalog'], 'from' => $this->dnsDigests($nodeId)];
                 $touched[$nodeId] = true;
             }
         }
@@ -208,6 +208,22 @@ final readonly class NativeRouteCreatePlan
         }
 
         return $this->result($route, $plan, array_values($trust), $root, $nodes);
+    }
+
+    /**
+     * The digests of a VPN Node's records and catalog as the sites render them at admission, before this Route: the guard of the
+     * engine's DNS write, so a payload that went stale while the create waited refuses instead of erasing a sibling's record.
+     *
+     * @return array{records: ?string, catalog: ?string}
+     */
+    private function dnsDigests(int $nodeId): array
+    {
+        $node = Node::query()->find($nodeId);
+        $before = $node === null ? null : app(NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true)['dns'];
+        $dns = is_array($before) ? $before : [];
+
+        return ['records' => is_string($dns['records'] ?? null) ? hash('sha256', $dns['records']) : null,
+            'catalog' => is_string($dns['catalog'] ?? null) ? hash('sha256', $dns['catalog']) : null];
     }
 
     /**
