@@ -248,7 +248,7 @@ class RouteLane(CloneLane):
             mine = [entry for entry in journal if entry['operation'] == f'{operation}:{step["name"]}']
             require(sum(entry['record'] == 'open' for entry in mine) == 1 and [entry['outcome']['status'] for entry in mine if entry['record'] == 'done'] in (['applied'], ['done']),
                     f'step {step["name"]} of {operation} did not execute once in the Node journal: {mine}')
-        skipped = [step['name'] for step in summary['steps'] if step['target'] != 'gateway' and step['first_sent_ms'] is None]
+        skipped = [step['name'] for step in summary['steps'] if step['target'] != 'gateway' and step['first_sent_ms'] is None and not step['on_failure']]
         require(all(name.startswith(('dnsunlink-', 'caddyunlink-', 'pools-')) for name in skipped), f'{operation} skipped Node steps other than a link removal or an unneeded pool write: {skipped}')
         return journal
 
@@ -302,7 +302,8 @@ class RouteLane(CloneLane):
                   'cli': cli, 'report_without_feature': report, 'restarted': restarted, 'cancelled_first': cancelled,
                   'served_names': {'before': names_before, 'after': names_after}}
         if via == 'engine':
-            steps = {step['name']: step for step in summary['steps']}
+            # A failure step (`caddyback-<node>`, the Caddyfile put back after a pool failure) runs only after a failure.
+            steps = {step['name']: step for step in summary['steps'] if not step['on_failure']}
             require(all(step['status'] == 'done' for step in steps.values()) and {'dnsread-0-records', 'dnsread-0-catalog', 'dns-0', 'grace', f'caddyread-{self.node_id}',
                     f'guard-{self.node_id}', f'withdraw-{self.node_id}', f'poll-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
                     f'route.destroy {operation} did not finish its engine steps')
@@ -562,13 +563,19 @@ print("\\n".join(sorted(names)))'''
             self.release_publication()
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
                                f'route.destroy {operation} did not leave the expected queued receipt', 50)
-            withdrawn = self.state(domain, scope)
+            # The interrupted checkpoint: DNS and Caddy are withdrawn, the leaf is still there (its removal follows the poll, which the
+            # stopped engine never sent), and the fence is open. Complete removal is required only after the replay.
+            withdrawn = wait_for(lambda: (found := self.state(domain, scope)) if not found['caddy_admin'] else None,
+                                 f'route.destroy {operation} did not withdraw the site from Caddy', 15, interval=0.5)
             row = self.db(f'SELECT status, lock_key FROM operations WHERE id={operation}')[0]
             replay = self.admitted('DELETE', path, {}, key)
             pending = next(row for row in self.steps(operation) if row['name'] == step)
             # A route Operation takes no Operation lock (`lock_key`, on Swamp as on the engine): its fence is the Route Node hold, from
             # admission to the terminal state (RoutePublicationHolds), and the Route record.
-            fence = {'withdrawn_on_node': self.absent(withdrawn), 'operation_open': row['status'] not in TERMINAL, 'nodes_held': sum((holds := self.held(operation)).values()) > 0,
+            fence = {'dns_withdrawn': withdrawn['dns_record_lines'] == 0 and withdrawn['dns_answers'] == 0,
+                     'caddy_withdrawn': withdrawn['caddy_lines'] == 0 and not withdrawn['caddy_admin'], 'leaf_kept': withdrawn['leaf_paths'] == 1,
+                     'leaf_step_not_sent': all(row['first_sent_ms'] is None for row in self.steps(operation) if row['name'].startswith(('leaf-', 'leafhome-'))),
+                     'operation_open': row['status'] not in TERMINAL, 'nodes_held': sum((holds := self.held(operation)).values()) > 0,
                      'route_kept': bool(self.db(f"SELECT id FROM routes WHERE domain='{domain}'")), 'replay_same_operation': replay['id'] == operation,
                      'step_not_done': pending['status'] != 'done'}
             require(all(fence.values()), f'route.destroy {operation} did not keep its fence after the Node withdrew without a receipt: '
