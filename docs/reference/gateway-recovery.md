@@ -351,13 +351,13 @@ A verified Gateway release triggers two distinct layers of fleet work:
 
 The fleet pass validates the serving Conn host release catalog before admitting work. For a reviewed release, it dry-runs and updates the standalone canary only if that Node is enrolled for that exact version. A failed canary holds the pass; its Operation shows the failure and rollback result. The [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains how to retry and promote the verified release without changing other Nodes' pins.
 
-During the verified release fleet pass, each eligible Node (with the serving Gateway Node last) runs delivery and then admits either a scoped role `node.converge` (when role inputs changed) or a full `node.converge` (when host inputs changed). Once all Nodes are `current`, `phases.fleet.status` becomes `current` and default refresh and seed publication may advance.
+During the verified release fleet pass, each eligible Node (with the serving Gateway Node last) runs delivery and then the same full `node.converge` that [`orbit node:converge NODE`](/cli/node/converge) starts, once per pass. The converge's own [phase digests](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change) decide which phases run, so a change to a phase such as Tools reaches every Node after the release without a manual converge. Only a converge admitted after the Node's last delivery counts. A Node whose agent holds no verifier converges only when its release inputs changed, which its admission refuses. Once all Nodes are `current`, `phases.fleet.status` becomes `current` and default refresh and seed publication may advance.
 
 `ORBIT_FLEET_ROLLOUT` defaults to `true`. `ORBIT_FLEET_ROLLOUT_ORDER` accepts a comma-separated list of workload Node names to visit first.
 
-A failed delivery stops the pass and raises `rollout_halted`. A failed role or host converge marks that Node `failed` and continues to the next Node so the phase ends `failed` and retries on the next pass.
+A failed delivery stops the pass and raises `rollout_halted`. A failed Node converge marks that Node `failed` (with the converge's error code) and continues to the next Node so the phase ends `failed` and retries on the next pass.
 
-Automatic role or host converges yield to active Instance, Conn, and Process work on the target Node for up to 5 minutes (`operation.target_busy` queues new conflicting work while waiting; removals `instance.destroy` and `instance.unregister` always pass), then admit beside remaining holders. An ended deployment admitted by the release's own refresh (`origin` or `default_refresh`) never holds the converge (dropping from `waiting_for`), while other ended Operations keeping a fence (such as an [executor fence](/reference/executor)) continue to hold the Node. Task work neither waits for nor blocks a converge.
+Automatic Node converges yield to active Instance, Conn, and Process work on the target Node for up to 5 minutes (`operation.target_busy` queues new conflicting work while waiting; removals `instance.destroy` and `instance.unregister` always pass), then admit beside remaining holders. An ended deployment admitted by the release's own refresh (`origin` or `default_refresh`) never holds the converge (dropping from `waiting_for`), while other ended Operations keeping a fence (such as an [executor fence](/reference/executor)) continue to hold the Node. Task work neither waits for nor blocks a converge.
 
 To repair a single Node manually, run [`orbit node:converge NODE`](/cli/node/converge).
 
@@ -427,7 +427,8 @@ Gateway releases and fleet rollouts operate within these boundaries:
 - Releases require an established release layout or container setup, verified agent delivery, a valid CI web build, and Swamp access.
 - Every migration must be expand-and-contract; rollbacks never restore database snapshots.
 - Fleet rollouts visit one Node at a time; a failed delivery blocks later Nodes until repaired.
-- `fleet.rollout` delivers only the agent binary, CLI binary, and public CLI profile; role and host footprint changes require `node:converge` or the verified release fleet pass.
+- `fleet.rollout` delivers only the agent binary, CLI binary, and public CLI profile.
+- The verified release fleet pass converges each Node after delivery. `node:converge` repairs a single Node.
 
 ## Why it works this way
 

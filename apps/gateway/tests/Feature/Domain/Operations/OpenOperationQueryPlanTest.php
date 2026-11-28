@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\AdmitFleetRolloutAction;
-use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Domain\Operations\NodeWorkAdmission;
 use App\Models\Node;
 use Illuminate\Database\Events\QueryExecuted;
@@ -58,14 +57,6 @@ it('reads the holders of a role converge through indexes (QueryPlan)', function 
 
 it('reads the automatic converges that Instance work waits for through indexes (QueryPlan)', function (): void {
     $plans = ($this->plans)(fn () => app(NodeWorkAdmission::class)->check('instance.deploy', $this->node->id, []));
-
-    ($this->bounded)($plans);
-});
-
-it('reads the converges of one Node in the pass through an index (QueryPlan)', function (): void {
-    $action = app(ContinueReleaseFleetAction::class);
-    $node = $this->node;
-    $plans = ($this->plans)(fn () => (fn () => $this->convergedAssignments($node, now()->subMinute()))->call($action));
 
     ($this->bounded)($plans);
 });
