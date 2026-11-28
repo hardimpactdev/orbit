@@ -33,7 +33,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
-| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` |
+| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>-read-<file>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `file.read`, `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
 | `route.destroy` | `dnsread-<i>-<file>`, `dnsunlink-<i>-<file>`, `dns-<i>`, `grace`, `caddyread-<node>`, `account-<node>`, `poolread-<node>-<k>`, `guard-<node>`, `caddyunlink-<node>`, `withdraw-<node>`, `poll-<node>`, `pools-<node>`, `leaf-<node>-<k>`, `leafhome-<node>-<k>`, `sibling-<node>` | `file.read`, `account.read`, `file.ensure`, `config.apply`, `http.probe` |
 | `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
@@ -48,19 +48,55 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 
 ### route.create
 
-The engine runs the admitted `route_create` plan while preserving Route holds and waiting-create Caddyfile refreshes. Its steps run in this order:
+The engine runs the admitted `route_create` plan as host catalogue primitives that the Gateway composes ([route create](/cli/route/create#proposed-executor-path)). The steps keep the Route holds and the waiting-create Caddyfile refresh. They run in this order:
 
 1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node.
 2. `sign-<i>`: The Gateway signs the request using `operation:direct:certificate-sign`. It refuses any pending cancellation.
-3. `site-<node>`: `route.publish_site` configures Caddy access, `APP_URL`, symlinks, PHP-FPM pools, leaf certificates, Orbit root trust, and the Caddyfile.
-4. `dns-<i>`: `dns.publish_records` updates changed private DNS records on each VPN Node alongside site publication.
+3. `site-<node>-<part>`: Each Node's part, one step after the other, in the order `route.publish_site` used. The table below lists the parts.
+4. `dns-<i>`: Two `file.read` steps (`dns-<i>-read-records`, `dns-<i>-read-catalog`), then `config.apply` writes the records and the catalog on each VPN Node under its DNS lock, beside the sites.
 5. `probe-<i>`: The Gateway completes a TLS handshake with each serving Node over its WireGuard address, trusting only the Orbit root.
 
-For `csr-<i>`, the Gateway sends the folder, its owner and modes, and the subject. Admission requires `tls.csr_input` in the leaf Node's `features`. Without it, the Route runs on Swamp.
+| Part | Primitive | What it does |
+| --- | --- | --- |
+| `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
+| `link-<k>` | `file.ensure` | Places a release link |
+| `account-<k>`, `accounts` | `account.read`, Gateway check | Reads each account the Node's steps write for, first, then checks every answer |
+| `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
+| `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
+| `unit-<k>` | `systemd.unit.ensure` | Enables and starts a pool unit |
+| `reload` | `config.apply` | Reloads the pools |
+| `cert-<i>`, `current-<i>` | `file.ensure` | Places the signed leaf and its version link |
+| `folder-<i>`, `key-<i>`, `copy-<i>`, `copylink-<i>` | `file.ensure` | Places the account's copy of key and leaf |
+| `trust` | `ca.trust.ensure` | Trusts the Orbit root |
+| `caddy` | `config.apply` | Applies the Caddyfile and reloads Caddy |
 
-Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
+The Gateway renders every file whole and sends each Caddyfile and pool with the digest a `file.read` step recorded just before its write. The records and the catalog take the digest of the files as the sites rendered them at admission, as `route.update` and `route.destroy` guard theirs: a payload that went stale while the create waited for its hold refuses without writing.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.destroy` and `route.update`.
+The write replaces what the Node held at the read, as `route.publish_site` did. Its guard refuses only when the file changed between the read and the write. A read that finds a link in the file's place runs that file's unlink step, `file.ensure` absent, which never follows the link; the write then sends no guard. For any other read, the engine marks the unlink step done without an order.
+
+The pool reload rewrites nothing: each file's guard is the digest of the bytes the install left. The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, and the records and the catalog `/run/lock/orbit-dnsmasq.lock`. Each `config.apply` step has its own `recovery_dir` under `/var/lib/orbit/executor/config-recovery`: `pool-install`, `pool-reload`, `caddy` and `dns`. Each input comes from the plan and the recorded reads, so a resend carries the same bytes.
+
+The engine installs the Orbit root only under the one trust anchor `orbit-managed-root-ca.crt`, the file main and Swamp place, so either publisher replaces it. Before any request, `site-<node>-read-trust` reads the anchor and the Gateway step `site-<node>-trustcheck` checks it. An anchor that holds another root refuses there with `route.publish_failed`, because a same-name rotation leaves the new root without the subject-hash link `ca.trust.ensure` requires.
+
+After an Orbit root CA rotation, route.create stays off in `ORBIT_ENGINE_KINDS` until the `ca.trust.ensure` rotation fix, which drops a replaced source's old `.pem` link before the update, is released and pinned and has repaired the subject-hash link on every development Node. Swamp rotating the file alone is not enough. Unrelated roots are never named.
+
+Each account the Node's steps write for is read first, before any request, with `account.read`: the Node's account for the leaf copies and the pools, and each other link owner. Its recorded answer gives the home, the primary group and the canonical name that owns the files, so a retry sends the same bytes. The Gateway step `site-<node>-accounts` then checks the answers. An account NSS does not resolve now refuses there, before anything changed, and the Route records `route.publish_failed`, as `route.publish_site` did.
+
+The publication hold covers every Node of the plan: site and leaf Nodes, and each VPN Node with DNS work. A failed step records main's code for its chart step: `route.publish_failed` for `Install cert, publish site-<node>` and `private_dns.publication_failed` for `Publish private DNS-<i>`. A guard refusal records its chart step's code too, as main maps it.
+
+Admission runs `route.create` on the engine only when all of these hold:
+
+- The Route has no Caddy access rows. Their recursive work stays on Swamp until `posix.acl.ensure` takes `scope: tree` (A4).
+- Each site or leaf Node is an app-dev Node, and each Node with DNS work alone has the vpn role.
+- No target Instance lies outside development, and the intent has no production placement and no `production_control`.
+- Every Node with work reports the `host` family with `account.read` (agent 0.37.0), which also brings `file.read` and the `source_path` input of `file.ensure`.
+- Every leaf Node reports `tls.csr_input`.
+- Every owner name the Gateway records fits the owner pattern of the host primitives, `^[a-z_][a-z0-9_-]{0,31}$`.
+- Each order fits the signer's limit with real 64-hex guards.
+
+The owner names the Gateway records are the Route's account and each other link owner, so a name such as `Orbit` or `Dev.Team` keeps the Route on Swamp. A name NSS answers outside the pattern refuses at `site-<node>-accounts`, before any request.
+
+Any other `route.create` runs on Swamp as a whole. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env` or awake markers stay on Swamp in any case, as do Routes with other PHP-FPM pools.
 
 ### route.destroy
 
