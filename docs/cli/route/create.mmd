@@ -39,7 +39,7 @@ sequenceDiagram
     %%> - a task that waits starts from the Node's live files; a site block that matches none of its captured states still stops it with `owned_revision_conflict`
     GW->>SW: Start run, full intent<br/>operation-route-create
     %%> On the Gateway engine (ADR 0271):
-    %%> - with `route.create` in `ORBIT_ENGINE_KINDS`, the same steps run as the engine's typed steps instead of a Swamp run: `tls.ensure_csr` on the Node, the Gateway's own signing, `route.publish_site` per Node, `dns.publish_records` per VPN Node and the Gateway's TLS probe
+    %%> - with `route.create` in `ORBIT_ENGINE_KINDS`, the same steps run as host catalogue primitives that the Gateway composes (route/engine/create.mmd); a Route with Caddy access rows runs on Swamp until `posix.acl.ensure` takes a tree scope
     %%> - a Route that needs the Ingress edge, a LAN rule, a production `.env`, or a Node without the route primitives runs on Swamp
     %%> - the engine's probe waits for the sites alone, so a failed DNS publish does not skip it; the Route still fails with the DNS step's code
     %%> - step names, failed steps and error codes stay the chart's (docs/reference/gateway-engine.md#routecreate)

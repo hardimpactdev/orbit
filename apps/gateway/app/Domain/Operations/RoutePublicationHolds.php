@@ -181,7 +181,7 @@ final class RoutePublicationHolds
 
     /**
      * The Nodes that serve the sites of the write: every `publications` entry of its Route mutations with `serves_routes`.
-     * The entries sit at another path in each kind, so the input is walked.
+     * The entries sit at another path in each kind, so the input is walked. A create also holds every Node of its plan.
      *
      * @return list<int>
      */
@@ -196,6 +196,15 @@ final class RoutePublicationHolds
         }
         $nodes = [];
         self::collect($operation->input, $nodes);
+        // route.create's engine flow reads and writes on every Node of its plan, a VPN Node with DNS work alone included: all of them are held.
+        if ($operation->kind === 'route.create' && is_array($operation->input['route_create'] ?? null)) {
+            $plan = $operation->input['route_create'];
+            foreach ([...(array) ($plan['site_nodes'] ?? []), ...array_column((array) ($plan['leaves'] ?? []), 'node_id'), ...array_column((array) ($plan['dns'] ?? []), 'node_id')] as $node) {
+                if (is_int($node)) {
+                    $nodes[] = $node;
+                }
+            }
+        }
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
 

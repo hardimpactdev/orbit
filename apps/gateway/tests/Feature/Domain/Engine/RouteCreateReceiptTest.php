@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteEngineFlow;
+use App\Domain\Routes\RouteHostSteps;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
@@ -67,9 +69,15 @@ final class RouteCreateReceiptBus implements MachineBus
 }
 
 /** route.create's two Node steps on one Node, with its actions: not a receipt-bound kind. */
-final class RouteCreateReceiptDefinition implements EngineDefinition
+final class RouteCreateReceiptDefinition implements EngineDefinition, EngineSkip
 {
     public static ?string $finished = null;
+
+    /** The site step is skipped when the request's recorded output says so, as an unlink step is when its read found no link. */
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
+    {
+        return ! str_starts_with($step, 'site-') || $run->output('csr-0') !== 'SKIP-SITE';
+    }
 
     public function __construct(private int $node) {}
 
@@ -141,4 +149,36 @@ it('resends a route.create step whose receipt was lost and settles it once from 
     expect($this->bus->sent)->toBe(['csr-0' => 2, $this->site => 1])
         ->and($csr->output)->toBe('CSR')->and($csr->late)->toBe(1)
         ->and(RouteCreateReceiptDefinition::$finished)->toBe('succeeded');
+});
+
+it('records a file.read receipt in the executor\'s shape as the step output whose digest the next write sends', function (string $stdout, ?string $digest): void {
+    // orbit-executor `file_read`: `Outcome::Output { stdout: serde_json::json!(read) }`, a `Read` tagged by `state`.
+    ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => $stdout]);
+
+    $read = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', 'csr-0')->firstOrFail();
+    expect($read->output)->toBe($stdout)
+        ->and(RouteHostSteps::digest($read->output))->toBe($digest);
+})->with([
+    'a plain file' => ['{"state":"present","type":"file","sha256":"'.str_repeat('ab', 32).'","uid":0,"gid":0,"mode":"0644"}', str_repeat('ab', 32)],
+    'a link, which has no digest' => ['{"state":"present","type":"symlink","uid":0,"gid":0,"mode":"0777"}', null],
+    'nothing at the path' => ['{"state":"absent"}', null],
+]);
+
+it('marks a Node step the kind skips done without an order, and the run goes on', function (): void {
+    ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => 'SKIP-SITE']);
+
+    $site = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', $this->site)->firstOrFail();
+    expect($this->bus->sent)->toBe(['csr-0' => 1])
+        ->and($site->status)->toBe('done')->and($site->sends)->toBe(0)
+        ->and(RouteCreateReceiptDefinition::$finished)->toBe('succeeded');
+});
+
+it('records an account.read receipt in the executor\'s shape as the answer the next steps render from', function (): void {
+    // A5 `account.read`: `Outcome::Output { stdout }`, the account as JSON, its primary group by NSS on the Node.
+    $stdout = '{"state":"present","user":"orbit","uid":1000,"gid":2000,"group":"staff","home":"/srv/orbit"}';
+    ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => $stdout]);
+
+    $read = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', 'csr-0')->firstOrFail();
+    expect($read->output)->toBe($stdout)
+        ->and(RouteEngineFlow::owner($read->output))->toBe(['staff', '/srv/orbit', 2000, 'orbit']);
 });
