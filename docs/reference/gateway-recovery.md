@@ -427,7 +427,8 @@ Gateway releases and fleet rollouts operate within these boundaries:
 - Releases require an established release layout or container setup, verified agent delivery, a valid CI web build, and Swamp access.
 - Every migration must be expand-and-contract; rollbacks never restore database snapshots.
 - Fleet rollouts visit one Node at a time; a failed delivery blocks later Nodes until repaired.
-- `fleet.rollout` delivers only the agent binary, CLI binary, and public CLI profile; the verified release fleet pass converges each Node after it, and `node:converge` repairs a single Node.
+- `fleet.rollout` delivers only the agent binary, CLI binary, and public CLI profile.
+- The verified release fleet pass converges each Node after delivery. `node:converge` repairs a single Node.
 
 ## Why it works this way
 

@@ -708,6 +708,7 @@ final readonly class ContinueReleaseFleetAction
         return null;
     }
 
+    /** @param array<string,mixed> $row */
     private function operation(array $row, string $key): ?Operation
     {
         return isset($row[$key]) ? Operation::query()->findOrFail(ValidatedData::integer($row[$key])) : null;
