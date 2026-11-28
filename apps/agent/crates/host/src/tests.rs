@@ -1107,3 +1107,18 @@ fn file_read_fails_a_read_error_and_never_answers_absent() {
         assert_eq!(behind_folder.expect_err("a missing file behind a sealed folder is unknown").code, "file.read_failed");
     }
 }
+
+#[test]
+fn file_read_leaves_the_access_time_as_it_was() {
+    let fake = Fake::new();
+    fake.write("/etc/app.conf", b"listen = 9000\n");
+    // An access time older than the change time, so relatime would update it on a plain read.
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(946_684_800);
+    fs::File::options().write(true).open(fake.path("/etc/app.conf")).expect("open").set_times(fs::FileTimes::new().set_accessed(old)).expect("old atime");
+    let before = fs::symlink_metadata(fake.path("/etc/app.conf")).expect("meta");
+    assert_eq!(before.atime(), 946_684_800);
+    assert!(matches!(file_read(&fake, &json!({"path": "/etc/app.conf"})).expect("read"), Read::Present { kind: "file", .. }));
+    let after = fs::symlink_metadata(fake.path("/etc/app.conf")).expect("meta");
+    assert_eq!((after.atime(), after.atime_nsec()), (before.atime(), before.atime_nsec()), "the read wrote the access time");
+    assert_eq!((after.mtime(), after.mtime_nsec()), (before.mtime(), before.mtime_nsec()));
+}

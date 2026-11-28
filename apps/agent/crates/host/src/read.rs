@@ -13,6 +13,9 @@ use crate::{absolute, invalid, parse, Failure, System};
 const PATH: i32 = 0o10_000_000;
 /// `O_NONBLOCK`: a pipe swapped in for the file never holds the open.
 const NONBLOCK: i32 = 0o4000;
+/// `O_NOATIME`: reading the bytes leaves the access time as it was. The kernel refuses it (`EPERM`) to a caller that neither
+/// owns the file nor holds `CAP_FOWNER`; that read fails rather than open plainly, so a read never writes.
+const NOATIME: i32 = 0o1_000_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,7 +86,7 @@ pub fn file_read(system: &impl System, input: &serde_json::Value) -> Result<Read
     };
     let sha256 = if kind == "file" {
         // A path descriptor cannot be read: the file opens again, and it must still be the file just looked at.
-        let mut stream = stdfs::File::options().read(true).custom_flags(NOFOLLOW | NONBLOCK).open(&path).map_err(failed)?;
+        let mut stream = stdfs::File::options().read(true).custom_flags(NOFOLLOW | NONBLOCK | NOATIME).open(&path).map_err(failed)?;
         let again = stream.metadata().map_err(failed)?;
         if (again.dev(), again.ino()) != (meta.dev(), meta.ino()) {
             return Err(failed(std::io::Error::other("the path changed during the read")));

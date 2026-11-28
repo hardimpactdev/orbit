@@ -233,7 +233,9 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 
 `file.read` answers `{"state": "absent"}` only when nothing is at the path. Otherwise it answers `{"state": "present", "type", "sha256", "uid", "gid", "mode"}`: `type` is `file`, `directory`, `symlink`, `fifo`, `socket`, `char_device` or `block_device`, `mode` the octal permission bits such as `0644`, and `sha256` the digest of a plain file's bytes, absent for any other type.
 
-It opens the path with `O_PATH | O_NOFOLLOW` and reads owner, group, mode and type from that descriptor, so a link answers `symlink` with the link's own owner, never the file it names. A plain file opens again for its bytes, and must still be the same file by device and inode. It never answers content. A read that fails, such as a folder it cannot enter or a file it cannot open, answers `file.read_failed`, never absent.
+It opens the path with `O_PATH | O_NOFOLLOW` and reads owner, group, mode and type from that descriptor, so a link answers `symlink` with the link's own owner, never the file it names.
+
+A plain file opens again for its bytes with `O_NOATIME`, so the read leaves the access time as it was, and must still be the same file by device and inode. The kernel grants `O_NOATIME` to the file's owner or a holder of `CAP_FOWNER`, which the executor has as root. Any other caller fails `file.read_failed`, never a plain open, so a read never writes. It never answers content. A read that fails, such as a folder it cannot enter or a file it cannot open, answers `file.read_failed`, never absent.
 
 A Gateway flow sends the `sha256` it read as the `from_sha256` of the `config.apply` or `file.ensure` that follows, under the lock that guards the file, so a write that replaces a file the Gateway cannot render byte for byte is still guarded.
 
