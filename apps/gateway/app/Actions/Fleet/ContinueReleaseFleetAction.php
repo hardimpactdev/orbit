@@ -606,7 +606,11 @@ final readonly class ContinueReleaseFleetAction
         $delivery = app(AgentDelivery::class);
         $pin = $delivery->pin($node);
         $deliveryOperation = $this->operation($row, 'delivery_operation_id');
+        // Only a converge that started after the Node's last delivery counts: a later delivery may change what it applied.
         $roleOperation = $this->operation($row, 'role_operation_id');
+        if ($roleOperation !== null && $deliveryOperation !== null && $roleOperation->id < $deliveryOperation->id) {
+            $roleOperation = null;
+        }
         $reported = app(AgentReportedVersions::class)->get($node->id);
         $drifted = $reported !== null && $reported['version'] !== $delivery->reportedVersion($node)
             && ($deliveryOperation?->finished_at === null || $reported['at'] > (float) $deliveryOperation->finished_at->format('U.u'));
@@ -648,9 +652,10 @@ final readonly class ContinueReleaseFleetAction
                 $locked->forceFill(['release_inputs' => $recorded])->save();
             }
         }
-        // Each Node converges once per pass, after delivery: the same full Node converge an operator runs. Its own phase digests
-        // decide which phases run, and a succeeded one records the host and role digests (NodeConvergeProjection).
-        $settled = false;
+        // Each Node with a managed agent converges once per pass, after delivery: the same full Node converge an operator runs. Its
+        // own phase digests decide which phases run, and a succeeded one records the host and role digests (NodeConvergeProjection).
+        // A Node without one converges only for changed release inputs, which its admission refuses.
+        $settled = ! app(ManagedNodeEligibility::class)->convergeable($node) && $row['host'] !== 'pending' && $changed === [];
         if ($roleOperation !== null) {
             if ($roleOperation->status !== OperationStatus::Succeeded) {
                 foreach ($changed as $role) {

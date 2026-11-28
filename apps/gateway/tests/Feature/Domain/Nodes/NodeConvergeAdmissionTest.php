@@ -39,6 +39,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -51,6 +52,8 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -935,33 +938,94 @@ it('keeps a current Node current for the rest of the pass while the next Node co
         ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(2);
 });
 
-it('converges a Node after delivery with the full Node converge even when its release inputs are unchanged, and leaves out a Node outside the rollout', function (): void {
+/** Ends the pass's open delivery to the Node as its projection does when the planned agent verified. */
+function succeedDelivery(Node $node): Operation
+{
+    $delivery = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+    expect($delivery->input['nodes'][0]['node_id'])->toBe($node->id);
+    $delivery->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(), 'result' => ['nodes' => [[
+        'node_id' => $node->id, 'outcome' => 'converged', 'error_code' => null, 'cli_version' => null,
+        'agent_version' => $delivery->input['nodes'][0]['agent']['version'], 'step' => 'verify', 'ok' => true]]]]);
+
+    return $delivery;
+}
+
+it('delivers a stale agent, then converges the same Node with the full Node converge before the pass moves on, and leaves out a Node outside the rollout', function (): void {
+    // A delivery is admitted under the serving Gateway Node.
+    app(GatewayServingHost::class)->remember($this->control);
     prepareReleaseTarget();
     $inputs = app(ReleaseNodeInputs::class);
-    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs,
+    // Every release input is applied; only the agent pin is stale.
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs, 'agent' => 'old-agent',
         'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->node))]])->save();
+    $next = nextReleaseNode();
     // A Node without a managed agent stays out of the rollout, so the pass never converges it.
-    $unmanaged = nextReleaseNode();
-    $unmanaged->forceFill(['ssh_host_fingerprint' => null])->save();
+    $unmanaged = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'unmanaged', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
+    $unmanaged->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10)
+        ->and(Operation::query()->where('kind', 'node.converge')->exists())->toBeFalse();
+    $delivery = succeedDelivery($this->node);
 
     expect($fleet->execute($release))->toBe(10);
     $converge = Operation::query()->where('kind', 'node.converge')->sole();
     // The converge `orbit node:converge` starts: the base and every role, with the Node's recorded phase digests deciding what runs.
     expect($converge->node_id)->toBe($this->node->id)
+        ->and($converge->id)->toBeGreaterThan($delivery->id)
         ->and($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBeFalse()
         ->and($converge->input['_converge']['network']['base'])->toBeFalse()
         ->and($converge->input['_converge']['tool_scope'])->toBeTrue()
-        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'running', 'host' => 'unchanged', 'role_operation_id' => $converge->id]);
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'running', 'host' => 'unchanged',
+            'agent' => 'converged', 'delivery_operation_id' => $delivery->id, 'role_operation_id' => $converge->id]);
     succeedConverge($converge);
+
+    // The next Node converges only once this one is current.
+    expect($fleet->execute($release))->toBe(10)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
+        ->and(Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail()->node_id)->toBe($next->id);
+    succeedConverge(Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail());
 
     expect($fleet->execute($release))->toBeNull()
         ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
-        ->and($release->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
         ->and($release->phases['fleet']['nodes'])->not->toHaveKey($unmanaged->id)
-        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
+        ->and(Operation::query()->where('kind', 'node.converge')->where('node_id', $unmanaged->id)->exists())->toBeFalse();
 });
+
+it('never credits a Node with a converge that ran before its last delivery', function (string $change): void {
+    app()->instance(AgentReportedVersions::class, new AgentReportedVersions(new Repository(new ArrayStore)));
+    // A delivery is admitted under the serving Gateway Node.
+    app(GatewayServingHost::class)->remember($this->control);
+    prepareReleaseTarget();
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+    expect($fleet->execute($release))->toBe(10);
+    $first = Operation::query()->where('kind', 'node.converge')->sole();
+    succeedConverge($first);
+    // Before the pass sees the converge end, the agent pin moves on or the agent reports another version.
+    if ($change === 'pin') {
+        $this->node->forceFill(['release_inputs' => [...$this->node->fresh()->release_inputs, 'agent' => 'old-agent']])->save();
+    } else {
+        app(AgentReportedVersions::class)->record($this->node->id, '0.0.1');
+    }
+
+    expect($fleet->execute($release))->toBe(10);
+    $delivery = succeedDelivery($this->node);
+    if ($change === 'report') {
+        app(AgentReportedVersions::class)->record($this->node->id, app(AgentDelivery::class)->reportedVersion($this->node));
+    }
+
+    expect($fleet->execute($release))->toBe(10);
+    $second = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
+    expect($second->id)->toBeGreaterThan($delivery->id)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'running', 'role_operation_id' => $second->id]);
+    succeedConverge($second);
+
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('current');
+})->with(['a new agent pin' => 'pin', 'a late agent version report' => 'report']);
 
 it('marks a Node whose role converge failed, never retries it within the pass, and finishes the later Nodes', function (): void {
     prepareReleaseTarget();
