@@ -75,7 +75,7 @@ enum Scope {
 pub struct Acl {
     /// Paths whose list changed; `0` on a repeat.
     pub changes: u32,
-    /// Folders on another file system than the root, a mount point, that the walk did not enter.
+    /// Folders and files on another mount than the root, such as a bind mount, that the walk did not enter or change.
     pub skipped_mounts: u32,
     /// Plain files with more than one name, which may be outside the tree, that the walk left as they were.
     pub skipped_hard_links: u32,
@@ -153,8 +153,9 @@ struct Run<'a, S: System> {
     perms: &'a str,
     default: bool,
     tree: bool,
-    /// The root's file system; the walk never leaves it.
+    /// The root's file system and mount; the walk never leaves them.
     device: u64,
+    mount: u64,
     /// Each changed path, with what it held before, so a failed order puts every one back.
     changed: Vec<Changed>,
     acl: Acl,
@@ -204,7 +205,8 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<Acl
     } else if !kind.is_dir() && !kind.is_file() {
         return Err(failed(format!("{}: neither a folder nor a plain file", input.path)));
     }
-    let mut run = Run { system, subject, perms: &input.perms, default: input.default, tree, device: stat.st_dev, changed: Vec::new(), acl: Acl::default() };
+    let mount = mount_of(&fd, c"").map_err(|error| failed(format!("{}: {error}", input.path)))?;
+    let mut run = Run { system, subject, perms: &input.perms, default: input.default, tree, device: stat.st_dev, mount, changed: Vec::new(), acl: Acl::default() };
     let root = PathBuf::from(&input.path);
     let result = if kind.is_dir() { run.folder(&fd, &stat, &root) } else { run.path(&fd, &stat, &root) };
     match result {
@@ -252,6 +254,16 @@ fn open_root(system: &impl System, path: &str) -> std::io::Result<Root> {
     Ok(Root::Found(open(&at, OsStr::new(last), &stat)?, stat))
 }
 
+/// The mount `name` relative to `at` is on, never through a link; `""` is `at` itself.
+fn mount_of(at: impl AsFd, name: &std::ffi::CStr) -> std::io::Result<u64> {
+    let flags = AtFlags::SYMLINK_NOFOLLOW | if name.is_empty() { AtFlags::EMPTY_PATH } else { AtFlags::empty() };
+    let held = rustix::fs::statx(at, name, flags, rustix::fs::StatxFlags::MNT_ID)?;
+    if held.stx_mask & rustix::fs::StatxFlags::MNT_ID.bits() == 0 {
+        return Err(std::io::Error::other("the kernel reports no mount id"));
+    }
+    Ok(held.stx_mnt_id)
+}
+
 /// Opens the folder or plain file `name` relative to `at`, never through a link, and only when it is still what `stat` read.
 fn open(at: impl AsFd, name: &OsStr, stat: &Stat) -> std::io::Result<OwnedFd> {
     let folder = FileType::from_raw_mode(stat.st_mode).is_dir();
@@ -287,14 +299,20 @@ impl<S: System> Run<'_, S> {
             let shown = |error: &dyn std::fmt::Display| format!("{}: {error}", named.display());
             let stat = rustix::fs::statat(fd, child.as_c_str(), AtFlags::SYMLINK_NOFOLLOW).map_err(|error| shown(&error))?;
             let kind = FileType::from_raw_mode(stat.st_mode);
+            // Folders always; plain files for an access entry; links and every other type never.
+            let applies = kind.is_dir() || (kind.is_file() && !self.default);
+            if !applies {
+                continue;
+            }
+            // A mount point, also a bind mount from the same file system, is not entered or changed.
+            if stat.st_dev != self.device || mount_of(fd, child.as_c_str()).map_err(|error| shown(&error))? != self.mount {
+                self.acl.skipped_mounts += 1;
+                continue;
+            }
             if kind.is_dir() {
-                if stat.st_dev != self.device {
-                    self.acl.skipped_mounts += 1;
-                    continue;
-                }
                 let below = open(fd, OsStr::from_bytes(child.to_bytes()), &stat).map_err(|error| shown(&error))?;
                 self.folder(&below, &stat, &named)?;
-            } else if kind.is_file() && !self.default {
+            } else {
                 if stat.st_nlink > 1 {
                     self.acl.skipped_hard_links += 1;
                     continue;

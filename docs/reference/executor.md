@@ -255,7 +255,7 @@ With `scope: tree`, it converges the one entry on the root and every entry below
 
 The tree walk opens each folder and plain file relative to its parent's descriptor with `O_NOFOLLOW` and reads each entry with `AT_SYMLINK_NOFOLLOW`. Names stay the bytes the folder holds. A link is skipped and never followed, also when it points out of the tree.
 
-A folder on another file system than the root, a mount point, is not entered, and a plain file with more than one hard link is left as it is, because another of its names can be outside the tree. The output counts both as `skipped_mounts` and `skipped_hard_links`. Anything else that is neither a folder nor a plain file is skipped too.
+A folder or file on another mount than the root, by device or by `statx` mount ID, so a bind mount from the same file system too, is neither entered nor changed, and a plain file with more than one hard link is left as it is, because another of its names can be outside the tree. The output counts both as `skipped_mounts` and `skipped_hard_links`. Anything else that is neither a folder nor a plain file is skipped too.
 
 The root of a tree must be a folder. A plain file or anything else refuses `host.input_invalid`, and so does a root with the device and inode of `/`, whatever its spelling or bind mount. The path spelling refuses `/` and its aliases, such as `//`, `/.` and `/srv/..`, as for every path.
 
