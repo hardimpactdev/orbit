@@ -224,7 +224,15 @@ Deno.test("the Homebrew prefix rule leaves a file hard-linked from outside the p
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("the Homebrew prefix rule does not descend into another file system mounted in the prefix", async () => {
+Deno.test("the Homebrew prefix rule stays on the prefix's file system", () => {
+    assertEquals(homebrewReadable("/prefix").slice(0, 3), ["/usr/bin/find", "/prefix", "-xdev"]);
+});
+
+/** Whether this host lets an unprivileged user mount in a private namespace; CI runners do not. */
+const userNamespaces = await new Deno.Command("unshare", { args: ["-rm", "true"], stdout: "null", stderr: "null" }).output()
+    .then((result) => result.success, () => false);
+
+Deno.test({ name: "the Homebrew prefix rule does not descend into another file system mounted in the prefix", ignore: !userNamespaces, async fn() {
     const folder = await Deno.makeTempDir();
     try {
         await Deno.mkdir(`${folder}/prefix/mounted`, { recursive: true });
@@ -237,7 +245,7 @@ Deno.test("the Homebrew prefix rule does not descend into another file system mo
         assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
         assertEquals(new TextDecoder().decode(result.stdout).trim().split("\n"), ["700", "600"]);
     } finally { await Deno.remove(folder, { recursive: true }); }
-});
+} });
 
 Deno.test("several dpkg rows of one package read as one version, held when any row is held, and disagreeing versions are unclear", () => {
     const step = (stdout: string) => ({ status: "succeeded", outputs: { exitCode: 0, stdout } });
