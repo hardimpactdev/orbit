@@ -354,14 +354,14 @@ fn an_env_that_reaches_another_users_file_is_refused() {
 }
 
 #[test]
-fn a_broken_key_is_never_replaced() {
+fn a_broken_key_is_replaced_once() {
     let fake = Fake::new();
     fake.write(&format!("{DIRECTORY}/key.pem"), "BROKEN");
 
-    assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("an unreadable key").code, "app-dev.certificate_request_failed");
+    ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for a new key");
 
-    assert_eq!(fake.ran("genpkey"), 0);
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "BROKEN");
+    assert_eq!(fake.ran("genpkey"), 1);
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
 }
 
 #[test]
@@ -678,15 +678,19 @@ fn a_csr_keeps_any_key_openssl_reads() {
 }
 
 #[test]
-fn a_csr_never_replaces_an_existing_key_file() {
+fn a_csr_replaces_only_a_file_that_is_decisively_not_a_key() {
     let fake = Fake::new();
     let key = fake.path(&format!("{DIRECTORY}/key.pem"));
     fs::create_dir_all(key.parent().expect("folder")).expect("folder");
-    // An encrypted key, a certificate only, an empty file or garbage: the request fails with main's code and the file stays.
-    for held in ["-----BEGIN ENCRYPTED PRIVATE KEY-----\nSECRET\n-----END ENCRYPTED PRIVATE KEY-----\n", "-----BEGIN CERTIFICATE-----\nONLY\n-----END CERTIFICATE-----\n", "", "BROKEN"] {
+    // Deviation from main, for safety: a PEM block openssl cannot read fails with main's code and the file stays.
+    for held in ["-----BEGIN ENCRYPTED PRIVATE KEY-----\nSECRET\n-----END ENCRYPTED PRIVATE KEY-----\n", "-----BEGIN CERTIFICATE-----\nONLY\n-----END CERTIFICATE-----\n"] {
         fs::write(&key, held).expect("key");
         assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("unreadable").code, "app-dev.certificate_request_failed");
         assert_eq!(fs::read_to_string(&key).expect("key"), held);
     }
     assert_eq!(fake.ran("genpkey"), 0);
+    // An empty file is decisively not a key: replaced once, as on main.
+    fs::write(&key, "").expect("key");
+    ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a new key");
+    assert_eq!(fs::read_to_string(&key).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
 }

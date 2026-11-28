@@ -1,7 +1,7 @@
 //! `tls.ensure_csr`: the leaf key of one certificate version, and a request for it.
 
 use std::fs::{self, File};
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::os::unix::fs::{fchown, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -40,8 +40,9 @@ struct Input {
 /// Makes the version folder and its RSA 2048 key once, each with the owner and mode the Gateway names, then answers a
 /// request for that key, with the Gateway's subject and the one subject name the Gateway signs. A repeat finds the key,
 /// puts its owner and mode right without touching its bytes, and answers a request for the same key, so a re-sent order
-/// never replaces a key that a signed certificate may already match. An existing key file is never replaced: one that
-/// openssl cannot read, or a request that fails, fails the order and keeps the file. The key never leaves the Node.
+/// never replaces a key that a signed certificate may already match. Only a file that is decisively not a key is replaced
+/// once; a PEM block openssl cannot read, or an inconclusive inspection, fails the order and keeps the file. The key never
+/// leaves the Node.
 ///
 /// # Errors
 ///
@@ -67,17 +68,34 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     let gid = system.group(&input.group).map_err(failed)?;
     let mode = u32::from_str_radix(&input.key_mode, 8).map_err(|_| failed("key mode".to_owned()))?;
     let key = system.path(&input.key);
-    // An existing key file is never replaced, whatever it holds. It is kept when openssl reads it as PEM (other blocks around
-    // it included) or as DER; otherwise the order fails with the file untouched, a timeout included.
-    match fs::symlink_metadata(&key) {
+    // A key openssl reads as PEM or DER is kept. A file that is decisively not a key (empty, or holding no PEM block of any
+    // kind and failing DER) is replaced once, as before. A PEM block openssl cannot read, or an inspection that times out or
+    // cannot start, fails the order and keeps the file: replacing it could destroy a real key.
+    let usable = match fs::symlink_metadata(&key) {
         Ok(meta) if meta.file_type().is_file() => {
+            let held = read_key(&key).map_err(|error| failed(error.to_string()))?;
             let inspect = |form: &str| system.run(30, &strings(&["/usr/bin/openssl", "pkey", "-inform", form, "-noout", "-in", &input.key]));
-            inspect("PEM").or_else(|_| inspect("DER")).map_err(|detail| failed(format!("{} is not a key openssl reads: {detail}", input.key)))?;
-            own(&key, uid, gid, mode).map_err(|error| failed(error.to_string()))?;
+            if held.is_empty() {
+                false
+            } else if held.windows(11).any(|window| window == b"-----BEGIN ") {
+                inspect("PEM").map_err(|detail| failed(format!("{} holds a PEM block openssl cannot read: {detail}", input.key)))?;
+                true
+            } else {
+                match inspect("DER") {
+                    Ok(_) => true,
+                    Err(detail) if unparsed(&detail) => false,
+                    Err(detail) => return Err(failed(format!("{} inspection: {detail}", input.key))),
+                }
+            }
         }
         Ok(_) => return Err(failed(format!("{} is not a plain file", input.key))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => new_key(system, &key, uid, gid, mode).map_err(failed)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(error) => return Err(failed(error.to_string())),
+    };
+    if usable {
+        own(&key, uid, gid, mode).map_err(|error| failed(error.to_string()))?;
+    } else {
+        new_key(system, &key, uid, gid, mode).map_err(failed)?;
     }
     let name = format!("subjectAltName=DNS:{}", input.domain);
     let answer = request(system, &input.key, &input.subject, &name).map_err(failed)?;
@@ -85,6 +103,19 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
         return Err(failed("openssl gave no request".to_owned()));
     }
     Ok(answer)
+}
+
+/// Whether openssl's error says it read the file and found no key in it: its own decoding message, not a timeout (which
+/// prints nothing) or a failure to start.
+fn unparsed(detail: &str) -> bool {
+    detail.contains("Could not read key") || detail.contains("unable to load key") || detail.contains("Could not find private key")
+}
+
+/// The key file's bytes, read through a descriptor that does not follow a link.
+fn read_key(key: &Path) -> std::io::Result<Vec<u8>> {
+    let mut held = Vec::new();
+    File::options().read(true).custom_flags(NOFOLLOW).open(key)?.read_to_end(&mut held)?;
+    Ok(held)
 }
 
 /// Puts the key's owner and mode right through a descriptor that does not follow a link, leaving its bytes alone.
