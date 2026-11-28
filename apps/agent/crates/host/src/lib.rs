@@ -3,6 +3,7 @@
 //!
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
 //! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
+//! - [`account_read`] (`account.read`): the uid, primary group and home of one account, read only through the host's NSS.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
 //! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path.
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
@@ -14,6 +15,7 @@
 //! Every command is fixed here; none comes from the order. Content arrives as a blob the executor has already read and
 //! checked by its SHA-256.
 
+mod account;
 mod acl;
 mod config;
 mod dotenv;
@@ -36,6 +38,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde::Deserialize;
 
+pub use account::{account_read, Account};
 pub use acl::acl_ensure;
 pub use config::config_apply;
 pub use dotenv::dotenv_ensure;
@@ -78,6 +81,14 @@ pub trait System {
     ///
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
+
+    /// Runs a command with a time limit and returns its exit code, `None` when a signal ended it, and its standard output as
+    /// the exact bytes, whatever the code.
+    ///
+    /// # Errors
+    ///
+    /// A message when the command cannot start.
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
 
     /// A user's id by name.
     ///
@@ -156,6 +167,11 @@ impl System for NodeSystem {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
         }
+    }
+
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
+        let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
+        Ok((output.status.code(), output.stdout))
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
