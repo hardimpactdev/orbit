@@ -55,6 +55,15 @@ final readonly class NativeRouteCreatePlan
             }
             $plan[$list] = $rows;
         }
+        // The Caddyfiles now replace the live ones, so their guards are the live render's, as at admission.
+        if (($plan['guards'] ?? []) !== []) {
+            $accounts = [];
+            foreach ((array) $plan['accounts'] as $id => $account) {
+                $account = ValidatedData::object($account);
+                $accounts[(int) $id] = ['group' => ValidatedData::string($account['group']), 'home' => ValidatedData::string($account['home'])];
+            }
+            $plan['guards'] = app(RouteFileGuards::class)->create($accounts);
+        }
 
         return $plan;
     }
@@ -68,7 +77,7 @@ final readonly class NativeRouteCreatePlan
             'leaves' => [], 'caddy' => [], 'url_lines' => [], 'env_files' => [], 'probes' => [], 'ingress' => [], 'dns' => [], 'awake' => []];
         $trust = [];
         $root = '';
-        $nodes = [];
+        $nodes = $accounts = [];
         if ($lifecycle['effectful'] !== true) {
             return $this->result($route, $plan, $trust, $root, $nodes);
         }
@@ -204,10 +213,14 @@ final readonly class NativeRouteCreatePlan
             $connection = app(NativeCaddyPublicationInput::class)->connectionForNode($node);
             $nodes[(string) $node->id] = ['control_node_id' => $connection['control_node_id'], 'host' => $connection['connection']['nodeHost'], 'user' => $connection['connection']['nodeUser'],
                 'port' => $connection['connection']['nodePort'], 'identity_file' => $connection['connection']['nodeIdentityFile'], 'host_keys' => $connection['host_keys'],
-                'account' => app(RouteRenderContext::class)->user($node)];
+                'account' => $account = app(RouteRenderContext::class)->user($node)];
+            // The managed account's group shares its name (NodeEnrollmentPolicy); the engine renders pools and the account's copies with both.
+            $accounts[$node->id] = ['group' => $account, 'home' => RouteHostSteps::home($account)];
         }
+        // The files the engine replaces whole, by the digest of the bytes they were rendered from (RouteFileGuards::create).
+        $guards = RouteFileGuards::wanted('route.create') ? app(RouteFileGuards::class)->create($accounts) : [];
 
-        return $this->result($route, $plan, array_values($trust), $root, $nodes);
+        return [...$this->result($route, $plan, array_values($trust), $root, $nodes), 'accounts' => $accounts, 'guards' => $guards];
     }
 
     /**
@@ -222,7 +235,7 @@ final readonly class NativeRouteCreatePlan
         $scope = ValidatedData::string($leaf['scope']);
         $version = ValidatedData::string($leaf['version']);
 
-        // The account keeps its own copy for development servers; the run reads the account's home on the Node.
+        // The account keeps its own copy for development servers, under its home (`accounts.<id>.home`).
         return ['node_id' => $nodeId, 'scope' => $scope, 'domain' => ValidatedData::string($leaf['domain']), 'root_hash' => ValidatedData::string($leaf['root_hash']),
             'directory' => self::CaddyCertificates.'/'.$scope.'/versions/'.$version, 'current' => self::CaddyCertificates.'/'.$scope.'/current', 'target' => 'versions/'.$version,
             'user' => app(RouteRenderContext::class)->user(Node::query()->findOrFail($nodeId))];
@@ -252,7 +265,8 @@ final readonly class NativeRouteCreatePlan
     }
 
     /**
-     * The shared development PHP-FPM pools of a Node, whole. The run puts the account's gid and home in place.
+     * The shared development PHP-FPM pools of a Node, whole. The account's group and home go in place where the Node's steps
+     * place them (Swamp's site phase, RouteHostSteps::pools).
      *
      * @param  array<string,list<array<string,mixed>>>  $plan
      * @param  array<array-key,mixed>  $php

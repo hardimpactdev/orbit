@@ -1,0 +1,200 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Routes;
+
+use App\Domain\Engine\EngineUnsupported;
+use App\Support\ValidatedData;
+
+/**
+ * The inputs of the host catalogue primitives (docs/reference/executor.md#the-host-family) for a Route's files on one Node.
+ * The Gateway renders every file whole and sends each path, owner, mode, unit, lock and the digest a file was rendered from;
+ * the executor holds no Route path. Each builder answers one order's input, derived from the admitted plan alone, so a resend
+ * of a step carries the same bytes (config.apply's identity is the SHA-256 of its input).
+ */
+final readonly class RouteHostSteps
+{
+    /** Swamp's publication lock for the Caddyfile and the PHP-FPM pools (`orbit_route_publish`, `route.withdraw_site`). */
+    public const string CaddyLock = '/etc/caddy/.orbit-publish.lock';
+
+    /** The Node's private DNS lock (`DnsmasqPrivateDnsManager`, `dns.publish_records`). */
+    public const string DnsLock = '/run/lock/orbit-dnsmasq.lock';
+
+    /**
+     * config.apply's recovery folder, one per Node for every lock: the executor keeps each lock's record under
+     * `<sha256 of the lock path>/`, so the Caddy and DNS records never share a folder. It lies beside the executor's blob
+     * cache, outside every file a Route manages.
+     */
+    public const string RecoveryDir = '/var/lib/orbit/executor/config-recovery';
+
+    public const string Caddyfile = '/etc/caddy/Caddyfile';
+
+    public const string Records = '/etc/dnsmasq.d/orbit-records.conf';
+
+    public const string Catalog = '/var/lib/orbit/private-dns/catalog.json';
+
+    /** Where Caddy's trust of the Orbit root lives, as `route.publish_site` placed it. */
+    public const string TrustName = 'orbit-managed-root-ca.crt';
+
+    /** The file.ensure input that copies a host file (ORB-6360, primitives PR A2). A Node without it runs the Route on Swamp. */
+    public const string SourcePathFeature = 'file.source_path';
+
+    /** The configuration dnsmasq.service loads: Debian's unit reads the folder without its package leftovers. */
+    private const array DnsmasqSkip = ['.dpkg-dist', '.dpkg-old', '.dpkg-new'];
+
+    /**
+     * A config.apply input: whole files under one lock, their validators, and the units to load on every run.
+     *
+     * @param  list<array<string, mixed>>  $files
+     * @param  list<array<string, mixed>>  $validators
+     * @param  list<array{unit: string, load: string}>  $units
+     * @return array<string, mixed>
+     */
+    public static function apply(string $lock, array $files, array $validators, array $units = []): array
+    {
+        return ['lock' => $lock, 'recovery_dir' => self::RecoveryDir, 'files' => $files, 'validators' => $validators, 'units' => $units];
+    }
+
+    /**
+     * One config.apply file. `$from` is the digest of the bytes it was rendered from; without one the live file must be absent
+     * or already hold the content.
+     *
+     * @return array<string, mixed>
+     */
+    public static function file(string $path, string $content, ?string $from, string $user, string $group, string $mode): array
+    {
+        return ['path' => $path, 'content' => ['blob' => ['content' => $content]], ...($from === null ? [] : ['from_sha256' => $from]),
+            'owner' => ['user' => $user, 'group' => $group, 'mode' => $mode]];
+    }
+
+    /**
+     * The shared or production pools of one Node, rendered whole: the account's group and home replace the placeholders the
+     * shared pool render leaves (SharedPhpPoolInput), as Swamp's site phase does.
+     *
+     * @param  list<array{version: string, user: ?string, content: array{blob: array{content: string}}}>  $pools  RouteEngineFlow::pools
+     * @param  array<string, string>  $guards  The Node's rendered-from digests (`php:<version>`).
+     * @return array{files: list<array<string, mixed>>, validators: list<array<string, mixed>>, units: list<string>}
+     */
+    public static function pools(array $pools, string $group, string $home, array $guards): array
+    {
+        $files = $validators = $units = [];
+        foreach ($pools as $pool) {
+            ['version' => $version, 'user' => $user] = $pool;
+            $content = self::render($pool['content']['blob']['content'], $group, $home);
+            if ($user === null) {
+                $files[] = self::file("/etc/php/{$version}/fpm/pool.d/orbit-scopes.conf", $content, $guards['php:'.$version] ?? null, 'root', 'root', '0644');
+                $validators[] = ['kind' => 'php-fpm', 'version' => $version];
+                $units[] = "php{$version}-fpm.service";
+            } else {
+                $generated = "/etc/orbit/php-fpm/{$user}/generated";
+                $files[] = self::file("{$generated}/pool.conf", $content, null, 'root', 'root', '0644');
+                $validators[] = ['kind' => 'php-fpm', 'version' => $version, 'fpm_config' => "{$generated}/php-fpm.conf",
+                    'ini_scan_dir' => ["/etc/php/{$version}/fpm/conf.d", $generated]];
+                $units[] = "orbit-{$user}-php{$version}-fpm.service";
+            }
+        }
+
+        return ['files' => $files, 'validators' => $validators, 'units' => $units];
+    }
+
+    /** A shared pool's text with the account's group and home in place of the render's placeholders. */
+    public static function render(string $pool, string $group, string $home): string
+    {
+        return str_replace(['__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__'], [$group, rtrim($home, '/')], $pool);
+    }
+
+    /**
+     * The Caddyfile under the publication lock, validated as `caddy`, then Caddy reloads on every run.
+     *
+     * @return array<string, mixed>
+     */
+    public static function caddy(string $content, ?string $from): array
+    {
+        return self::apply(self::CaddyLock, [self::file(self::Caddyfile, $content, $from, 'root', 'caddy', '0640')],
+            [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']], [['unit' => 'caddy.service', 'load' => 'reload']]);
+    }
+
+    /**
+     * A VPN Node's records and catalog under the DNS lock, checked as dnsmasq.service loads them, then dnsmasq and the private DNS
+     * listener restart on every run.
+     *
+     * @param  array<string, string>  $guards  The Node's rendered-from digests (`records`, `catalog`).
+     * @return array<string, mixed>
+     */
+    public static function dns(string $records, string $catalog, array $guards): array
+    {
+        return self::apply(self::DnsLock, [
+            self::file(self::Records, $records, $guards['records'] ?? null, 'root', 'root', '0644'),
+            self::file(self::Catalog, $catalog, $guards['catalog'] ?? null, 'root', 'root', '0644'),
+        ], [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => self::DnsmasqSkip]],
+            [['unit' => 'dnsmasq.service', 'load' => 'restart'], ['unit' => 'orbit-private-dns.service', 'load' => 'restart']]);
+    }
+
+    /** @return array<string, mixed> */
+    public static function plain(string $path, string $content, string $user, string $group, string $mode): array
+    {
+        return ['state' => 'file', 'path' => $path, 'content' => ['blob' => ['content' => $content]], 'owner' => ['user' => $user, 'group' => $group, 'mode' => $mode]];
+    }
+
+    /**
+     * A copy of a host file, made on the Node: its bytes never reach the Gateway (file.ensure `source_path`, ORB-6360).
+     *
+     * @return array<string, mixed>
+     */
+    public static function copy(string $path, string $source, string $user, string $group, string $mode): array
+    {
+        return ['state' => 'file', 'path' => $path, 'source_path' => $source, 'owner' => ['user' => $user, 'group' => $group, 'mode' => $mode]];
+    }
+
+    /** @return array<string, mixed> */
+    public static function directory(string $path, string $user, string $group, string $mode): array
+    {
+        return ['state' => 'directory', 'path' => $path, 'owner' => ['user' => $user, 'group' => $group, 'mode' => $mode]];
+    }
+
+    /** @return array{state: string, path: string, target: string, user: string, group: string} */
+    public static function link(string $path, string $target, string $user, string $group): array
+    {
+        return ['state' => 'link', 'path' => $path, 'target' => $target, 'user' => $user, 'group' => $group];
+    }
+
+    /** @return array{unit: string, enabled: bool, state: string, budget_ms: int} */
+    public static function running(string $unit): array
+    {
+        return ['unit' => $unit, 'enabled' => true, 'state' => 'running', 'budget_ms' => 30_000];
+    }
+
+    /**
+     * Caddy's access to one Route's files. PENDING Nick's decision on a tree scope for posix.acl.ensure: every admitted access row
+     * is recursive (a deny over the checkout, a grant over the served roots, default entries on every folder below;
+     * RouteWebRootCommands::access), and posix.acl.ensure acts on one path. Once it takes `scope: tree`, this answers one
+     * posix.acl.ensure input per row and path. Until then a Route with access rows runs on Swamp.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function access(array $rows): array
+    {
+        if ($rows !== []) {
+            throw new EngineUnsupported('Recursive Caddy access waits on a tree scope for posix.acl.ensure; the Route runs on Swamp.');
+        }
+
+        return [];
+    }
+
+    /** The account's group and home: the managed account's group shares its name (NodeEnrollmentPolicy). */
+    public static function home(string $account): string
+    {
+        return $account === 'root' ? '/root' : '/home/'.$account;
+    }
+
+    /**
+     * @param  array<string, mixed>  $guards
+     * @return array<string, string>
+     */
+    public static function guards(array $guards): array
+    {
+        return array_map(ValidatedData::string(...), $guards);
+    }
+}

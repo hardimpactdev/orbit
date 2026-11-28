@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Actions\Certificates\SignDirectCertificatesAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\EngineAdmission;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
@@ -29,7 +30,7 @@ use RuntimeException;
  * A Route that needs the Ingress edge, a LAN rule, a production `.env` or awake markers starts on Swamp
  * ([EngineUnsupported]). Step labels map onto the chart's, so a failure records the same `failed_step` and error code.
  */
-final readonly class RouteEngineFlow implements EngineDefinition
+final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinition
 {
     /** Each step prefix's chart label (NativeRouteConvergenceProjection::StepCodes). */
     private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
@@ -66,45 +67,104 @@ final readonly class RouteEngineFlow implements EngineDefinition
                 throw new EngineUnsupported("route.create with {$list} runs on Swamp.");
             }
         }
-        $steps = $signs = $sites = [];
+        $steps = $signs = [];
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             $node = ValidatedData::integer($leaf['node_id']);
             self::csrInput($leaf);
             $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000, features: [self::CsrFeature]);
             $steps[] = $signs[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000);
         }
-        $after = array_map(static fn (StepSpec $step): string => $step->name, $signs);
+        $signed = array_map(static fn (StepSpec $step): string => $step->name, $signs);
+        $last = [];
         foreach (ValidatedData::integerList($plan['site_nodes']) as $node) {
-            // Shapes the executor cannot take, or an order over its size, send the Route to Swamp now, before anything starts.
-            self::fits($this->siteInput($plan, $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
-            // The budget covers every command's own time limit: five access commands of 120 s, the pool tests, trust and Caddy.
-            $steps[] = $sites[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 900_000, resendMs: 30_000);
+            // One Node's part in route.publish_site's order, each step after the one before it: Caddy access, APP_URL, links,
+            // pools (written and tested, units enabled and running, then reloaded), leaves and the account's copies, trust, Caddyfile.
+            $after = $signed;
+            foreach ($this->site($plan, $node) as [$part, $action, $features, $budget]) {
+                $name = "site-{$node}-{$part}";
+                // Shapes the executor cannot take, or an order over its size, send the Route to Swamp now, before anything starts.
+                self::fits($this->hostInput($plan, $node, $part, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
+                $steps[] = new StepSpec($name, $node, $action, (string) $node, $after, budgetMs: $budget, resendMs: 15_000, features: $features);
+                $after = [$name];
+            }
+            $last = [...$last, ...array_diff($after, $signed)];
         }
         // Private DNS follows the signatures, beside the sites, as the chart orders it. A probe reaches the Node by its
         // WireGuard address, so it waits for the sites alone.
-        foreach (RouteExecutionProof::objects($plan['dns'] ?? []) as $index => $row) {
-            $vpn = ValidatedData::integer($row['node_id']);
-            $steps[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, array_map(static fn (StepSpec $step): string => $step->name, $signs),
-                budgetMs: 120_000, resendMs: 20_000);
+        foreach (array_keys(RouteExecutionProof::objects($plan['dns'] ?? [])) as $index) {
+            $vpn = ValidatedData::integer(RouteExecutionProof::objects($plan['dns'])[$index]['node_id']);
+            $steps[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $signed, budgetMs: 120_000, resendMs: 20_000);
         }
-        $after = array_map(static fn (StepSpec $step): string => $step->name, $sites);
         foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
-            $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $after, budgetMs: 60_000);
+            $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $last, budgetMs: 60_000);
         }
 
         return $steps;
     }
 
+    /**
+     * route.create stays on Swamp until its two pending steps exist: the account's key copy (file.ensure `source_path`,
+     * ORB-6360) and Caddy's recursive access (a tree scope for posix.acl.ensure, Nick's decision; RouteHostSteps::access).
+     */
+    public function admit(Operation $operation): void
+    {
+        throw new EngineUnsupported('route.create on the host primitives waits on file.ensure source_path (ORB-6360) and a posix.acl.ensure tree scope.');
+    }
+
+    /**
+     * One Node's steps as `[part, action, features, budget]`, in route.publish_site's order.
+     *
+     * @param  array<string, mixed>  $plan
+     * @return list<array{string, string, list<string>, int}>
+     */
+    private function site(array $plan, int $node): array
+    {
+        $mine = self::mine($plan, $node);
+        $parts = [];
+        foreach (array_keys(RouteHostSteps::access($mine('acl'))) as $index) {
+            $parts[] = ["acl-{$index}", 'posix.acl.ensure', [], 150_000];
+        }
+        foreach (array_keys($mine('url_lines')) as $index) {
+            $parts[] = ["url-{$index}", 'dotenv.ensure', [], 60_000];
+        }
+        foreach (array_keys($mine('links')) as $index) {
+            $parts[] = ["link-{$index}", 'file.ensure', [], 60_000];
+        }
+        $pools = self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads'));
+        if ($pools !== []) {
+            $parts[] = ['pools', 'config.apply', [], 180_000];
+            foreach (array_keys($pools) as $index) {
+                $parts[] = ["unit-{$index}", 'systemd.unit.ensure', [], 60_000];
+            }
+            $parts[] = ['reload', 'config.apply', [], 180_000];
+        }
+        foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
+            if (ValidatedData::integer($leaf['node_id']) === $node) {
+                $parts = [...$parts, ["cert-{$index}", 'file.ensure', [], 60_000], ["current-{$index}", 'file.ensure', [], 60_000],
+                    ["folder-{$index}", 'file.ensure', [], 60_000], ["key-{$index}", 'file.ensure', [RouteHostSteps::SourcePathFeature], 60_000],
+                    ["copy-{$index}", 'file.ensure', [], 60_000], ["copylink-{$index}", 'file.ensure', [], 60_000]];
+            }
+        }
+        if (in_array($node, ValidatedData::integerList($plan['trust']), true)) {
+            $parts[] = ['trust', 'ca.trust.ensure', [], 120_000];
+        }
+        if ($mine('caddy') !== []) {
+            $parts[] = ['caddy', 'config.apply', [], 180_000];
+        }
+
+        return $parts;
+    }
+
     public function input(Operation $operation, string $step, EngineRun $run): array
     {
         $plan = self::plan($operation);
-        [$kind, $index] = explode('-', $step, 2);
+        $parts = explode('-', $step, 3);
 
-        return match ($kind) {
-            'csr' => self::csrInput(RouteExecutionProof::objects($plan['leaves'])[(int) $index]),
-            'site' => $this->siteInput($plan, (int) $index, static fn (int $leaf): string => $run->output("sign-{$leaf}")
+        return match ($parts[0]) {
+            'csr' => self::csrInput(RouteExecutionProof::objects($plan['leaves'])[(int) $parts[1]]),
+            'site' => $this->hostInput($plan, (int) $parts[1], $parts[2] ?? '', static fn (int $leaf): string => $run->output("sign-{$leaf}")
                 ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
-            'dns' => self::dnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $index]),
+            'dns' => self::dnsInput($plan, RouteExecutionProof::objects($plan['dns'])[(int) $parts[1]]),
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
     }
@@ -129,7 +189,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
             $failed = null;
         }
         $data = match (true) {
-            $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
+            $failed !== null => ['status' => 'failed', 'error_code' => self::code($failed->name, $failed->error_code),
                 'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
@@ -140,7 +200,8 @@ final readonly class RouteEngineFlow implements EngineDefinition
     /** A step's name as the chart's iteration, such as `site-3` → `Install cert, publish site-3`, for NativeFailedStep. */
     public static function chartStep(string $name): string
     {
-        [$kind, $index] = explode('-', $name, 2);
+        // A Node's site steps are one chart iteration, `Install cert, publish site-<node>`, as route.publish_site was.
+        [$kind, $index] = explode('-', $name, 3) + [1 => ''];
 
         return (self::Labels[$kind] ?? throw new LogicException("Step [{$name}] has no chart label.")).'-'.$index;
     }
@@ -163,15 +224,150 @@ final readonly class RouteEngineFlow implements EngineDefinition
     }
 
     /**
-     * A VPN Node's records and catalog, as the Gateway rendered them, both as blobs.
-     *
-     * @param  array<string, mixed>  $row
-     * @return array{records: array{blob: array{content: string}}, catalog: array{blob: array{content: string}}}
+     * The code a failed step records, as route.publish_site and dns.publish_records answered it on main. A host primitive's
+     * code maps onto the action's: a site step's input or content code keeps its kind and any other failure is
+     * `route.publish_failed`; a DNS step's lock, check and restart codes keep their `dns.*` names. A guard refusal stays
+     * `owned_revision_conflict`, as the guarded writers answer it.
      */
-    private static function dnsInput(array $row): array
+    public static function code(string $step, ?string $code): ?string
     {
-        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])]],
-            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])]]];
+        if ($code === null || $code === 'owned_revision_conflict') {
+            return $code;
+        }
+
+        return match (explode('-', $step, 2)[0]) {
+            'site' => match ($code) {
+                'host.input_invalid' => 'route.input_invalid',
+                'host.content_missing' => 'route.content_missing',
+                default => 'route.publish_failed',
+            },
+            'dns' => match ($code) {
+                'host.input_invalid' => 'dns.input_invalid',
+                'host.content_missing' => 'dns.content_missing',
+                'host.lock_busy', 'config.recovery_pending' => 'dns.publish_busy',
+                'host.lock_failed' => 'dns.publish_lock_failed',
+                'host.lock_invalid' => 'dns.publish_lock_invalid',
+                'config.validate_failed' => 'dns.check_failed',
+                'config.load_failed' => 'dns.restart_failed',
+                default => 'dns.write_failed',
+            },
+            default => $code,
+        };
+    }
+
+    /**
+     * A VPN Node's records and catalog, as the Gateway rendered them, with the digests of the files they replace.
+     *
+     * @param  array<string, mixed>  $plan
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private static function dnsInput(array $plan, array $row): array
+    {
+        return RouteHostSteps::dns(ValidatedData::string($row['records']), ValidatedData::string($row['catalog']), self::guards($plan, ValidatedData::integer($row['node_id'])));
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @return array<string, string>
+     */
+    private static function guards(array $plan, int $node): array
+    {
+        $guards = is_array($plan['guards'] ?? null) ? $plan['guards'] : [];
+
+        return RouteHostSteps::guards(is_array($guards[$node] ?? null) ? $guards[$node] : []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @return callable(string): list<array<string, mixed>>
+     */
+    private static function mine(array $plan, int $node): callable
+    {
+        return static fn (string $list): array => array_values(array_filter(RouteExecutionProof::objects($plan[$list] ?? []),
+            static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
+    }
+
+    /**
+     * The Node's account as the admitted plan names it: the user, its group and its home.
+     *
+     * @param  array<string, mixed>  $plan
+     * @return array{string, string, string}
+     */
+    private static function account(array $plan, int $node): array
+    {
+        $nodes = is_array($plan['nodes'] ?? null) ? $plan['nodes'] : [];
+        $accounts = is_array($plan['accounts'] ?? null) ? $plan['accounts'] : [];
+        $user = is_array($nodes[$node] ?? null) ? ($nodes[$node]['account'] ?? null) : null;
+        $owner = is_array($accounts[$node] ?? null) ? $accounts[$node] : [];
+        if (! is_string($user) || ! is_string($owner['group'] ?? null) || ! is_string($owner['home'] ?? null)) {
+            throw new EngineUnsupported("Node {$node} has no account.");
+        }
+        foreach ([$user, $owner['group']] as $name) {
+            if (preg_match(self::Name, $name) !== 1) {
+                throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
+            }
+        }
+
+        return [$user, $owner['group'], $owner['home']];
+    }
+
+    /**
+     * One site step's primitive input. `$signed` gives a leaf's signed certificate by its index; content travels as blobs.
+     *
+     * @param  array<string, mixed>  $plan
+     * @param  callable(int): string  $signed
+     * @return array<string, mixed>
+     */
+    private function hostInput(array $plan, int $node, string $part, callable $signed): array
+    {
+        $mine = self::mine($plan, $node);
+        [$account, $group, $home] = self::account($plan, $node);
+        [$kind, $index] = explode('-', $part, 2) + [1 => '0'];
+        $index = (int) $index;
+        $caddy = $mine('caddy');
+        $named = static fn (string $name): string => preg_match(self::Name, $name) === 1 ? $name : throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
+        $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, self::guards($plan, $node));
+        $leaf = static function () use ($plan, $index, $account): array {
+            $leaf = RouteExecutionProof::objects($plan['leaves'])[$index];
+            $scope = ValidatedData::string($leaf['scope']);
+            if (ValidatedData::string($leaf['user']) !== $account || preg_match('#\Aversions/([0-9a-f]{16})\z#', ValidatedData::string($leaf['target']), $version) !== 1
+                || preg_match(self::Scope, $scope) !== 1) {
+                throw new EngineUnsupported('A leaf outside the account or version shape runs on Swamp.');
+            }
+
+            return [$scope, ValidatedData::string($leaf['target']), ValidatedData::string($leaf['directory']), ValidatedData::string($leaf['current'])];
+        };
+
+        return match ($kind) {
+            'url' => (static function (array $row) use ($named): array {
+                $path = ValidatedData::string($row['path']);
+                $line = ValidatedData::string($row['line']);
+                if (! str_ends_with($path, '/.env') || ! str_starts_with($line, 'APP_URL=')) {
+                    throw new EngineUnsupported('A URL line outside APP_URL in a .env runs on Swamp.');
+                }
+
+                return ['path' => $path, 'user' => $named(ValidatedData::string($row['owner'])), 'values' => [['key' => 'APP_URL', 'value' => substr($line, 8)]]];
+            })($mine('url_lines')[$index]),
+            // The managed account's group shares its name (NodeEnrollmentPolicy).
+            'link' => RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']),
+                $named(ValidatedData::string($mine('links')[$index]['owner'])), $named(ValidatedData::string($mine('links')[$index]['owner']))),
+            'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators']),
+            'unit' => RouteHostSteps::running($pools()['units'][$index]),
+            'reload' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators'],
+                array_map(static fn (string $unit): array => ['unit' => $unit, 'load' => 'reload'], $pools()['units'])),
+            'cert' => RouteHostSteps::plain($leaf()[2].'/cert.pem', self::leafPem($signed($index)), 'root', 'caddy', '0644'),
+            'current' => RouteHostSteps::link($leaf()[3], $leaf()[1], 'root', 'root'),
+            // `install -D` made the account copy's folders as root, 0755.
+            'folder' => RouteHostSteps::directory(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1], 'root', 'root', '0755'),
+            'key' => RouteHostSteps::copy(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $account, $group, '0600'),
+            'copy' => RouteHostSteps::plain(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $account, $group, '0600'),
+            'copylink' => RouteHostSteps::link(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/current', $leaf()[1], $account, $group),
+            'trust' => ['state' => 'present', 'name' => RouteHostSteps::TrustName, 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
+                'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
+            'caddy' => RouteHostSteps::caddy(ValidatedData::string(end($caddy)['content'] ?? null), self::guards($plan, $node)['caddy'] ?? null),
+            default => throw new LogicException("Site step [{$part}] has no input."),
+        };
     }
 
     /**

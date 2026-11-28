@@ -33,7 +33,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
-| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` |
+| `route.create` (admission refuses it until its pending steps exist) | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
@@ -48,19 +48,32 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 
 ### route.create
 
-The engine runs the admitted `route_create` plan while preserving Route holds and waiting-create Caddyfile refreshes. Its steps run in this order:
+The engine runs the admitted `route_create` plan as host catalogue primitives that the Gateway composes ([route create](/cli/route/create#proposed-executor-path)). The steps keep the Route holds and the waiting-create Caddyfile refresh. They run in this order:
 
 1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node.
 2. `sign-<i>`: The Gateway signs the request using `operation:direct:certificate-sign`. It refuses any pending cancellation.
-3. `site-<node>`: `route.publish_site` configures Caddy access, `APP_URL`, symlinks, PHP-FPM pools, leaf certificates, Orbit root trust, and the Caddyfile.
-4. `dns-<i>`: `dns.publish_records` updates changed private DNS records on each VPN Node alongside site publication.
+3. `site-<node>-<part>`: Each Node's part, one step after the other, in the order `route.publish_site` used. The table below lists the parts.
+4. `dns-<i>`: `config.apply` writes the records and the catalog on each VPN Node under its DNS lock, beside the sites.
 5. `probe-<i>`: The Gateway completes a TLS handshake with each serving Node over its WireGuard address, trusting only the Orbit root.
 
-For `csr-<i>`, the Gateway sends the folder, its owner and modes, and the subject. Admission requires `tls.csr_input` in the leaf Node's `features`. Without it, the Route runs on Swamp.
+| Part | Primitive | What it does |
+| --- | --- | --- |
+| `acl-<k>` | `posix.acl.ensure` | Grants Caddy access to the Route's files |
+| `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
+| `link-<k>` | `file.ensure` | Places a release link |
+| `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
+| `unit-<k>` | `systemd.unit.ensure` | Enables and starts a pool unit |
+| `reload` | `config.apply` | Reloads the pools |
+| `cert-<i>`, `current-<i>` | `file.ensure` | Places the signed leaf and its version link |
+| `folder-<i>`, `key-<i>`, `copy-<i>`, `copylink-<i>` | `file.ensure` | Places the account's copy of key and leaf |
+| `trust` | `ca.trust.ensure` | Trusts the Orbit root |
+| `caddy` | `config.apply` | Applies the Caddyfile and reloads Caddy |
 
-Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
+The Gateway renders every file whole, the pools with the account's group and home (`accounts`), and sends each one with the digest of the bytes it was rendered from at admission (`guards`). The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, the records and the catalog `/run/lock/orbit-dnsmasq.lock`, and every `config.apply` uses `/var/lib/orbit/executor/config-recovery` as its `recovery_dir`. Each `config.apply` input comes from the plan alone, so a resend carries the same bytes.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do the other Route kinds except `route.destroy` and `route.update`.
+A failed site step records `Install cert, publish site-<node>` with `route.input_invalid`, `route.content_missing` or `route.publish_failed`, as `route.publish_site` did. A failed `dns-<i>` records `Publish private DNS-<i>` with the `dns.*` code `dns.publish_records` answered. A guard refusal stays `owned_revision_conflict`.
+
+Two steps wait on the catalogue. The account's key copy (`key-<i>`) needs `file.ensure` with `source_path` (feature `file.source_path`). Caddy's access needs a tree scope for `posix.acl.ensure`, which Nick decides. Until both exist, the kind's admission refuses every Route, and `route.create` runs on Swamp. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or other PHP-FPM pools stay on Swamp in any case.
 
 ### route.destroy
 

@@ -1,0 +1,66 @@
+sequenceDiagram
+  %% route.create on the Gateway engine: the steps of route/create.mmd (workflow operation-route-create) as host catalogue primitives composed in the Gateway (RouteEngineFlow, RouteHostSteps). ADR 0271, Routes rewrite PR B (ORB-6352).
+  %% Pending: the account's key copy needs file.ensure `source_path` (ORB-6360) and Caddy's recursive access needs a tree scope for posix.acl.ensure (Nick's decision); admission keeps route.create on Swamp until both exist.
+  %% status: draft
+  %% command: route:create
+  %% kind: route.create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane V icon=server pill=executor tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Route Node<br/>executor
+  participant V as VPN Node<br/>executor
+  CLI->>GW: route:create<br/>INSTANCE DOMAIN
+  Note over GW: Validate, hold Nodes<br/>render whole files
+  %%> Same guards, holds and admitted plan as route/create.mmd (`route_create`, NativeRouteCreatePlan)
+  %%> The plan also carries each Node's account group and home (`accounts`) and the digest of each file the create replaces, rendered from the sites at admission (`guards`: Caddyfile, shared pools, records and catalog, raw bytes); a waiting create renders them again with its Caddyfiles
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node and `file.source_path` on the Node of an account copy
+    %%> - the flow accepts the plan shape; an Ingress edge, a LAN rule, a production `.env`, awake markers, Caddy access rows, or a pool outside the two pool kinds throws `EngineUnsupported`
+    %%> - while either pending step is missing, the kind's admission refuses every Route (RouteEngineFlow::admit), so route.create runs on Swamp
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    GW-->>CLI: 202 Accepted<br/>task ID
+    EN->>N: Make a CSR on the Node<br/>tls.ensure_csr · csr-i
+    %%> The Gateway sends the folder, its root:caddy owner, modes 0750 and 0640, and the subject; the key never leaves the Node
+    Note over EN: Sign the CSR<br/>Gateway step · sign-i
+    %%> As `operation:direct:certificate-sign`; a pending cancel refuses
+    EN->>N: Grant Caddy access<br/>posix.acl.ensure · site-node-acl-k
+    %%> Pending Nick's decision on a tree scope (RouteHostSteps::access): each admitted row is recursive over a checkout or its served roots, and posix.acl.ensure acts on one path
+    EN->>N: Set APP_URL and links<br/>dotenv.ensure · file.ensure
+    %%> `site-node-url-k`: the last `APP_URL=` line of an existing `.env` that the account owns, replaced or appended; `site-node-link-k`: a release link owned by its account
+    EN->>N: Write and test the pools<br/>config.apply · site-node-pools
+    %%> Under `/etc/caddy/.orbit-publish.lock`: each pool rendered whole with the account's group and home, root:root 0644, from its rendered-from digest; `php-fpm` validators from the fixed list; a failed test restores the files
+    EN->>N: Enable and start each pool<br/>systemd.unit.ensure · site-node-unit-k
+    EN->>N: Reload the pools<br/>config.apply · site-node-reload
+    %%> The same files and validators, then each pool unit reloads on every run, as route.publish_site did
+    EN->>N: Install the leaf and copies<br/>file.ensure · site-node-cert-i …
+    %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`, pending ORB-6360), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
+    EN->>N: Trust the Orbit root<br/>ca.trust.ensure · site-node-trust
+    %%> `orbit-managed-root-ca.crt`, root:root 0644; the plain `update-ca-certificates` runs after a change
+    EN->>N: Apply the Caddyfile<br/>config.apply · site-node-caddy
+    %%> Under `/etc/caddy/.orbit-publish.lock`: the whole Caddyfile, root:caddy 0640, from its rendered-from digest; validated as `caddy`; Caddy reloads on every run; a failed validation or reload restores the file
+    EN->>V: Publish private DNS<br/>config.apply · dns-i
+    %%> Beside the sites, after the signatures. Under `/run/lock/orbit-dnsmasq.lock`: records and catalog, root:root 0644, each from its rendered-from digest; the `dnsmasq` validator over `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`; dnsmasq and the private DNS listener restart on every run
+    Note over EN: Probe the site over TLS<br/>Gateway step · probe-i
+    %%> After each Node's last site step: a TLS handshake by WireGuard address, trusting only the Orbit root
+    %%> Every config.apply input comes from the admitted plan alone, so a resend carries the same bytes, the order's identity; its `recovery_dir` is `/var/lib/orbit/executor/config-recovery` on every Node
+    alt every step succeeds
+      EN->>GW: Route active<br/>same projection
+    else a step fails
+      EN--xGW: Failed step<br/>chart name · main's code
+      %%> A Node's site steps record `Install cert, publish site-<node>` with `route.input_invalid`, `route.content_missing` or `route.publish_failed`; `dns-i` records `Publish private DNS-i` with its `dns.*` code; a guard refusal is `owned_revision_conflict`
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-route-create
+    %%> No step runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

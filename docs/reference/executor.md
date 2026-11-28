@@ -218,7 +218,7 @@ An executor with the `dns` family reports the `dns.guarded_records` feature. `dn
 
 ### The host family
 
-The `host` family (`crates/host`) holds the host-resource primitives of the [catalogue](#the-catalogue). App-dev and vpn enable it from agent 0.36.0 (`NodeExecutorInput::FamilySince`), because the Route steps run there. No flow sends them yet: the Route rewrite moves `route.create`, `route.destroy` and `route.update` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node. The Gateway sends every path, owner, mode, unit, lock and digest. Content arrives as a blob whose bytes must hash to its SHA-256 reference.
+The `host` family (`crates/host`) holds the host-resource primitives of the [catalogue](#the-catalogue). App-dev and vpn enable it from agent 0.36.0 (`NodeExecutorInput::FamilySince`), because the Route steps run there. `route.create`'s flow composes them, and its admission keeps it on Swamp until the key copy and the recursive Caddy access have their primitives ([gateway engine](/reference/gateway-engine#routecreate)). The Route rewrite moves `route.create`, `route.destroy` and `route.update` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node. The Gateway sends every path, owner, mode, unit, lock and digest. Content arrives as a blob whose bytes must hash to its SHA-256 reference.
 
 | Primitive | Input | Work |
 | --- | --- | --- |
