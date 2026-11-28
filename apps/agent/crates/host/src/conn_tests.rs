@@ -352,6 +352,7 @@ fn link() -> String {
 fn a_pairing_link_is_created_by_the_cli_alone_with_its_code_sealed() {
     let server = Server::new();
     server.answer("auth pairing list", 0, "[]");
+    server.answer("auth session list", 0, &json!([{"sessionId": "s-1", "client": {"label": "Orbit Gateway"}}]).to_string());
     server.answer("auth pairing create", 0, &link());
 
     let pairing = pairing_issue(&server, &pairing_input()).expect("issued");
@@ -361,8 +362,8 @@ fn a_pairing_link_is_created_by_the_cli_alone_with_its_code_sealed() {
     assert!(!serde_json::to_string(&pairing).expect("JSON").contains(CREDENTIAL));
     let calls = server.calls.borrow();
     let names: Vec<String> = calls.iter().map(|(argv, _)| name(argv)).collect();
-    assert_eq!(names, ["auth pairing list", "auth pairing create"], "no session is made");
-    assert_eq!(calls[1].0[8..], ["auth", "pairing", "create", "--label", "Pair order-4f2a", "--scopes", "access:read,access:write", "--ttl", "5m", "--json",
+    assert_eq!(names, ["auth pairing list", "auth session list", "auth pairing create"], "no session is made");
+    assert_eq!(calls[2].0[8..], ["auth", "pairing", "create", "--label", "Pair order-4f2a", "--scopes", "access:read,access:write", "--ttl", "5m", "--json",
         "--base-dir", HOME]);
 }
 
@@ -373,6 +374,13 @@ fn a_pairing_link_whose_label_the_server_holds_is_refused_and_not_created_again(
 
     assert_eq!(pairing_issue(&server, &pairing_input()).map_err(|failure| failure.code).err(), Some("conn.pairing_issued"));
     assert_eq!(server.called("auth pairing create"), 0);
+
+    // A redeemed link leaves the pairing list, but the session redeemed with it keeps its label.
+    let server = Server::new();
+    server.answer("auth pairing list", 0, "[]");
+    server.answer("auth session list", 0, &json!([{"sessionId": "s-2", "subject": "one-time-token", "client": {"label": "Pair order-4f2a"}}]).to_string());
+    assert_eq!(pairing_issue(&server, &pairing_input()).map_err(|failure| failure.code).err(), Some("conn.pairing_issued"));
+    assert_eq!(server.called("auth pairing create"), 0);
 }
 
 #[test]
@@ -380,12 +388,14 @@ fn a_refused_or_timed_out_pairing_fails_and_logs_only_the_call_and_its_status() 
     for (exit, expected) in [(1, "auth pairing create exited Some(1)"), (124, "auth pairing create timed out")] {
         let server = Server::new();
         server.answer("auth pairing list", 0, "[]");
+        server.answer("auth session list", 0, "[]");
         server.fails("auth pairing create", exit, &format!("code {CREDENTIAL}"));
         let failure = pairing_issue(&server, &pairing_input()).expect_err("not created");
         assert_eq!((failure.code, failure.detail.as_str()), ("conn.pairing_failed", expected));
     }
     let server = Server::new();
     server.answer("auth pairing list", 0, "[]");
+    server.answer("auth session list", 0, "[]");
     server.answer("auth pairing create", 0, &json!({"id": "p-1", "expiresAt": "x"}).to_string());
     assert_eq!(pairing_issue(&server, &pairing_input()).map_err(|failure| failure.detail).err().as_deref(), Some("auth pairing create answered no link"));
 }

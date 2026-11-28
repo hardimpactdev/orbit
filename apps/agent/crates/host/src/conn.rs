@@ -168,13 +168,13 @@ pub fn project_ensure(system: &impl System, input: &Value) -> Result<u32, Failur
     Ok(1)
 }
 
-/// Issues one pairing link: `auth pairing list` first, then `auth pairing create` with the order's label, scopes and code
+/// Issues one pairing link: `auth pairing list` and `auth session list` first, then `auth pairing create` with the order's label, scopes and code
 /// lifetime. It makes no session: a device's session comes from redeeming the link, and lasts the server's fixed 30 days.
 ///
 /// # Errors
 ///
 /// `host.input_invalid`, before anything runs; `conn.binary_untrusted`; `conn.pairing_issued` when the server already holds
-/// a link with this label; `conn.pairing_failed` when the server cannot be run, times out, refuses or answers no code.
+/// a link with this label, or a session a device redeemed with it; `conn.pairing_failed` when the server cannot be run, times out, refuses or answers no code.
 pub fn pairing_issue(system: &impl System, input: &Value) -> Result<IssuedPairing, Failure> {
     let input: PairingInput = parse(input)?;
     checked_server(&input.server)?;
@@ -186,6 +186,11 @@ pub fn pairing_issue(system: &impl System, input: &Value) -> Result<IssuedPairin
     let list = server.json(&["auth", "pairing", "list", "--json"])?;
     if entries(&list, code)?.iter().any(|link| link.get("label").and_then(Value::as_str) == Some(input.label.as_str())) {
         return Err(Failure::new("conn.pairing_issued", "a pairing link with this label exists"));
+    }
+    // A redeemed link leaves the pairing list; the session a device redeemed with it carries its label.
+    let sessions = server.json(&["auth", "session", "list", "--json"])?;
+    if entries(&sessions, code)?.iter().any(|session| session.pointer("/client/label").and_then(Value::as_str) == Some(input.label.as_str())) {
+        return Err(Failure::new("conn.pairing_issued", "a session redeemed with this label exists"));
     }
     let scopes = input.scopes.join(",");
     let answer = server.json(&["auth", "pairing", "create", "--label", &input.label, "--scopes", &scopes, "--ttl", &input.ttl, "--json"])?;
