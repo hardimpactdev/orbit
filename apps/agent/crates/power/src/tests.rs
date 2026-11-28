@@ -309,7 +309,16 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::ProcessEnsureState
             | orbit_executor_core::action::Action::ProcessReadInstance
             | orbit_executor_core::action::Action::ProcessRestart
-            | orbit_executor_core::action::Action::ScheduleEnsureTimer => {
+            | orbit_executor_core::action::Action::ScheduleEnsureTimer
+            | orbit_executor_core::action::Action::FileEnsure
+            | orbit_executor_core::action::Action::DotenvEnsure
+            | orbit_executor_core::action::Action::PosixAclEnsure
+            | orbit_executor_core::action::Action::CaTrustEnsure
+            | orbit_executor_core::action::Action::SystemdUnitEnsure
+            | orbit_executor_core::action::Action::ConfigApply
+            | orbit_executor_core::action::Action::HttpProbe
+            | orbit_executor_core::action::Action::FileRead
+            | orbit_executor_core::action::Action::AccountRead => {
                 panic!("power actions only")
             }
         }

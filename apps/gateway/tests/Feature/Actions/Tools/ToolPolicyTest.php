@@ -207,6 +207,17 @@ it('blocks discovered host recipe apt packages but not names used only in a cont
     }
 });
 
+it('blocks the adoption of a held apt package and keeps its version', function (): void {
+    $node = policyNode('host');
+    NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'packages', 'subject' => 'apt', 'digest' => str_repeat('a', 64),
+        'observed_at' => now(), 'received_at' => now(), 'data' => ['scope' => '/var/lib/dpkg/status',
+            'packages' => [['name' => 'tree', 'version' => '2.0', 'held' => true], ['name' => 't3', 'version' => '2.0']]]]);
+    $packages = array_column(app(ScanToolInventoryAction::class)->execute($node->id)->managers[3]->packages, null, 'package');
+    expect([$packages['tree']->installedVersion, $packages['tree']->adoptionBlock, $packages['t3']->adoptionBlock])->toBe(['2.0.0', 'held', null]);
+    expect(fn () => app(StartToolOperationAction::class)->adopt($node->id, 'apt', 'tree', null, null, null))
+        ->toThrow(fn (ToolOperationException $error) => expect([$error->errorCode, $error->adoptionBlock])->toBe(['tool.adoption_unsupported', 'held']));
+});
+
 it('can relinquish an obsolete floating protected row and then activate file mode', function (): void {
     policySwamp();
     $node = policyNode('host');

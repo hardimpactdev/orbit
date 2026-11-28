@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -78,15 +78,17 @@ impl System for Fake {
             return Err("refused".to_owned());
         }
         match argv.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-            [_, "genpkey", .., partial] => {
-                fs::write(self.path(partial), "KEY").expect("key");
-                Ok(String::new())
+            [_, "genpkey", ..] => Ok("-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n".to_owned()),
+            // openssl reads a key in PEM, among other blocks, or a DER key (here: bytes that start a DER sequence).
+            [_, "pkey", "-inform", form, "-noout", "-in", key] => {
+                let held = fs::read(self.path(key)).unwrap_or_default();
+                let readable = if *form == "PEM" { String::from_utf8_lossy(&held).contains("-----BEGIN PRIVATE KEY-----") } else { held.first() == Some(&0x30) };
+                if readable { Ok(String::new()) } else { Err(format!("Could not find private key of key from {key}")) }
             }
             ["/usr/bin/install", "-D", .., "-t", folder, _, _] => {
                 fs::create_dir_all(self.path(folder)).expect("account copy folder");
                 Ok(String::new())
             }
-            [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
             ["/usr/bin/curl", .., "--max-time", limit, _] => {
                 // A read takes its answer's time, or curl gives up at its --max-time.
@@ -136,11 +138,66 @@ impl System for Fake {
 
 const DIRECTORY: &str = "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef";
 
+/// The input the Gateway sends: folder, owner, modes and subject are all its own.
+fn csr_input(directory: &str, domain: &str) -> serde_json::Value {
+    json!({"directory": directory, "key": format!("{directory}/key.pem"), "user": "root", "group": "caddy", "directory_mode": "0750", "key_mode": "0640", "subject": "/CN=Orbit", "domain": domain})
+}
+
+#[test]
+fn a_csr_takes_its_folder_owner_modes_and_subject_from_the_input() {
+    let fake = Fake::new();
+    let directory = "/srv/elsewhere/leaf";
+    fs::create_dir_all(fake.path(directory)).expect("folder");
+    let mut input = csr_input(directory, "shop.test");
+    input["user"] = json!("keeper");
+    input["group"] = json!("readers");
+    input["directory_mode"] = json!("0700");
+    input["key_mode"] = json!("0600");
+    input["subject"] = json!("/CN=Someone Else");
+    ensure_csr(&fake, &input).expect("a request");
+    let commands = fake.commands.borrow();
+    assert!(commands.iter().any(|argv| argv == &strings_of(&["/usr/bin/install", "-d", "-o", "keeper", "-g", "readers", "-m", "0700", directory])));
+    let key = fs::metadata(fake.path(&format!("{directory}/key.pem"))).expect("key");
+    assert_eq!(key.permissions().mode() & 0o7777, 0o600);
+    assert!(commands.iter().any(|argv| argv.contains(&"/CN=Someone Else".to_owned())));
+}
+
+#[test]
+fn a_csr_keeps_a_readable_key_when_the_request_fails_and_puts_its_mode_right() {
+    let mut fake = Fake::new();
+    fake.write(&format!("{DIRECTORY}/key.pem"), HEALTHY);
+    fs::set_permissions(fake.path(&format!("{DIRECTORY}/key.pem")), fs::Permissions::from_mode(0o644)).expect("mode");
+    fake.failing.push("req");
+    let mut input = csr_input(DIRECTORY, "shop.orbit");
+    input["subject"] = json!("/C=USA");
+
+    assert_eq!(ensure_csr(&fake, &input).expect_err("openssl refuses the subject").code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY, "a readable key is never replaced");
+    assert_eq!(fake.ran("genpkey"), 0);
+    assert_eq!(fs::metadata(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key").permissions().mode() & 0o7777, 0o640, "the mode is put right on the key in place");
+}
+
+#[test]
+fn a_csr_never_writes_its_key_through_a_link() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path(DIRECTORY)).expect("folder");
+    let elsewhere = fake.path("/victim");
+    fs::write(&elsewhere, "VICTIM").expect("victim");
+    std::os::unix::fs::symlink(&elsewhere, fake.path(&format!("{DIRECTORY}/key.pem"))).expect("link");
+
+    assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("a link").code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(&elsewhere).expect("victim"), "VICTIM");
+}
+
+fn strings_of(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
 #[test]
 fn a_csr_makes_the_key_once_and_reuses_it() {
     let fake = Fake::new();
     fs::create_dir_all(fake.path(DIRECTORY)).expect("version folder");
-    let input = json!({"directory": DIRECTORY, "domain": "shop.orbit"});
+    let input = csr_input(DIRECTORY, "shop.orbit");
 
     let first = ensure_csr(&fake, &input).expect("first request");
     let second = ensure_csr(&fake, &input).expect("repeat");
@@ -148,8 +205,8 @@ fn a_csr_makes_the_key_once_and_reuses_it() {
     assert!(first.contains("BEGIN CERTIFICATE REQUEST"));
     assert_eq!(first, second);
     assert_eq!(fake.ran("genpkey"), 1, "a repeat keeps the key a signed certificate may already match");
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
-    assert!(!fake.path(&format!("{DIRECTORY}/key.pem.partial")).exists());
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
+    assert!(fs::read_dir(fake.path(DIRECTORY)).expect("folder").all(|entry| !entry.expect("entry").file_name().to_string_lossy().contains("partial")));
     let request = fake.commands.borrow().iter().rfind(|argv| argv.contains(&"req".to_owned())).cloned().expect("a request");
     assert!(request.ends_with(&["-subj".to_owned(), "/CN=Orbit".to_owned(), "-addext".to_owned(), "subjectAltName=DNS:shop.orbit".to_owned()]));
 }
@@ -157,10 +214,18 @@ fn a_csr_makes_the_key_once_and_reuses_it() {
 #[test]
 fn a_csr_refuses_a_folder_or_domain_outside_its_shape() {
     let fake = Fake::new();
+    let with = |key: &str, value: serde_json::Value| {
+        let mut input = csr_input(DIRECTORY, "shop.orbit");
+        input[key] = value;
+        input
+    };
     for input in [
-        json!({"directory": "/etc/passwd", "domain": "shop.orbit"}),
-        json!({"directory": DIRECTORY, "domain": "shop.orbit -addext x"}),
-        json!({"directory": DIRECTORY, "domain": "shop.orbit", "extra": true}),
+        csr_input("/etc/../passwd", "shop.orbit"),
+        csr_input(DIRECTORY, "shop.orbit -addext x"),
+        with("extra", json!(true)),
+        with("subject", json!("/CN=Orbit -x\n")),
+        with("key_mode", json!("0640 -R")),
+        with("user", json!("root;x")),
     ] {
         assert_eq!(ensure_csr(&fake, &input).expect_err("refused").code, "route.input_invalid");
     }
@@ -293,10 +358,10 @@ fn a_broken_key_is_replaced_once() {
     let fake = Fake::new();
     fake.write(&format!("{DIRECTORY}/key.pem"), "BROKEN");
 
-    ensure_csr(&fake, &json!({"directory": DIRECTORY, "domain": "shop.orbit"})).expect("a request for a new key");
+    ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for a new key");
 
     assert_eq!(fake.ran("genpkey"), 1);
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
 }
 
 #[test]
@@ -580,4 +645,52 @@ fn a_withdrawal_fails_before_any_change_when_a_guarded_pool_cannot_be_read() {
 
     assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_failed");
     assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
+}
+
+/// A key in PEM form, as openssl writes one.
+const HEALTHY: &str = "-----BEGIN PRIVATE KEY-----\nHEALTHY\n-----END PRIVATE KEY-----\n";
+
+#[test]
+fn a_csr_keeps_its_key_when_the_inspection_is_inconclusive() {
+    let mut fake = Fake::new();
+    fake.write(&format!("{DIRECTORY}/key.pem"), HEALTHY);
+    // Review counterexample: one inspection timeout replaced a healthy key.
+    fake.failing_argv.push(vec!["/usr/bin/openssl", "pkey", "-inform", "PEM", "-noout", "-in", "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem"]);
+    let failure = ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("an inconclusive inspection");
+    assert_eq!(failure.code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY);
+    assert_eq!(fake.ran("genpkey"), 0);
+}
+
+#[test]
+fn a_csr_keeps_any_key_openssl_reads() {
+    let fake = Fake::new();
+    let key = fake.path(&format!("{DIRECTORY}/key.pem"));
+    fs::create_dir_all(key.parent().expect("folder")).expect("folder");
+    // Review counterexamples: a PEM with a certificate first and then the key, and a DER key; openssl signs with both.
+    let mixed = format!("-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n{HEALTHY}");
+    for held in [mixed.into_bytes(), vec![0x30, 0x82, 0x04, 0xbd, 0x02, 0x01, 0x00]] {
+        fs::write(&key, &held).expect("key");
+        ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for the key in place");
+        assert_eq!(fs::read(&key).expect("key"), held);
+    }
+    assert_eq!(fake.ran("genpkey"), 0);
+}
+
+#[test]
+fn a_csr_replaces_only_a_file_that_is_decisively_not_a_key() {
+    let fake = Fake::new();
+    let key = fake.path(&format!("{DIRECTORY}/key.pem"));
+    fs::create_dir_all(key.parent().expect("folder")).expect("folder");
+    // Deviation from main, for safety: a PEM block openssl cannot read fails with main's code and the file stays.
+    for held in ["-----BEGIN ENCRYPTED PRIVATE KEY-----\nSECRET\n-----END ENCRYPTED PRIVATE KEY-----\n", "-----BEGIN CERTIFICATE-----\nONLY\n-----END CERTIFICATE-----\n"] {
+        fs::write(&key, held).expect("key");
+        assert_eq!(ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("unreadable").code, "app-dev.certificate_request_failed");
+        assert_eq!(fs::read_to_string(&key).expect("key"), held);
+    }
+    assert_eq!(fake.ran("genpkey"), 0);
+    // An empty file is decisively not a key: replaced once, as on main.
+    fs::write(&key, "").expect("key");
+    ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a new key");
+    assert_eq!(fs::read_to_string(&key).expect("key"), "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n");
 }

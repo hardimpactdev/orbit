@@ -242,6 +242,10 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
     if settings.enabled.allows(orbit_executor_core::action::Action::DnsPublishRecords) {
         features.push("dns.guarded_records");
     }
+    // `tls.ensure_csr` takes its folder's owner and modes and the request's subject from the Gateway (ADR 0271 N3).
+    if settings.enabled.allows(orbit_executor_core::action::Action::TlsEnsureCsr) {
+        features.push("tls.csr_input");
+    }
     serde_json::json!({
         "actions": actions,
         "node_targets": node_targets,
@@ -572,7 +576,7 @@ mod tests {
             node: "7".parse().expect("node"),
         };
         let report = capability_report(&settings);
-        assert_eq!(report["features"], serde_json::json!(["dns.guarded_records"]));
+        assert_eq!(report["features"], serde_json::json!(["dns.guarded_records", "tls.csr_input"]));
         assert!(report["actions"].as_array().expect("actions").contains(&serde_json::json!("route.withdraw_site")));
     }
 }

@@ -317,6 +317,14 @@ Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retrie
 Deno.test("matching Tool inventory is a read-only no-op", () => {
     assertEquals(toolState("inspect", { ...apt, ...aptFacts }), { installed_version: "2.2.1-1", needs_write: false });
 });
+Deno.test("a held apt Tool at its coordinate needs no write, and a held one at another version is blocked by its hold", () => {
+    const held = { ...aptFacts, query: { rc: 0, stdout: "tree\thold ok installed\t2.2.1-1\n" } };
+    assertEquals(toolState("inspect", { ...apt, ...held }), { installed_version: "2.2.1-1", needs_write: false });
+    assertEquals(toolState("verify", { ...apt, ...held }), { installed_version: "2.2.1-1" });
+    const pinned = { ...apt, tool: { ...apt.tool, version_constraint: null, desired_version: "2.3.1-1" } };
+    assertThrows(() => toolState("inspect", { ...pinned, ...held }), ToolRefusal, "tool.package_held");
+    assertThrows(() => toolState("inspect", { ...apt, tool: { ...apt.tool, version_constraint: "^3" }, ...held }), ToolRefusal, "tool.package_held");
+});
 Deno.test("a present package is never taken over for a Tool Orbit does not own, whatever its last status", () => {
     for (const tool_status of ["installing", "failed", null]) {
         const unowned = { ...apt, tool: { ...apt.tool, owned: false, tool_status, installed_version: tool_status === "failed" ? "2.2.1-1" : null } };
