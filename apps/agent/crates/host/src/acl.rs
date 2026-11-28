@@ -188,9 +188,8 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<Acl
         return Err(invalid("acl"));
     }
     let failed = |detail: String| Failure::new("acl.ensure_failed", detail);
-    let subject = if input.user.is_some() { (USER, system.user(name).map_err(failed)?) } else { (GROUP, system.group(name).map_err(failed)?) };
     let tree = input.scope == Scope::Tree;
-    let (fd, stat) = match open_root(system, &input.path).map_err(|error| failed(format!("{}: {error}", input.path)))? {
+    let (fd, stat) = match open_root(system, &input.path, input.scope).map_err(|error| failed(format!("{}: {error}", input.path)))? {
         Root::Missing if input.optional => return Ok(Acl::default()),
         Root::Missing => return Err(failed(format!("{}: not found", input.path))),
         Root::Link => return Ok(Acl::default()),
@@ -202,9 +201,12 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<Acl
         if !kind.is_dir() || (top.st_dev, top.st_ino) == (stat.st_dev, stat.st_ino) {
             return Err(invalid("acl tree root"));
         }
-    } else if !kind.is_dir() && !kind.is_file() {
-        return Err(failed(format!("{}: neither a folder nor a plain file", input.path)));
+    } else if input.default && !kind.is_dir() {
+        // Only a folder has a default list: anything else is left as it is.
+        return Ok(Acl::default());
     }
+    // The subject is resolved only once there is a path its entry applies to.
+    let subject = if input.user.is_some() { (USER, system.user(name).map_err(failed)?) } else { (GROUP, system.group(name).map_err(failed)?) };
     let mount = mount_of(&fd, c"").map_err(|error| failed(format!("{}: {error}", input.path)))?;
     let mut run = Run { system, subject, perms: &input.perms, default: input.default, tree, device: stat.st_dev, mount, changed: Vec::new(), acl: Acl::default() };
     let root = PathBuf::from(&input.path);
@@ -227,7 +229,7 @@ enum Root {
 
 /// Opens every ancestor from the system's root with `O_NOFOLLOW`, then the path itself: a link among the ancestors fails, a
 /// link at the path answers [`Root::Link`].
-fn open_root(system: &impl System, path: &str) -> std::io::Result<Root> {
+fn open_root(system: &impl System, path: &str, scope: Scope) -> std::io::Result<Root> {
     let mut at = rustix::fs::open(system.root(), OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty())?;
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let (last, ancestors) = parts.split_last().ok_or_else(|| std::io::Error::other("no path"))?;
@@ -248,10 +250,7 @@ fn open_root(system: &impl System, path: &str) -> std::io::Result<Root> {
     if kind == FileType::Symlink {
         return Ok(Root::Link);
     }
-    if !kind.is_dir() && !kind.is_file() {
-        return Ok(Root::Found(at, stat));
-    }
-    Ok(Root::Found(open(&at, OsStr::new(last), &stat)?, stat))
+    Ok(Root::Found(open(&at, OsStr::new(last), &stat, if scope == Scope::Tree && kind.is_dir() { Open::List } else { Open::Path })?, stat))
 }
 
 /// The mount `name` relative to `at` is on, never through a link; `""` is `at` itself.
@@ -264,10 +263,18 @@ fn mount_of(at: impl AsFd, name: &std::ffi::CStr) -> std::io::Result<u64> {
     Ok(held.stx_mnt_id)
 }
 
-/// Opens the folder or plain file `name` relative to `at`, never through a link, and only when it is still what `stat` read.
-fn open(at: impl AsFd, name: &OsStr, stat: &Stat) -> std::io::Result<OwnedFd> {
-    let folder = FileType::from_raw_mode(stat.st_mode).is_dir();
-    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | if folder { OFlags::DIRECTORY } else { OFlags::NONBLOCK | OFlags::NOCTTY };
+/// How a path is opened: a folder the walk lists, or any path whose lists alone are read and written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Open {
+    List,
+    Path,
+}
+
+/// Opens `name` relative to `at`, never through a link, and only when it is still what `stat` read. A folder the walk lists
+/// opens for reading; anything else opens as `O_PATH`, which needs no permission on the path and opens no FIFO, socket or
+/// device, and its lists are read and written through `/proc/self/fd`.
+fn open(at: impl AsFd, name: &OsStr, stat: &Stat, how: Open) -> std::io::Result<OwnedFd> {
+    let flags = OFlags::NOFOLLOW | OFlags::CLOEXEC | if how == Open::List { OFlags::RDONLY | OFlags::DIRECTORY } else { OFlags::PATH };
     let fd = rustix::fs::openat(at, name, flags, Mode::empty())?;
     let held = rustix::fs::fstat(&fd)?;
     if (held.st_dev, held.st_ino) != (stat.st_dev, stat.st_ino) {
@@ -310,14 +317,14 @@ impl<S: System> Run<'_, S> {
                 continue;
             }
             if kind.is_dir() {
-                let below = open(fd, OsStr::from_bytes(child.to_bytes()), &stat).map_err(|error| shown(&error))?;
+                let below = open(fd, OsStr::from_bytes(child.to_bytes()), &stat, Open::List).map_err(|error| shown(&error))?;
                 self.folder(&below, &stat, &named)?;
             } else {
                 if stat.st_nlink > 1 {
                     self.acl.skipped_hard_links += 1;
                     continue;
                 }
-                let file = open(fd, OsStr::from_bytes(child.to_bytes()), &stat).map_err(|error| shown(&error))?;
+                let file = open(fd, OsStr::from_bytes(child.to_bytes()), &stat, Open::Path).map_err(|error| shown(&error))?;
                 self.path(&file, &stat, &named)?;
             }
         }
@@ -382,7 +389,7 @@ impl<S: System> Run<'_, S> {
         for changed in self.changed.drain(..).rev() {
             let back = self.system.set_xattr(changed.fd.as_fd(), changed.attribute, changed.prior.as_deref()).and_then(|()| {
                 if changed.attribute == ACCESS {
-                    rustix::fs::fchmod(&changed.fd, Mode::from_raw_mode(changed.mode & 0o7777)).map_err(std::io::Error::from)
+                    chmod(changed.fd.as_fd(), changed.mode & 0o7777)
                 } else {
                     Ok(())
                 }
@@ -402,26 +409,58 @@ fn bits(perms: &str, mode: u32) -> u16 {
     perms.chars().zip([4, 2, 1]).map(|(bit, value)| if bit == 'r' || bit == 'w' || bit == 'x' || (bit == 'X' && search) { value } else { 0 }).sum()
 }
 
-/// A descriptor's attribute, `None` when it has none.
+/// The path that names an `O_PATH` descriptor's own file, or `None` for a descriptor the `f*` calls take.
+fn proc_path(fd: BorrowedFd<'_>) -> std::io::Result<Option<String>> {
+    use std::os::fd::AsRawFd as _;
+    Ok(rustix::fs::fcntl_getfl(fd)?.contains(OFlags::PATH).then(|| format!("/proc/self/fd/{}", fd.as_raw_fd())))
+}
+
+/// A descriptor's attribute, `None` when it has none, in a buffer of exactly its size.
 pub(crate) fn read_xattr(fd: BorrowedFd<'_>, name: &str) -> std::io::Result<Option<Vec<u8>>> {
-    let mut buffer = vec![0_u8; 65_536];
-    match rustix::fs::fgetxattr(fd, name, &mut buffer[..]) {
-        Ok(length) => {
-            buffer.truncate(length);
-            Ok(Some(buffer))
+    let path = proc_path(fd)?;
+    let get = |buffer: &mut [u8]| match &path {
+        Some(path) => rustix::fs::getxattr(path.as_str(), name, buffer),
+        None => rustix::fs::fgetxattr(fd, name, buffer),
+    };
+    loop {
+        let size = match get(&mut []) {
+            Ok(size) => size,
+            Err(rustix::io::Errno::NODATA) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let mut buffer = vec![0_u8; size];
+        match get(&mut buffer[..]) {
+            Ok(length) if length == size => return Ok(Some(buffer)),
+            // The attribute changed size between the two calls: ask again.
+            Ok(_) | Err(rustix::io::Errno::RANGE) => {}
+            Err(rustix::io::Errno::NODATA) => return Ok(None),
+            Err(error) => return Err(error.into()),
         }
-        Err(rustix::io::Errno::NODATA) => Ok(None),
-        Err(error) => Err(error.into()),
     }
 }
 
 /// Sets a descriptor's attribute to `value`, or removes it for `None`.
 pub(crate) fn write_xattr(fd: BorrowedFd<'_>, name: &str, value: Option<&[u8]>) -> std::io::Result<()> {
-    match value {
-        Some(bytes) => rustix::fs::fsetxattr(fd, name, bytes, rustix::fs::XattrFlags::empty()).map_err(std::io::Error::from),
-        None => match rustix::fs::fremovexattr(fd, name) {
-            Ok(()) | Err(rustix::io::Errno::NODATA) => Ok(()),
-            Err(error) => Err(error.into()),
-        },
+    let path = proc_path(fd)?;
+    let done = match (value, &path) {
+        (Some(bytes), Some(path)) => rustix::fs::setxattr(path.as_str(), name, bytes, rustix::fs::XattrFlags::empty()),
+        (Some(bytes), None) => rustix::fs::fsetxattr(fd, name, bytes, rustix::fs::XattrFlags::empty()),
+        (None, Some(path)) => rustix::fs::removexattr(path.as_str(), name),
+        (None, None) => rustix::fs::fremovexattr(fd, name),
+    };
+    match done {
+        Ok(()) => Ok(()),
+        // Removing an attribute that is not there leaves the path as asked.
+        Err(rustix::io::Errno::NODATA) if value.is_none() => Ok(()),
+        Err(error) => Err(error.into()),
     }
+}
+
+/// Sets a descriptor's permission bits, also of an `O_PATH` descriptor.
+fn chmod(fd: BorrowedFd<'_>, mode: u32) -> std::io::Result<()> {
+    match proc_path(fd)? {
+        Some(path) => rustix::fs::chmod(path.as_str(), Mode::from_raw_mode(mode)),
+        None => rustix::fs::fchmod(fd, Mode::from_raw_mode(mode)),
+    }
+    .map_err(std::io::Error::from)
 }

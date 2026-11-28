@@ -247,11 +247,17 @@ A `file.ensure` file with `source_path` copies a file that is already on the Nod
 
 Each of these refuses with its own code. A missing source answers `file.source_missing`, a link `file.source_link`, and a folder or any other file that is not plain `file.source_not_file`. The destination itself under any name answers `file.source_alias`: the opened destination is compared with the source by device and inode before any change and at the read-back. Bytes that do not hash to `source_sha256` answer `file.source_mismatch`. A source it cannot read answers `file.ensure_failed`, never missing.
 
-`posix.acl.ensure` runs no command. It opens the system root and every ancestor of the path with `O_NOFOLLOW`, each relative to the one before, and then the path itself. A link among the ancestors fails `acl.ensure_failed`, and a path that is a link changes nothing and answers `0`. It reads and writes the list as the `system.posix_acl_access` or `system.posix_acl_default` attribute of that descriptor, in the kernel's version 2 format, and reads it back through the same descriptor.
+`posix.acl.ensure` runs no command from the order: it resolves the subject with a fixed `getent`, and only once the path is found and the entry applies to it. An optional missing path, a final link, and a default entry on anything but a folder answer `0` without that lookup.
 
-It writes the mask explicitly and only widens it, by the bits the entry needs. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask. With `scope: path`, it widens the mask only where no other entry holds a bit the mask cut, and acts on exactly one path, a folder or a plain file.
+It opens the system root and every ancestor of the path with `O_NOFOLLOW`, each relative to the one before, and then the path itself. A link among the ancestors fails `acl.ensure_failed`, and a path that is a link changes nothing and answers `0`. It reads and writes the list as the `system.posix_acl_access` or `system.posix_acl_default` attribute of that descriptor, in the kernel's version 2 format, and reads it back through the same descriptor.
 
-With `scope: tree`, it converges the one entry on the root and every entry below it, the [single exception](#what-a-primitive-may-be) to one resource. An access entry applies to every folder and plain file, and a default entry to every folder. It applies the same exact compare and first-default seeding to each path and answers the number of paths it changed. A tree grant may widen the ACL mask so the entry takes effect, as setfacl does; it never changes owner bits or other bits. `route.create` grants Caddy access with `setfacl -R -m`, which widens the mask the same way.
+A folder the tree walk lists opens for reading. Every other path opens as `O_PATH`, which needs no permission on the path and opens no FIFO, socket or device; its lists are read and written through `/proc/self/fd`. So with `scope: path`, a FIFO, a socket or a file with mode `0000` takes the access entry, and a default entry on them answers `0`.
+
+It writes the mask explicitly and only widens it, by the bits the entry needs. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask. With `scope: path`, it widens the mask only where no other entry holds a bit the mask cut, and acts on exactly one path of any type but a link.
+
+With `scope: tree`, it converges the one entry on the root and every entry below it, the [single exception](#what-a-primitive-may-be) to one resource. An access entry applies to every folder and plain file, and a default entry to every folder. It applies the same exact compare and first-default seeding to each path and answers the number of paths it changed.
+
+A tree grant may widen the ACL mask so the entry takes effect, as setfacl does; it never changes owner bits or other bits. Tree orders recalculate the mask like `setfacl -R`, so other entries' effective rights can widen. `route.create` grants Caddy access with `setfacl -R -m`, which widens the mask the same way.
 
 The tree walk opens each folder and plain file relative to its parent's descriptor with `O_NOFOLLOW` and reads each entry with `AT_SYMLINK_NOFOLLOW`. Names stay the bytes the folder holds. A link is skipped and never followed, also when it points out of the tree.
 
@@ -259,7 +265,7 @@ A folder or file on another mount than the root is neither entered nor changed. 
 
 The root of a tree must be a folder. A plain file or anything else refuses `host.input_invalid`, and so does a root with the device and inode of `/`, whatever its spelling or bind mount. The path spelling refuses `/` and its aliases, such as `//`, `/.` and `/srv/..`, as for every path.
 
-Before it writes a path, it keeps the path's prior attribute bytes and mode beside the open descriptor. A read error anywhere in the walk, or a failed write or read-back, puts every changed path back to those bytes and that mode through the same descriptors and fails `acl.ensure_failed`, so a failed order leaves no write behind.
+Before it writes a path, it keeps the path's prior attribute bytes, in a buffer of exactly their size, and its mode beside the open descriptor. A read error anywhere in the walk, or a failed write or read-back, puts every changed path back to those bytes and that mode through the same descriptors and fails `acl.ensure_failed`, so a failed order leaves no write behind.
 
 Each changed path holds one descriptor until the order ends, so one order can change at most as many paths as the executor may keep open. Only a missing root with `optional` answers `0`. An executor with the host family reports the `posix.acl.tree` feature, so admission can require it.
 

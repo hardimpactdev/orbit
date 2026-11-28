@@ -161,6 +161,7 @@ impl System for Fake {
             fs::hard_link(source, dest).expect("relink");
         }
         Ok(match name {
+            "ghost" => return Err("no user ghost".to_owned()),
             "web" => WEB,
             "other" => OTHER_USER,
             _ => me().0,
@@ -168,7 +169,11 @@ impl System for Fake {
     }
 
     fn group(&self, name: &str) -> Result<u32, String> {
-        Ok(if name == "team" { TEAM } else { me().1 })
+        match name {
+            "ghost" => Err("no group ghost".to_owned()),
+            "team" => Ok(TEAM),
+            _ => Ok(me().1),
+        }
     }
 
     fn xattr(&self, fd: std::os::fd::BorrowedFd<'_>, name: &str) -> std::io::Result<Option<Vec<u8>>> {
@@ -1285,9 +1290,72 @@ fn acl_ensure_tree_walks_a_large_tree_in_bounded_time() {
             fs::write(fake.path(&format!("/srv/big/d{folder}/e/f{file}")), "x").expect("file");
         }
     }
+    // Each changed path holds its descriptor until the order ends: raise the default soft limit of 1,024 to the hard limit.
+    let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile);
+    rustix::process::setrlimit(rustix::process::Resource::Nofile, rustix::process::Rlimit { current: limit.maximum, maximum: limit.maximum }).expect("raise the open-file limit");
     let input = json!({"path": "/srv/big", "user": "web", "perms": "r-X", "scope": "tree"});
     let start = std::time::Instant::now();
     assert_eq!(changes(acl_ensure(&fake, &input)), 1 + 80 + 2000);
     assert_eq!(changes(acl_ensure(&fake, &input)), 0);
     assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
+}
+
+#[test]
+fn acl_ensure_leaves_a_no_op_order_without_resolving_its_subject() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    std::os::unix::fs::symlink(fake.path("/srv/app"), fake.path("/srv/link")).expect("link");
+    // `ghost` resolves to no account: these orders answer 0 because they never look it up.
+    for (input, what) in [
+        (json!({"path": "/srv/missing", "user": "ghost", "perms": "r-x", "optional": true}), "an optional missing path"),
+        (json!({"path": "/srv/missing", "group": "ghost", "perms": "r-x", "optional": true, "scope": "tree"}), "an optional missing tree"),
+        (json!({"path": "/srv/link", "user": "ghost", "perms": "r-x"}), "a final link"),
+        (json!({"path": "/srv/link", "user": "ghost", "perms": "r-x", "scope": "tree"}), "a final link as a tree root"),
+        (json!({"path": "/srv/app/top.txt", "user": "ghost", "perms": "r-x", "default": true}), "a default entry on a file"),
+    ] {
+        assert_eq!(changes(acl_ensure(&fake, &input)), 0, "{what}");
+    }
+    // A path the entry applies to looks the subject up, and an unknown one fails.
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "ghost", "perms": "r-x"})).expect_err("unknown").code, "acl.ensure_failed");
+}
+
+#[test]
+fn acl_ensure_path_scope_sets_the_access_entry_on_fifos_sockets_and_closed_files() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    let status = std::process::Command::new("mkfifo").arg(fake.path("/srv/app/pipe")).status().expect("mkfifo");
+    assert!(status.success(), "mkfifo");
+    let _socket = std::os::unix::net::UnixListener::bind(fake.path("/srv/app/sock")).expect("socket");
+    fs::set_permissions(fake.path("/srv/app/sock"), fs::Permissions::from_mode(0o644)).expect("socket mode");
+    fs::write(fake.path("/srv/app/closed"), "x").expect("file");
+    fs::set_permissions(fake.path("/srv/app/closed"), fs::Permissions::from_mode(0o000)).expect("mode 0000");
+    for path in ["/srv/app/pipe", "/srv/app/sock", "/srv/app/closed"] {
+        assert_eq!(changes(acl_ensure(&fake, &json!({"path": path, "user": "web", "perms": "r-X"}))), 1, "{path}");
+        let bytes = raw(&fake, path);
+        assert_eq!((u16::from_le_bytes([bytes[12], bytes[13]]), u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]), u16::from_le_bytes([bytes[14], bytes[15]])), (2, WEB, 4), "{path}");
+        assert_eq!(changes(acl_ensure(&fake, &json!({"path": path, "user": "web", "perms": "r-X"}))), 0, "{path}: a repeat");
+        assert_eq!(changes(acl_ensure(&fake, &json!({"path": path, "user": "web", "perms": "r-x", "default": true}))), 0, "{path}: no default list");
+    }
+    // The tree scope still converges folders and plain files only, and never opens a FIFO or a socket.
+    let before = (raw(&fake, "/srv/app/pipe"), raw(&fake, "/srv/app/sock"));
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "rwX", "scope": "tree"}))), 7);
+    assert_eq!((raw(&fake, "/srv/app/pipe"), raw(&fake, "/srv/app/sock")), before);
+}
+
+/// A path's access attribute as bytes, read through an `O_PATH` descriptor, so a FIFO, socket or closed file reads too.
+fn raw(fake: &Fake, path: &str) -> Vec<u8> {
+    let fd = rustix::fs::open(fake.path(path), rustix::fs::OFlags::PATH | rustix::fs::OFlags::NOFOLLOW, rustix::fs::Mode::empty()).expect("open");
+    acl::read_xattr(std::os::fd::AsFd::as_fd(&fd), acl::ACCESS).expect("read").expect("an access list")
+}
+
+#[test]
+fn acl_ensure_keeps_prior_lists_in_buffers_of_their_exact_size() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    put(&fake, "/srv/app", acl::ACCESS, &[(1, NONE, 7), (2, OTHER_USER, 5), (4, NONE, 5), (0x10, NONE, 5), (0x20, NONE, 5)]);
+    let bytes = raw(&fake, "/srv/app");
+    assert_eq!((bytes.len(), bytes.capacity()), (4 + 5 * 8, 4 + 5 * 8), "a rollback holds the list's own bytes, not a 64 KiB buffer");
+    let file = fs::File::open(fake.path("/srv/app")).expect("open");
+    let read = acl::read_xattr(std::os::fd::AsFd::as_fd(&file), acl::ACCESS).expect("read").expect("list");
+    assert_eq!(read.capacity(), read.len());
 }
