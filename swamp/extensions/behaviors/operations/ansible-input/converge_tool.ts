@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { allows, exactMatches, PackageInput, Repository, safeVersion, ToolRefusal, validateConstraint } from "../tools/contract.ts";
-import { aptWrite, candidate, commands, inventory, preferences, refreshed } from "../tools/native.ts";
+import { aptWrite, candidate, commands, homebrewReadable, inventory, preferences, refreshed } from "../tools/native.ts";
 import { candidate as checkCandidate, writeInventory } from "../tools/write_policy.ts";
 
 const Observation = z.object({ rc: z.number().int(), stdout: z.string(), stderr: z.string().default("") });
@@ -54,6 +54,8 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
         throw new ToolRefusal("tool.package_already_installed");
     }
     const matching = version !== null && allows(input, version) && exactMatches(input, version);
+    // A held apt package is not changed: at its coordinate it needs no write, otherwise the hold blocks the Tool.
+    if (mode === "inspect" && facts.held === true && !matching) throw new ToolRefusal("tool.package_held");
     if (mode === "inspect") return { installed_version: version, needs_write: !matching };
     if (mode === "verify") {
         if (!matching) throw new ToolRefusal("tool.installed_version_mismatch");
@@ -73,6 +75,11 @@ if (import.meta.main) {
     // The phase asks this once, before it judges a Tool. Reaching this line proves that the runtime loaded the policy and its imports.
     if (Deno.args[0] === "check") {
         console.log(JSON.stringify({ ready: true }));
+        Deno.exit(0);
+    }
+    // The Tools phase applies the Homebrew prefix rule with this argv whether or not a Tool wrote with brew.
+    if (Deno.args[0] === "readable") {
+        console.log(JSON.stringify(homebrewReadable()));
         Deno.exit(0);
     }
     try {

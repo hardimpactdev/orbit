@@ -11,7 +11,8 @@ use std::path::Path;
 const FILE_BYTES: u64 = 65_536;
 const MAX_FILES: usize = 256;
 
-/// Installed packages in dpkg's status database: each `install ok installed` stanza, by name, with its version.
+/// Installed packages in dpkg's status database: each `install ok installed` stanza, and each `hold ok installed`
+/// stanza marked `held`, by name, with its version.
 pub fn apt_packages(status: &str) -> Vec<Value> {
     let mut packages = BTreeMap::new();
     for stanza in status.split("\n\n") {
@@ -21,18 +22,22 @@ pub fn apt_packages(status: &str) -> Vec<Value> {
                     .and_then(|rest| rest.strip_prefix(": "))
             })
         };
-        if let (Some(name), Some("install ok installed"), Some(version)) =
-            (field("Package"), field("Status"), field("Version"))
-        {
-            packages
+        let held = match field("Status") {
+            Some("install ok installed") => false,
+            Some("hold ok installed") => true,
+            _ => continue,
+        };
+        if let (Some(name), Some(version)) = (field("Package"), field("Version")) {
+            // A package is held when any of its installed architectures is held, whatever the stanza order.
+            let row = packages
                 .entry(name.to_owned())
-                .or_insert_with(|| version.to_owned());
+                .or_insert_with(|| json!({"name": name, "version": version}));
+            if held {
+                row["held"] = json!(true);
+            }
         }
     }
-    packages
-        .into_iter()
-        .map(|(name, version)| json!({"name": name, "version": version}))
-        .collect()
+    packages.into_values().collect()
 }
 
 /// The apt fact: installed packages, the source files and the public signing keys, which the Gateway compares with a
@@ -256,6 +261,32 @@ mod tests {
                 json!({"name": "libc6", "version": "2.39"})
             ]
         );
+    }
+
+    #[test]
+    fn apt_keeps_held_packages_marked_held() {
+        let status = "Package: php8.5-xml\nStatus: hold ok installed\nVersion: 8.5.0-1\n\nPackage: jq\nStatus: install ok installed\nVersion: 1.7\n\nPackage: held-gone\nStatus: hold ok config-files\nVersion: 1\n";
+
+        assert_eq!(
+            apt_packages(status),
+            vec![
+                json!({"name": "jq", "version": "1.7"}),
+                json!({"name": "php8.5-xml", "version": "8.5.0-1", "held": true})
+            ]
+        );
+    }
+
+    #[test]
+    fn apt_marks_a_package_held_when_any_architecture_is_held() {
+        for status in [
+            "Package: libfoo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0\n\nPackage: libfoo\nStatus: hold ok installed\nArchitecture: i386\nVersion: 1.0\n",
+            "Package: libfoo\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 1.0\n\nPackage: libfoo\nStatus: install ok installed\nArchitecture: i386\nVersion: 1.0\n",
+        ] {
+            assert_eq!(
+                apt_packages(status),
+                vec![json!({"name": "libfoo", "version": "1.0", "held": true})]
+            );
+        }
     }
 
     fn dir(name: &str) -> std::path::PathBuf {

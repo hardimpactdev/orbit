@@ -28,6 +28,7 @@ cases = [
   "failure before input preparation still publishes a failed terminal and accepts an absent private folder",
   "Node snapshot packages use direct HTTPS configuration, bounded retries and exact pins without removals",
   "matching Tool inventory is a read-only no-op",
+  "a held apt Tool at its coordinate needs no write, and a held one at another version is blocked by its hold",
   "a present package is never taken over for a Tool Orbit does not own, whatever its last status",
   "a repository is published held to its owned Tools, and a Tool joins its preferences only once verified",
   "an out-of-constraint candidate is rejected before returning write argv",

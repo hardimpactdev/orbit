@@ -129,7 +129,11 @@ Before JavaScript deploy steps, Orbit reads the release's manifest, lockfile, an
 
 `GET /api/v1/tool-inventory?node_id=<id>` (`orbit tool:scan --node=<id>`) reads the [Node agent's](/reference/node-agent#packages) latest `packages` facts without contacting the Node or creating Tool rows. It returns `data.managers` in order (`brew`, `brew-cask`, `vp`, `apt`), each with `scan_state` (`complete`, `unsupported`, or `not_observed`) and sorted `packages` (`manager`, `package`, `package_kind`, `installed_version`, `dependency`, `registered`, `tool_id`, `adoption`, `adoption_block`, `repository`).
 
-Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, `authorization_required`, and `removal_pending`.
+Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, `authorization_required`, `removal_pending`, and `held`.
+
+An apt package held with `apt-mark hold` (dpkg status `hold ok installed`) is installed: its row keeps its version, and Doctor checks a managed held package like any other. apt will not change a held package, so it carries the `held` block and adoption refuses it with `tool.adoption_unsupported`.
+
+A held apt Tool at its desired coordinate or constraint needs no write: a converge, update or reinstall records it `installed` with that version. At any other version Orbit runs no apt write and fails the Tool with `tool.package_held`, because the hold blocks the change. A removal of a held package fails with `tool.package_held` before `dpkg` runs. Release the hold with `apt-mark unhold` to let Orbit change the package.
 
 ## Protected packages
 
@@ -162,6 +166,14 @@ Adoption requires a single installed version, no adoption block, and constraint 
 ## Homebrew formulae
 
 `brew` accepts only unqualified lowercase Homebrew Core formulae with a checksummed compatible bottle (never building from source or running `brew ruby`/`brew irb`). Orbit computes the bottle tag from `uname -m` (`x86_64_linux` on Linux; `sw_vers` mapped to `big_sur`..`golden_gate` with `arm64_` prefix on Apple silicon). Every `brew` and `brew-cask` call sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_NO_ANALYTICS`, `HOMEBREW_NO_ENV_HINTS`, `HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK`, and `HOMEBREW_NO_INSTALL_CLEANUP`.
+
+### Readable Homebrew prefix
+
+The [Node agent](/reference/node-agent#packages) observer reads `/home/linuxbrew/.linuxbrew` with no capability, so it sees only what others can read. Orbit applies one rule after each Linux brew install, update or removal, and in every Tools phase of a Node converge. Each entry under the prefix that others cannot read becomes readable for group and others, and each such directory also becomes searchable, as Homebrew sets them up by default.
+
+The rule touches only entries that lack those bits and keeps owner and write bits, so a second run changes nothing. It changes only entries that belong to the prefix: it does not descend into another file system mounted inside it, and it skips a file with more than one hard link.
+
+A direct Linux brew write or removal applies the rule after its package step succeeded or failed, never when that step was skipped. A failed step still fails the run. The Tools phase reports a change only when it changed an entry. macOS prefixes are left as they are.
 
 ### Homebrew casks
 

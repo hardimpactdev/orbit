@@ -12,7 +12,7 @@ const run = (outcomes: Record<string, Outcome>, named = true) =>
     runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
         instance_id: 0, manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", repository: named ? repository : null,
     }, {
-        "Prepare package commands": { outputs: { repository, repository_preferences: "acquired", repository_preferences_held: "held" } },
+        "Prepare package commands": { outputs: { repository, repository_preferences: "acquired", repository_preferences_held: "held", readable: null } },
         "Choose package action": { outputs: { ready: true, mutate: true } },
         "Decode package state": { outputs: { compliant: true, present: true } },
         ...outcomes,
@@ -50,4 +50,45 @@ Deno.test("a refusal or an unverified write never prefers the acting package", (
 Deno.test("a failed write of the acquired package's preference fails the run after the acquisition", () => {
     const ran = run({ "Prefer the verified package": { status: "failed" } });
     assertEquals([ran["Decode package state"].status, ran["Assert package state"].status], ["succeeded", "failed"]);
+});
+
+Deno.test("a Linux Homebrew write makes the prefix readable after its package step, and an apt write does not", () => {
+    const brew = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, {
+        "Prepare package commands": { outputs: { readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, mutate: true } },
+        "Decode package state": { outputs: { compliant: true, present: true } },
+    }, () => ({}));
+    assertEquals(brew["Make the Homebrew prefix readable"].status, "succeeded");
+    assertEquals(brew["Apply the package"].end <= brew["Make the Homebrew prefix readable"].start, true);
+    assertEquals(run({})["Make the Homebrew prefix readable"].status, "skipped");
+});
+
+Deno.test("a failed Linux Homebrew write still makes the prefix readable, and the run keeps the failure", () => {
+    const outcomes = {
+        "Prepare package commands": { outputs: { readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, mutate: true } },
+        "Decode package state": { outputs: { compliant: false, present: false } },
+        "Apply the package": { status: "failed" },
+    };
+    const brew = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, outcomes, () => ({}));
+    const unprepared = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, { ...outcomes, "Prepare package commands": { status: "failed" } }, () => ({}));
+    assertEquals(unprepared["Make the Homebrew prefix readable"].status, "skipped");
+    assertEquals([brew["Apply the package"].status, brew["Make the Homebrew prefix readable"].status, brew["Assert package state"].status], ["failed", "succeeded", "failed"]);
+});
+
+Deno.test("a Linux Homebrew write whose package step was skipped skips the repair, and the run succeeds", () => {
+    const ran = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, {
+        "Prepare package commands": { outputs: { readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, mutate: false } },
+        "Decode package state": { outputs: { compliant: true, present: true } },
+    }, () => ({}));
+    assertEquals([ran["Apply the package"].status, ran["Make the Homebrew prefix readable"].status, ran["Assert package state"].status], ["skipped", "skipped", "succeeded"]);
 });
