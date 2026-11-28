@@ -1,0 +1,16 @@
+{
+  "writer": "swamp/extensions/behaviors/operations/routes/publication-command/sections.ts mergePhp",
+  "token": "__ORBIT_NODE_GROUP__",
+  "cases": [
+    {
+      "name": "mixed group forms",
+      "gateway_render": "[orbit-instance-1]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /home/orbit/a2\n\n[orbit-instance-2]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /home/orbit/b\n\n[orbit-instance-3]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /home/orbit/c\n",
+      "written": "[orbit-instance-1]\ngroup = 1001\nchdir = /home/orbit/a2\n\n[orbit-instance-2]\ngroup = staff\nchdir = /home/orbit/b\n\n[orbit-instance-3]\ngroup = staff\nchdir = /home/orbit/c\n"
+    },
+    {
+      "name": "trailing separator after the last scope",
+      "gateway_render": "[orbit-instance-1]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /home/orbit/a\n\n[orbit-instance-2]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /home/orbit/b\n",
+      "written": "[orbit-instance-1]\ngroup = 1001\nchdir = /home/orbit/a\n\n[orbit-instance-2]\ngroup = 1001\nchdir = /home/orbit/b\n"
+    }
+  ]
+}

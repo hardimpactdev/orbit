@@ -1695,6 +1695,7 @@ dependencies = [
  "orbit-executor-dns",
  "orbit-executor-firewall",
  "orbit-executor-host",
+ "orbit-executor-incus",
  "orbit-executor-instance",
  "orbit-executor-power",
  "orbit-executor-process",
@@ -1751,6 +1752,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "orbit-executor-incus"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

@@ -40,13 +40,19 @@ final readonly class RouteFileGuards
             $caddy = ValidatedData::object($before['caddy'])['content'] ?? null;
             $dns = is_array($before['dns']) ? $before['dns'] : null;
             $guards[$id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null,
+                // The whole Caddyfile, which engine route.destroy puts back when a pool fails after its withdrawal.
+                'caddy_content' => is_string($caddy) ? $caddy : null,
                 // The shared pools' PHP versions now: a withdrawal must keep each, or its Operation runs on Swamp.
                 'php_versions' => implode(',', array_keys((array) (ValidatedData::object($before['php'])['configurations'] ?? []))),
                 ...self::pools($before),
                 ...($after === null ? [] : ['php_versions_after' => implode(',', array_keys((array) (ValidatedData::object(
                     $this->publications->snapshot($node, $after, true)['php'])['configurations'] ?? [])))]),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
-                'catalog' => $dns === null ? null : self::catalogDigest(ValidatedData::string($dns['catalog']))], is_string(...));
+                'catalog' => $dns === null ? null : self::catalogDigest(ValidatedData::string($dns['catalog'])),
+                // The catalog's bytes as rendered, and as Swamp's withdrawal writes the same state: config.apply compares the live
+                // file byte for byte, so the engine takes either serialization as the state it rendered from.
+                'catalog_file' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog'])),
+                'catalog_swamp' => $dns === null ? null : hash('sha256', self::swampCatalog(ValidatedData::string($dns['catalog'])))], is_string(...));
         }
 
         return $guards;
@@ -119,6 +125,24 @@ final readonly class RouteFileGuards
 
         return hash('sha256', json_encode($canonical(json_decode($catalog, false, 512, JSON_THROW_ON_ERROR)),
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS | JSON_THROW_ON_ERROR)."\n");
+    }
+
+    /**
+     * A catalog as Swamp's withdrawal writes it (`orbit_route_withdraw.merge_dns`): Python's compact `json.dumps` with
+     * `ensure_ascii=False`, in the render's key order, each empty array read as an empty map, and one newline.
+     */
+    public static function swampCatalog(string $catalog): string
+    {
+        $maps = static function (mixed $value) use (&$maps): mixed {
+            if ($value instanceof \stdClass) {
+                return (object) array_map($maps, get_object_vars($value));
+            }
+
+            return $value === [] ? new \stdClass : $value;
+        };
+
+        return json_encode($maps(json_decode($catalog, false, 512, JSON_THROW_ON_ERROR)),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS | JSON_THROW_ON_ERROR)."\n";
     }
 
     /**

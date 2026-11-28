@@ -57,6 +57,7 @@ impl Run for Families {
         }
         self.0.target_exists(target.as_str())
     }
+    #[expect(clippy::too_many_lines, reason = "one arm per action, so the dispatcher fails to build when an action is added")]
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
@@ -153,6 +154,7 @@ impl Run for Families {
             Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
             | Action::ConfigApply | Action::HttpProbe | Action::ConnSessionIssue | Action::ConnProjectEnsure | Action::ConnPairingIssue => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
+            Action::IncusInstanceEnsure => incus(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -402,6 +404,18 @@ fn conn(order: &VerifiedOrder) -> Outcome {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
         Outcome::failed(failure.code)
     })
+}
+
+/// The incus family (ADR 0271 N3): one Incus instance per order through the Incus API, every name from the input. A failure's
+/// code goes to the Gateway, its detail only to the log.
+fn incus(order: &VerifiedOrder) -> Outcome {
+    orbit_executor_incus::instance_ensure(order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |changes| Outcome::Applied { changes },
+    )
 }
 
 /// `posix.acl.ensure` of the host family: the paths it changed and the paths a tree walk left out, as JSON in the receipt's

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\SignedExecutorOrder;
@@ -171,3 +172,55 @@ it('settles a failed DNS step only once every other published DNS order has its 
     ($this->receipt)($operation, 'dns-b', 'dns.publish_records', ['status' => 'applied', 'changes' => 1]);
     expect(ReceiptBoundDefinition::$finished)->toBe('dns-a')->and($this->bus->sent)->not->toContain('withdraw');
 })->with('destroy kinds');
+
+/** The receipt-bound withdrawal with an unlink step that only a link found by `dns-a` makes needed. */
+final class SkippingDefinition implements EngineDefinition, EngineSkip
+{
+    public function __construct(private int $node) {}
+
+    public function steps(Operation $operation): array
+    {
+        return [
+            new StepSpec('dns-a', $this->node, 'file.read', (string) $this->node),
+            new StepSpec('unlink', $this->node, 'file.ensure', (string) $this->node, ['dns-a']),
+            new StepSpec('withdraw', $this->node, 'route.withdraw_site', (string) $this->node, ['unlink']),
+        ];
+    }
+
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
+    {
+        return $step !== 'unlink' || str_contains((string) $run->output('dns-a'), 'symlink');
+    }
+
+    public function input(Operation $operation, string $step, EngineRun $run): array
+    {
+        return ['step' => $step];
+    }
+
+    public function local(Operation $operation, string $step, EngineRun $run): string
+    {
+        throw new LogicException('no Gateway step');
+    }
+
+    public function finish(Operation $operation, EngineRun $run): void
+    {
+        $operation->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null])->save();
+    }
+}
+
+it('records an unneeded Node step done without an order and goes on, and sends it when it is needed', function (string $read, array $sent): void {
+    $this->app->instance(RouteDestroyEngineFlow::class, new SkippingDefinition($this->node->id));
+    $operation = Operation::query()->forceCreate(['kind' => 'route.destroy', 'status' => OperationStatus::Running, 'target_type' => 'route', 'target_id' => 7,
+        'node_id' => $this->node->id, 'input' => [], 'lock_key' => OperationStore::lockKey('route', 7)]);
+    $operation->forceFill(['state' => ['swamp_run_id' => 'engine-'.$operation->id]])->save();
+    app(Engine::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    ($this->receipt)($operation, 'dns-a', 'file.read', ['status' => 'output', 'stdout' => $read]);
+
+    expect($this->bus->sent)->toBe($sent)
+        ->and(($this->status)($operation, 'unlink'))->toBe($sent === ['dns-a', 'withdraw'] ? 'done' : 'sent');
+})->with([
+    'a plain file' => ['{"state":"present","type":"file","sha256":"'.str_repeat('a', 64).'"}', ['dns-a', 'withdraw']],
+    'a link' => ['{"state":"present","type":"symlink"}', ['dns-a', 'unlink']],
+]);

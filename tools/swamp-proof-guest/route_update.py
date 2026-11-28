@@ -10,8 +10,6 @@ from clone_lifecycle import EXECUTOR_UNIT, TERMINAL, require, wait_for
 from route_lifecycle import CADDYFILE, RouteLane, traced
 
 FAULT_LINE = '# proof: a change the Gateway did not render'
-PUBLISH_LOCK = '/etc/caddy/.orbit-publish.lock'
-HOLD_UNIT = 'orbit-proof-publish-hold'
 PROBE_TABLE = 'orbit_proof_probe'
 GRACE_MS = 31_000
 
@@ -71,18 +69,6 @@ class UpdateLane(RouteLane):
         self.known = self.routes_made[name]['token']
         require(self.serving(domain, state), f'Route {domain} does not answer its known page')
         self.record(name + '-route-create', {**self.routes_made[name], 'state': state})
-
-    def hold_publication(self):
-        """Holds the Node's publication lock, which route.withdraw_site takes (and route.publish_site does not), so the withdrawal waits
-        inside its action with the executor alive. The lock file must already exist: the fixture creates nothing it would leave."""
-        self.guest(self.node, 'test', '-f', PUBLISH_LOCK)
-        self.guest(self.node, 'sh', '-c', 'if systemctl is-active --quiet "$1"; then exit 1; fi', 'sh', HOLD_UNIT)
-        self.guest(self.node, 'systemd-run', '--unit', HOLD_UNIT, 'flock', PUBLISH_LOCK, 'sleep', '240')
-        wait_for(lambda: self.guest(self.node, 'sh', '-c', 'flock -n "$1" true && echo free || echo held', 'sh', PUBLISH_LOCK) == 'held',
-                 'the publication lock was not held', 10, interval=0.2)
-
-    def release_publication(self):
-        self.guest(self.node, 'sh', '-c', 'systemctl stop "$1" 2>/dev/null; systemctl reset-failed "$1" 2>/dev/null || :', 'sh', HOLD_UNIT)
 
     def published(self, operation, step):
         def found():
