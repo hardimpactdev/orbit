@@ -23,7 +23,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
-Recent agent versions changed the executor as follows. This tree builds agent `0.39.0` before the pin moves.
+Recent agent versions changed the executor as follows.
 
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
@@ -215,7 +215,7 @@ The subscriber also acts as the [executor result listener](/reference/executor#t
 
 ## Delivery
 
-Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10995.0` / agent `0.38.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
+Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.11000.0` / agent `0.39.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
 
 ```json
 {
