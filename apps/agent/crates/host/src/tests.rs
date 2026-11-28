@@ -341,6 +341,124 @@ fn file_ensure_converges_links_folders_and_absence() {
     assert_eq!(file_ensure(&fake, &json!({"state": "absent", "path": "/srv/../etc"})).expect_err("dots").code, "host.input_invalid");
 }
 
+fn copy(source: &str, dest: &str, mode: &str) -> serde_json::Value {
+    json!({"state": "file", "path": dest, "source_path": source, "owner": {"user": "someone", "group": "someone", "mode": mode}})
+}
+
+fn mode_of(fake: &Fake, path: &str) -> u32 {
+    fs::symlink_metadata(fake.path(path)).expect("meta").mode() & 0o7777
+}
+
+#[test]
+fn file_ensure_copies_a_source_path_and_repeats_without_change() {
+    let fake = Fake::new();
+    fake.write("/src/leaf.key", b"key\n");
+    fs::set_permissions(fake.path("/src/leaf.key"), fs::Permissions::from_mode(0o600)).expect("mode");
+    fs::create_dir_all(fake.path("/dest")).expect("folder");
+    let mut input = copy("/src/leaf.key", "/dest/leaf.key", "0600");
+    input["source_sha256"] = json!(sha256(b"key\n"));
+    assert_eq!(file_ensure(&fake, &input), Ok(1));
+    assert_eq!(file_ensure(&fake, &input), Ok(0));
+    assert_eq!(fake.read("/dest/leaf.key"), b"key\n");
+    assert_eq!(mode_of(&fake, "/dest/leaf.key"), 0o600);
+    assert_eq!(fake.read("/src/leaf.key"), b"key\n", "the source is only read");
+    assert_eq!(mode_of(&fake, "/src/leaf.key"), 0o600);
+}
+
+#[test]
+fn file_ensure_from_a_source_repairs_only_the_mode_of_the_same_content() {
+    let fake = Fake::new();
+    fake.write("/src/leaf.key", b"key\n");
+    fake.write("/dest/leaf.key", b"key\n");
+    let before = fs::metadata(fake.path("/dest/leaf.key")).expect("meta").ino();
+    assert_eq!(file_ensure(&fake, &copy("/src/leaf.key", "/dest/leaf.key", "0600")), Ok(1));
+    assert_eq!(mode_of(&fake, "/dest/leaf.key"), 0o600);
+    assert_eq!(fs::metadata(fake.path("/dest/leaf.key")).expect("meta").ino(), before, "the same content is not written again");
+    assert_eq!(file_ensure(&fake, &copy("/src/leaf.key", "/dest/leaf.key", "0600")), Ok(0));
+}
+
+#[test]
+fn file_ensure_refuses_a_source_with_another_digest_before_writing() {
+    let fake = Fake::new();
+    fake.write("/src/leaf.key", b"other\n");
+    fs::create_dir_all(fake.path("/dest")).expect("folder");
+    let mut input = copy("/src/leaf.key", "/dest/leaf.key", "0600");
+    input["source_sha256"] = json!(sha256(b"key\n"));
+    assert_eq!(file_ensure(&fake, &input).expect_err("mismatch").code, "file.source_mismatch");
+    assert!(!fake.path("/dest/leaf.key").exists());
+    input["source_sha256"] = json!("../../etc/shadow");
+    assert_eq!(file_ensure(&fake, &input).expect_err("no digest").code, "host.input_invalid");
+}
+
+#[test]
+fn file_ensure_refuses_a_source_that_is_a_link_missing_or_a_folder() {
+    let fake = Fake::new();
+    fake.write("/src/leaf.key", b"key\n");
+    fs::create_dir_all(fake.path("/dest")).expect("folder");
+    std::os::unix::fs::symlink(fake.path("/src/leaf.key"), fake.path("/src/link.key")).expect("link");
+    fs::create_dir_all(fake.path("/src/folder")).expect("folder");
+    for (source, code) in [("/src/link.key", "file.source_link"), ("/src/gone.key", "file.source_missing"), ("/src/folder", "file.source_not_file"), ("/src/./leaf.key", "host.input_invalid"), ("src/leaf.key", "host.input_invalid")] {
+        assert_eq!(file_ensure(&fake, &copy(source, "/dest/leaf.key", "0600")).expect_err(source).code, code, "{source}");
+        assert!(!fake.path("/dest/leaf.key").exists(), "{source}");
+    }
+    // A source behind a folder the executor cannot enter is unreadable, never missing.
+    fs::set_permissions(fake.path("/src"), fs::Permissions::from_mode(0o000)).expect("seal");
+    let unreadable = file_ensure(&fake, &copy("/src/leaf.key", "/dest/leaf.key", "0600"));
+    fs::set_permissions(fake.path("/src"), fs::Permissions::from_mode(0o755)).expect("unseal");
+    // Root enters any folder; the tests run as a normal user (AGENTS.md).
+    if me().0 != 0 {
+        assert_eq!(unreadable.expect_err("unreadable").code, "file.ensure_failed");
+    }
+}
+
+#[test]
+fn file_ensure_refuses_a_source_that_is_the_destination() {
+    let fake = Fake::new();
+    fake.write("/dest/leaf.key", b"key\n");
+    fs::hard_link(fake.path("/dest/leaf.key"), fake.path("/dest/hard.key")).expect("hard link");
+    for source in ["/dest/leaf.key", "/dest/hard.key"] {
+        assert_eq!(file_ensure(&fake, &copy(source, "/dest/leaf.key", "0600")).expect_err(source).code, "file.source_alias", "{source}");
+    }
+    assert_eq!(mode_of(&fake, "/dest/leaf.key"), 0o640, "nothing changed");
+}
+
+#[test]
+fn file_ensure_from_a_source_replaces_a_destination_link_and_keeps_the_guard() {
+    let fake = Fake::new();
+    fake.write("/src/leaf.key", b"key\n");
+    fake.write("/elsewhere/target", b"keep\n");
+    fs::create_dir_all(fake.path("/dest")).expect("folder");
+    std::os::unix::fs::symlink(fake.path("/elsewhere/target"), fake.path("/dest/leaf.key")).expect("link");
+    let mut guarded = copy("/src/leaf.key", "/dest/leaf.key", "0600");
+    guarded["from_sha256"] = json!(sha256(b"keep\n"));
+    assert_eq!(file_ensure(&fake, &guarded).expect_err("a link").code, "file.ensure_failed");
+    assert!(fs::symlink_metadata(fake.path("/dest/leaf.key")).expect("link").file_type().is_symlink());
+    assert_eq!(file_ensure(&fake, &copy("/src/leaf.key", "/dest/leaf.key", "0600")), Ok(1));
+    assert!(fs::symlink_metadata(fake.path("/dest/leaf.key")).expect("file").file_type().is_file());
+    assert_eq!(fake.read("/dest/leaf.key"), b"key\n");
+    assert_eq!(fake.read("/elsewhere/target"), b"keep\n", "the file behind the link is never written");
+    assert_eq!(mode_of(&fake, "/elsewhere/target"), 0o640);
+    fake.write("/dest/leaf.key", b"someone else\n");
+    assert_eq!(file_ensure(&fake, &guarded).expect_err("conflict").code, "owned_revision_conflict");
+    assert_eq!(fake.read("/dest/leaf.key"), b"someone else\n");
+}
+
+#[test]
+fn file_ensure_takes_exactly_one_of_content_and_source_path() {
+    let mut fake = Fake::new();
+    fake.write("/src/leaf.key", b"key\n");
+    fs::create_dir_all(fake.path("/dest")).expect("folder");
+    let content = fake.put(b"key\n");
+    let mut both = copy("/src/leaf.key", "/dest/leaf.key", "0600");
+    both["content"] = content.clone();
+    let neither = json!({"state": "file", "path": "/dest/leaf.key", "owner": owner()});
+    let digest_on_blob = json!({"state": "file", "path": "/dest/leaf.key", "content": content, "source_sha256": sha256(b"key\n"), "owner": owner()});
+    for input in [both, neither, digest_on_blob] {
+        assert_eq!(file_ensure(&fake, &input).expect_err("one source").code, "host.input_invalid", "{input}");
+    }
+    assert!(!fake.path("/dest/leaf.key").exists());
+}
+
 #[test]
 fn dotenv_ensure_sets_the_last_key_and_appends_a_missing_one() {
     let fake = Fake::new();
