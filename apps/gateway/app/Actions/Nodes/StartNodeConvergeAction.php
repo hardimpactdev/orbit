@@ -43,8 +43,7 @@ final readonly class StartNodeConvergeAction
         ?array $releaseInputs = null, ?DesiredCliReleaseData $cli = null): Operation
     {
         $automatic = $automatic || $release;
-        $verifier = $node->agent_secret_hash;
-        if (! $this->eligibility->allows($node) || ! is_string($verifier) || preg_match('/\A[0-9a-f]{64}\z/D', $verifier) !== 1) {
+        if (! $this->eligibility->convergeable($node)) {
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node can converge.', 422);
         }
         if ($release && ($base || $roles === null)) {
