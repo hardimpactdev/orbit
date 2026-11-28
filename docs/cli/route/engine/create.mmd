@@ -18,7 +18,7 @@ sequenceDiagram
   CLI->>GW: route:create<br/>INSTANCE DOMAIN
   Note over GW: Validate, hold Nodes<br/>render whole files
   %%> Same guards, holds and admitted plan as route/create.mmd (`route_create`, NativeRouteCreatePlan)
-  %%> The plan also carries each Node's account group and home (`accounts`) and the digest of each file the create replaces, rendered from the sites at admission (`guards`: Caddyfile, shared pools, records and catalog, raw bytes); a waiting create renders them again with its Caddyfiles
+  %%> The plan also carries each Node's account group and home (`accounts`); pools are rendered with the group's name, as Swamp writes them
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node; every build with the host family has file.ensure `source_path`, so the key copy needs no feature
@@ -34,8 +34,10 @@ sequenceDiagram
     %%> Pending Nick's decision on a tree scope (RouteHostSteps::access): each admitted row is recursive over a checkout or its served roots, and posix.acl.ensure acts on one path
     EN->>N: Set APP_URL and links<br/>dotenv.ensure · file.ensure
     %%> `site-node-url-k`: the last `APP_URL=` line of an existing `.env` that the account owns, replaced or appended; `site-node-link-k`: a release link owned by its account
+    EN->>N: Read each pool file<br/>file.read · read-pool-k
+    %%> One path, read only: absent, or present with its type, owner, mode and, for a regular file, its SHA-256; never its content. The step records the answer
     EN->>N: Write and test the pools<br/>config.apply · site-node-pools
-    %%> Under `/etc/caddy/.orbit-publish.lock`: each pool rendered whole with the account's group and home, root:root 0644, from its rendered-from digest; `php-fpm` validators from the fixed list; a failed test restores the files
+    %%> Under `/etc/caddy/.orbit-publish.lock`: each pool rendered whole with the account's group and home, root:root 0644, with the digest its read recorded as `from_sha256` (none when absent); `php-fpm` validators from the fixed list; a failed test restores the files
     EN->>N: Start each pool<br/>systemd.unit.ensure
     EN->>N: Reload the pools<br/>config.apply · site-node-reload
     %%> The same files and validators, then each pool unit reloads on every run, as route.publish_site did
@@ -43,13 +45,16 @@ sequenceDiagram
     %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
     EN->>N: Trust the Orbit root<br/>ca.trust.ensure · site-node-trust
     %%> `orbit-managed-root-ca.crt`, root:root 0644; the plain `update-ca-certificates` runs after a change
+    EN->>N: Read the Caddyfile<br/>file.read · read-caddy
     EN->>N: Apply the Caddyfile<br/>config.apply · site-node-caddy
-    %%> Under `/etc/caddy/.orbit-publish.lock`: the whole Caddyfile, root:caddy 0640, from its rendered-from digest; validated as `caddy`; Caddy reloads on every run; a failed validation or reload restores the file
+    %%> Under `/etc/caddy/.orbit-publish.lock`: the whole Caddyfile, root:caddy 0640, with the digest its read recorded; validated as `caddy`; Caddy reloads on every run; a failed validation or reload restores the file
+    EN->>V: Read records, catalog<br/>file.read · dns-i-read-…
     EN->>V: Publish private DNS<br/>config.apply · dns-i
-    %%> Beside the sites, after the signatures. Under `/run/lock/orbit-dnsmasq.lock`: records and catalog, root:root 0644, each from its rendered-from digest; the `dnsmasq` validator over `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`; dnsmasq and the private DNS listener restart on every run
+    %%> Beside the sites, after the signatures. Under `/run/lock/orbit-dnsmasq.lock`: records and catalog, root:root 0644, each with the digest its read recorded; the `dnsmasq` validator over `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`; dnsmasq and the private DNS listener restart on every run
     Note over EN: Probe the site over TLS<br/>Gateway step · probe-i
     %%> After each Node's last site step: a TLS handshake by WireGuard address, trusting only the Orbit root
-    %%> Every config.apply input comes from the admitted plan alone, so a resend carries the same bytes, the order's identity; its `recovery_dir` is `/var/lib/orbit/executor/config-recovery` on every Node
+    %%> Every config.apply input comes from the admitted plan and the recorded reads, so a resend carries the same bytes, the order's identity; its `recovery_dir` is `/var/lib/orbit/executor/config-recovery` on every Node
+    %%> The writes overwrite whatever the Node held at the read, as main's route.create did: a pool with a numeric gid or a catalog in another key order is replaced; the guard refuses `owned_revision_conflict` only when a file changed between its read and its write, under the Node publication hold and the lock
     alt every step succeeds
       EN->>GW: Route active<br/>same projection
     else a step fails

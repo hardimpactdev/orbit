@@ -41,7 +41,6 @@ function routePlan(array $overrides = []): array
         'env_files' => [], 'probes' => [['node_id' => 3, 'address' => '10.44.0.2', 'domain' => 'shop.orbit']], 'ingress' => [], 'dns' => [], 'awake' => [],
         'leaf_indexes' => [0], 'trust' => [3], 'root_certificate' => "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
         'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']], 'accounts' => [3 => ['group' => 'orbit', 'home' => '/home/orbit']],
-        'guards' => [3 => ['caddy' => str_repeat('c', 64), 'php:8.4' => str_repeat('p', 64)], 1 => ['records' => str_repeat('r', 64), 'catalog' => str_repeat('k', 64)]],
     ], ...$overrides];
 }
 
@@ -50,11 +49,21 @@ function routeOperation(array $plan): Operation
     return (new Operation)->forceFill(['id' => 41, 'kind' => 'route.create', 'input' => ['route_create' => $plan]]);
 }
 
-/** The signed reply of sign-0: the leaf, then the root. */
-function routeRun(): EngineRun
+/** A file.read answer for a regular file with this digest, as the executor records it. */
+function routeRead(string $sha256): string
 {
-    return new EngineRun(41, ['sign-0' => (new OperationEngineStep)->forceFill(['name' => 'sign-0', 'status' => 'done',
-        'output' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n"])], 0, null);
+    return json_encode(['state' => 'present', 'type' => 'file', 'sha256' => $sha256, 'uid' => 0, 'gid' => 0, 'mode' => '0644'], JSON_THROW_ON_ERROR);
+}
+
+/** The signed reply of sign-0, the leaf then the root, and the reads of the files the writes replace. */
+function routeRun(array $outputs = []): EngineRun
+{
+    $outputs = [...['sign-0' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
+        'site-3-read-pool-0' => routeRead(str_repeat('1', 64)), 'site-3-read-caddy' => routeRead(str_repeat('c', 64)),
+        'dns-0-read-records' => routeRead(str_repeat('2', 64)), 'dns-0-read-catalog' => routeRead(str_repeat('3', 64))], ...$outputs];
+
+    return new EngineRun(41, array_map(static fn (string $name): OperationEngineStep => (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'done',
+        'output' => $outputs[$name]]), array_combine(array_keys($outputs), array_keys($outputs))), 0, null);
 }
 
 it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps in route.publish_site\'s order and a Gateway probe', function (): void {
@@ -65,7 +74,8 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['sign-0', 0, 'certificate.sign', ['csr-0']],
         ['site-3-url-0', 3, 'dotenv.ensure', ['sign-0']],
         ['site-3-link-0', 3, 'file.ensure', ['site-3-url-0']],
-        ['site-3-pools', 3, 'config.apply', ['site-3-link-0']],
+        ['site-3-read-pool-0', 3, 'file.read', ['site-3-link-0']],
+        ['site-3-pools', 3, 'config.apply', ['site-3-read-pool-0']],
         ['site-3-unit-0', 3, 'systemd.unit.ensure', ['site-3-pools']],
         ['site-3-reload', 3, 'config.apply', ['site-3-unit-0']],
         ['site-3-cert-0', 3, 'file.ensure', ['site-3-reload']],
@@ -75,7 +85,8 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['site-3-copy-0', 3, 'file.ensure', ['site-3-key-0']],
         ['site-3-copylink-0', 3, 'file.ensure', ['site-3-copy-0']],
         ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-copylink-0']],
-        ['site-3-caddy', 3, 'config.apply', ['site-3-trust']],
+        ['site-3-read-caddy', 3, 'file.read', ['site-3-trust']],
+        ['site-3-caddy', 3, 'config.apply', ['site-3-read-caddy']],
         ['probe-0', 0, 'route.probe', ['site-3-caddy']],
     ])
         ->and(array_values(array_filter(array_map(static fn ($step): ?array => $step->features === [] ? null : [$step->name, $step->features], $steps))))
@@ -112,11 +123,11 @@ it('sends APP_URL, links, the leaf, the account\'s copies and the root trust wit
             'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]);
 });
 
-it('renders the pools whole under the publication lock, starts each unit, then reloads it, and applies the Caddyfile from its rendered digest', function (): void {
+it('renders the pools whole under the publication lock, starts each unit, then reloads it, and applies the Caddyfile from its read digest', function (): void {
     $flow = app(RouteEngineFlow::class);
     $input = static fn (string $step): array => $flow->input(routeOperation(routePlan()), $step, routeRun());
     $pool = ['path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf', 'content' => ['blob' => ['content' => "[shop]\ngroup = orbit\nchdir = /home/orbit/apps/shop\n"]],
-        'from_sha256' => str_repeat('p', 64), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
+        'from_sha256' => str_repeat('1', 64), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
     $base = ['lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery', 'files' => [$pool],
         'validators' => [['kind' => 'php-fpm', 'version' => '8.4']]];
 
@@ -137,7 +148,7 @@ it('gives a production pool its own configuration and ini folders, and keeps it 
     $input = app(RouteEngineFlow::class)->input(routeOperation(routePlan($production)), 'site-3-reload', routeRun());
 
     expect($input['files'])->toBe([['path' => '/etc/orbit/php-fpm/shop/generated/pool.conf', 'content' => ['blob' => ['content' => "[shop]\n"]],
-        'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]])
+        'from_sha256' => str_repeat('1', 64), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]])
         ->and($input['validators'])->toBe([['kind' => 'php-fpm', 'version' => '8.4', 'fpm_config' => '/etc/orbit/php-fpm/shop/generated/php-fpm.conf',
             'ini_scan_dir' => ['/etc/php/8.4/fpm/conf.d', '/etc/orbit/php-fpm/shop/generated']]])
         ->and($input['units'])->toBe([['unit' => 'orbit-shop-php8.4-fpm.service', 'load' => 'reload']]);
@@ -146,28 +157,45 @@ it('gives a production pool its own configuration and ini folders, and keeps it 
     expect(fn () => app(RouteEngineFlow::class)->steps(routeOperation(routePlan($production))))->toThrow(EngineUnsupported::class);
 });
 
-it('keeps each config.apply input byte-stable across runs, because that input is the order\'s identity', function (): void {
+it('reads each file its write replaces, and sends the recorded live digest, or none for an absent file', function (): void {
     $flow = app(RouteEngineFlow::class);
-    $later = new EngineRun(41, ['sign-0' => (new OperationEngineStep)->forceFill(['name' => 'sign-0', 'status' => 'done',
-        'output' => "-----BEGIN CERTIFICATE-----\nOTHER\n"])], 99, null);
+    $absent = routeRun(['site-3-read-caddy' => '{"state":"absent"}', 'site-3-read-pool-0' => routeRead(str_repeat('e', 64))]);
 
-    foreach (['site-3-pools', 'site-3-reload', 'site-3-caddy'] as $step) {
-        expect(json_encode($flow->input(routeOperation(routePlan()), $step, $later)))->toBe(json_encode($flow->input(routeOperation(routePlan()), $step, routeRun())));
+    expect($flow->input(routeOperation(routePlan()), 'site-3-read-caddy', routeRun()))->toBe(['path' => '/etc/caddy/Caddyfile'])
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-read-pool-0', routeRun()))->toBe(['path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf'])
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-caddy', $absent)['files'][0])->not->toHaveKey('from_sha256')
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-pools', $absent)['files'][0]['from_sha256'])->toBe(str_repeat('e', 64))
+        ->and(RouteHostSteps::digest(json_encode(['state' => 'present', 'type' => 'link', 'uid' => 0, 'gid' => 0, 'mode' => '0777'])))->toBeNull();
+});
+
+it('sends a retried write byte-identical input, because its reads are recorded once and config.apply\'s identity is its input', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    // A retry runs later, against the same recorded reads: the live files may have moved on, but the recorded answers did not.
+    $retry = new EngineRun(41, routeRun()->steps, 99_000, null);
+
+    foreach (['site-3-pools', 'site-3-reload', 'site-3-caddy', 'dns-0'] as $step) {
+        $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n"]]]);
+        expect(json_encode($flow->input(routeOperation($plan), $step, $retry)))->toBe(json_encode($flow->input(routeOperation($plan), $step, routeRun())));
     }
 });
 
 it('publishes private DNS on the VPN Node under its lock after the signature, beside the site, and probes after the site alone', function (): void {
     $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n"]]]);
     $steps = app(RouteEngineFlow::class)->steps(routeOperation($plan));
-    $dns = array_values(array_filter($steps, static fn ($step): bool => $step->name === 'dns-0'))[0];
 
-    expect([$dns->node, $dns->action, $dns->after])->toBe([1, 'config.apply', ['sign-0']])
+    expect(array_values(array_map(static fn ($step): array => [$step->name, $step->node, $step->action, $step->after],
+        array_filter($steps, static fn ($step): bool => str_starts_with($step->name, 'dns-')))))->toBe([
+            ['dns-0-read-records', 1, 'file.read', ['sign-0']],
+            ['dns-0-read-catalog', 1, 'file.read', ['dns-0-read-records']],
+            ['dns-0', 1, 'config.apply', ['dns-0-read-catalog']],
+        ])
+        ->and(app(RouteEngineFlow::class)->input(routeOperation($plan), 'dns-0-read-catalog', routeRun()))->toBe(['path' => '/var/lib/orbit/private-dns/catalog.json'])
         ->and(end($steps)->after)->toBe(['site-3-caddy'])
         ->and(app(RouteEngineFlow::class)->input(routeOperation($plan), 'dns-0', routeRun()))->toBe([
             'lock' => '/run/lock/orbit-dnsmasq.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery', 'files' => [
-                ['path' => '/etc/dnsmasq.d/orbit-records.conf', 'content' => ['blob' => ['content' => "address=/.test/10.44.0.7\n"]], 'from_sha256' => str_repeat('r', 64),
+                ['path' => '/etc/dnsmasq.d/orbit-records.conf', 'content' => ['blob' => ['content' => "address=/.test/10.44.0.7\n"]], 'from_sha256' => str_repeat('2', 64),
                     'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
-                ['path' => '/var/lib/orbit/private-dns/catalog.json', 'content' => ['blob' => ['content' => "{}\n"]], 'from_sha256' => str_repeat('k', 64),
+                ['path' => '/var/lib/orbit/private-dns/catalog.json', 'content' => ['blob' => ['content' => "{}\n"]], 'from_sha256' => str_repeat('3', 64),
                     'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
             ],
             'validators' => [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => ['.dpkg-dist', '.dpkg-old', '.dpkg-new']]],
@@ -184,6 +212,8 @@ it('records the chart\'s failed step and main\'s error code for a failed host st
     'a pool unit' => ['site-3-unit-0', 'unit.ensure_failed', 'Install cert, publish site-3', 'route.publish_failed'],
     'a trust update' => ['site-3-trust', 'trust.not_converged', 'Install cert, publish site-3', 'route.publish_failed'],
     'a site input' => ['site-3-url-0', 'host.input_invalid', 'Install cert, publish site-3', 'route.input_invalid'],
+    'a site read' => ['site-3-read-caddy', 'file.read_failed', 'Install cert, publish site-3', 'route.publish_failed'],
+    'a DNS read' => ['dns-0-read-catalog', 'file.read_failed', 'Publish private DNS-0', 'dns.write_failed'],
     'a site blob' => ['site-3-caddy', 'host.content_missing', 'Install cert, publish site-3', 'route.content_missing'],
     'a guarded Caddyfile' => ['site-3-caddy', 'owned_revision_conflict', 'Install cert, publish site-3', 'owned_revision_conflict'],
     'a dnsmasq check' => ['dns-0', 'config.validate_failed', 'Publish private DNS-0', 'dns.check_failed'],
@@ -289,18 +319,18 @@ it('runs route.create on the engine only without access rows, on Nodes with the 
 
     expect(app(EngineKinds::class)->routes(routeOperation(routePlan($plan))))->toBe($engine);
 })->with([
-    'every condition' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'],
+    'every condition' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'],
         ['tls.csr_input'], true],
-    'Caddy access rows' => [['acl' => routeAccess()], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure', 'posix.acl.ensure'],
+    'Caddy access rows' => [['acl' => routeAccess()], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure', 'posix.acl.ensure'],
         ['tls.csr_input'], false],
     'no host family' => [[], ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records'], ['tls.csr_input'], false],
-    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], [], false],
-    'one host primitive missing' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure'], ['tls.csr_input'], false],
+    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], [], false],
+    'one host primitive missing' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure'], ['tls.csr_input'], false],
 ]);
 
 it('refuses a VPN Node without the host family in the kind\'s own admission', function (): void {
     $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->with(3)->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+    $bus->shouldReceive('nodeActions')->with(3)->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
     $bus->shouldReceive('nodeActions')->with(1)->andReturn(['dns.publish_records']);
     $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
     $this->app->instance(MachineBus::class, $bus);

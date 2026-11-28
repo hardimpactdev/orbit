@@ -53,35 +53,6 @@ final readonly class RouteFileGuards
     }
 
     /**
-     * The digest of each whole file route.create replaces, as config.apply compares them: the raw bytes of the Caddyfile, the
-     * records, the catalog and each shared pool (`php:<version>`), rendered from the sites as they are at admission. A pool is
-     * hashed with the account's group and home in place, as RouteHostSteps renders it.
-     *
-     * @param  array<int, array{group: string, home: string}>  $accounts
-     * @return array<int, array<string, string>>
-     */
-    public function create(array $accounts): array
-    {
-        $sites = $this->sites->all();
-        $guards = [];
-        foreach ($accounts as $id => $account) {
-            $node = Node::query()->find($id);
-            if ($node === null) {
-                continue;
-            }
-            $before = $this->publications->snapshot($node, $sites, true);
-            $caddy = ValidatedData::object($before['caddy'])['content'] ?? null;
-            $dns = is_array($before['dns']) ? $before['dns'] : null;
-            $pools = array_map(static fn (string $text): string => hash('sha256', RouteHostSteps::render($text, $account['group'], $account['home'])), self::pools($before));
-            $guards[$id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null, ...$pools,
-                'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
-                'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
-        }
-
-        return $guards;
-    }
-
-    /**
      * What the engine writes on each Node to withdraw Routes that a capture rendered away (`renders`, the whole after-state of
      * each Node), beside the digests of the files it replaces: the Caddyfile, the shared PHP-FPM pools whose content changes, and
      * a VPN Node's records and catalog. A Node whose pool of a PHP version empties gets `pool_removed`, which the engine

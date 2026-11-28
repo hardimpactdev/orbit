@@ -33,7 +33,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
-| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
+| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>-read-<file>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `file.read`, `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
@@ -53,7 +53,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node.
 2. `sign-<i>`: The Gateway signs the request using `operation:direct:certificate-sign`. It refuses any pending cancellation.
 3. `site-<node>-<part>`: Each Node's part, one step after the other, in the order `route.publish_site` used. The table below lists the parts.
-4. `dns-<i>`: `config.apply` writes the records and the catalog on each VPN Node under its DNS lock, beside the sites.
+4. `dns-<i>`: Two `file.read` steps (`dns-<i>-read-records`, `dns-<i>-read-catalog`), then `config.apply` writes the records and the catalog on each VPN Node under its DNS lock, beside the sites.
 5. `probe-<i>`: The Gateway completes a TLS handshake with each serving Node over its WireGuard address, trusting only the Orbit root.
 
 | Part | Primitive | What it does |
@@ -61,6 +61,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | `acl-<k>` | `posix.acl.ensure` | Grants Caddy access to the Route's files |
 | `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
 | `link-<k>` | `file.ensure` | Places a release link |
+| `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
 | `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
 | `unit-<k>` | `systemd.unit.ensure` | Enables and starts a pool unit |
 | `reload` | `config.apply` | Reloads the pools |
@@ -69,7 +70,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | `trust` | `ca.trust.ensure` | Trusts the Orbit root |
 | `caddy` | `config.apply` | Applies the Caddyfile and reloads Caddy |
 
-The Gateway renders every file whole, the pools with the account's group and home (`accounts`), and sends each one with the digest of the bytes it was rendered from at admission (`guards`). The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, the records and the catalog `/run/lock/orbit-dnsmasq.lock`, and every `config.apply` uses `/var/lib/orbit/executor/config-recovery` as its `recovery_dir`. Each `config.apply` input comes from the plan alone, so a resend carries the same bytes.
+The Gateway renders every file whole, the pools with the account's group and home (`accounts`), and sends each Caddyfile, pool, records and catalog file with the digest a `file.read` step recorded just before its write. The write replaces what the Node held at the read, as `route.publish_site` did. It refuses `owned_revision_conflict` only when the file changed between the read and the write. The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, the records and the catalog `/run/lock/orbit-dnsmasq.lock`, and every `config.apply` uses `/var/lib/orbit/executor/config-recovery` as its `recovery_dir`. Each `config.apply` input comes from the plan and the recorded reads, so a resend carries the same bytes.
 
 A failed site step records `Install cert, publish site-<node>` with `route.input_invalid`, `route.content_missing` or `route.publish_failed`, as `route.publish_site` did. A failed `dns-<i>` records `Publish private DNS-<i>` with the `dns.*` code `dns.publish_records` answered. A guard refusal stays `owned_revision_conflict`.
 

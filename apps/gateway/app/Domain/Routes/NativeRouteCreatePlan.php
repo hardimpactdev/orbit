@@ -55,15 +55,6 @@ final readonly class NativeRouteCreatePlan
             }
             $plan[$list] = $rows;
         }
-        // The Caddyfiles now replace the live ones, so their guards are the live render's, as at admission.
-        if (($plan['guards'] ?? []) !== []) {
-            $accounts = [];
-            foreach ((array) $plan['accounts'] as $id => $account) {
-                $account = ValidatedData::object($account);
-                $accounts[(int) $id] = ['group' => ValidatedData::string($account['group']), 'home' => ValidatedData::string($account['home'])];
-            }
-            $plan['guards'] = app(RouteFileGuards::class)->create($accounts);
-        }
 
         return $plan;
     }
@@ -217,10 +208,8 @@ final readonly class NativeRouteCreatePlan
             // The managed account's group shares its name (NodeEnrollmentPolicy); the engine renders pools and the account's copies with both.
             $accounts[$node->id] = ['group' => $account, 'home' => RouteHostSteps::home($account)];
         }
-        // The files the engine replaces whole, by the digest of the bytes they were rendered from (RouteFileGuards::create).
-        $guards = RouteFileGuards::wanted('route.create') ? app(RouteFileGuards::class)->create($accounts) : [];
 
-        return [...$this->result($route, $plan, array_values($trust), $root, $nodes), 'accounts' => $accounts, 'guards' => $guards];
+        return [...$this->result($route, $plan, array_values($trust), $root, $nodes), 'accounts' => $accounts];
     }
 
     /**

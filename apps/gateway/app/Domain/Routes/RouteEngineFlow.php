@@ -54,11 +54,14 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
     public const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
 
+    /** Earlier outputs as a step's shape check reads them before anything runs: a certificate, and an absent file. */
+    private const array PlannedOutput = ['sign' => "-----BEGIN CERTIFICATE-----\n", 'site' => '{"state":"absent"}'];
+
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
     private const int OrderOverhead = 400;
 
     /** The host primitives route.create sends: a Node reports the `host` family (agent 0.36.0) when it lists each. */
-    private const array HostFamily = ['config.apply', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
+    private const array HostFamily = ['config.apply', 'file.read', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
 
     public function __construct(private NativeRouteConvergenceProjection $projection, private SignDirectCertificatesAction $signer,
         private LeafCertificateSigner $root, private MachineBus $bus) {}
@@ -87,7 +90,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             foreach ($this->site($plan, $node) as [$part, $action, $features, $budget]) {
                 $name = "site-{$node}-{$part}";
                 // Shapes the executor cannot take, or an order over its size, send the Route to Swamp now, before anything starts.
-                self::fits($this->hostInput($plan, $node, $part, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
+                self::fits($this->hostInput($plan, $node, $part, static fn (string $step): string => self::PlannedOutput[explode('-', $step, 2)[0]]));
                 $steps[] = new StepSpec($name, $node, $action, (string) $node, $after, budgetMs: $budget, resendMs: 15_000, features: $features);
                 $after = [$name];
             }
@@ -97,7 +100,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         // WireGuard address, so it waits for the sites alone.
         foreach (array_keys(RouteExecutionProof::objects($plan['dns'] ?? [])) as $index) {
             $vpn = ValidatedData::integer(RouteExecutionProof::objects($plan['dns'])[$index]['node_id']);
-            $steps[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $signed, budgetMs: 120_000, resendMs: 20_000);
+            // Each file's live digest, read under the hold, is the guard its write sends.
+            $steps[] = new StepSpec("dns-{$index}-read-records", $vpn, 'file.read', (string) $vpn, $signed, budgetMs: 30_000, resendMs: 10_000);
+            $steps[] = new StepSpec("dns-{$index}-read-catalog", $vpn, 'file.read', (string) $vpn, ["dns-{$index}-read-records"], budgetMs: 30_000, resendMs: 10_000);
+            $steps[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, ["dns-{$index}-read-catalog"], budgetMs: 120_000, resendMs: 20_000);
         }
         foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
             $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $last, budgetMs: 60_000);
@@ -154,6 +160,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         }
         $pools = self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads'));
         if ($pools !== []) {
+            foreach (array_keys($pools) as $index) {
+                $parts[] = ["read-pool-{$index}", 'file.read', [], 30_000];
+            }
             $parts[] = ['pools', 'config.apply', [], 180_000];
             foreach (array_keys($pools) as $index) {
                 $parts[] = ["unit-{$index}", 'systemd.unit.ensure', [], 60_000];
@@ -171,6 +180,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             $parts[] = ['trust', 'ca.trust.ensure', [], 120_000];
         }
         if ($mine('caddy') !== []) {
+            $parts[] = ['read-caddy', 'file.read', [], 30_000];
             $parts[] = ['caddy', 'config.apply', [], 180_000];
         }
 
@@ -184,9 +194,13 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
         return match ($parts[0]) {
             'csr' => self::csrInput(RouteExecutionProof::objects($plan['leaves'])[(int) $parts[1]]),
-            'site' => $this->hostInput($plan, (int) $parts[1], $parts[2] ?? '', static fn (int $leaf): string => $run->output("sign-{$leaf}")
-                ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
-            'dns' => self::dnsInput($plan, RouteExecutionProof::objects($plan['dns'])[(int) $parts[1]]),
+            'site' => $this->hostInput($plan, (int) $parts[1], $parts[2] ?? '', $run->output(...)),
+            'dns' => match ($parts[2] ?? null) {
+                'read-records' => RouteHostSteps::read(RouteHostSteps::Records),
+                'read-catalog' => RouteHostSteps::read(RouteHostSteps::Catalog),
+                null => self::dnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $parts[1]], $run->output("{$step}-read-records"), $run->output("{$step}-read-catalog")),
+                default => throw new LogicException("Step [{$step}] has no input."),
+            },
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
     }
@@ -278,26 +292,14 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * A VPN Node's records and catalog, as the Gateway rendered them, with the digests of the files they replace.
+     * A VPN Node's records and catalog, as the Gateway rendered them, each guarded by the live digest its read returned.
      *
-     * @param  array<string, mixed>  $plan
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
-    private static function dnsInput(array $plan, array $row): array
+    private static function dnsInput(array $row, ?string $records, ?string $catalog): array
     {
-        return RouteHostSteps::dns(ValidatedData::string($row['records']), ValidatedData::string($row['catalog']), self::guards($plan, ValidatedData::integer($row['node_id'])));
-    }
-
-    /**
-     * @param  array<string, mixed>  $plan
-     * @return array<string, string>
-     */
-    private static function guards(array $plan, int $node): array
-    {
-        $guards = is_array($plan['guards'] ?? null) ? $plan['guards'] : [];
-
-        return RouteHostSteps::guards(is_array($guards[$node] ?? null) ? $guards[$node] : []);
+        return RouteHostSteps::dns(ValidatedData::string($row['records']), ValidatedData::string($row['catalog']), RouteHostSteps::digest($records), RouteHostSteps::digest($catalog));
     }
 
     /**
@@ -335,21 +337,24 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * One site step's primitive input. `$signed` gives a leaf's signed certificate by its index; content travels as blobs.
+     * One site step's primitive input. `$output` gives an earlier step's recorded output: a leaf's signed certificate
+     * (`sign-<i>`) or a file's read (`site-<node>-read-…`); content travels as blobs.
      *
      * @param  array<string, mixed>  $plan
-     * @param  callable(int): string  $signed
+     * @param  callable(string): ?string  $output
      * @return array<string, mixed>
      */
-    private function hostInput(array $plan, int $node, string $part, callable $signed): array
+    private function hostInput(array $plan, int $node, string $part, callable $output): array
     {
+        $signed = static fn (int $leaf): string => $output("sign-{$leaf}") ?? throw new LogicException("Leaf {$leaf} has no signed certificate.");
+        $read = static fn (string $file): ?string => RouteHostSteps::digest($output("site-{$node}-read-{$file}"));
         $mine = self::mine($plan, $node);
         [$account, $group, $home] = self::account($plan, $node);
         [$kind, $index] = explode('-', $part, 2) + [1 => '0'];
         $index = (int) $index;
         $caddy = $mine('caddy');
         $named = static fn (string $name): string => preg_match(self::Name, $name) === 1 ? $name : throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
-        $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, self::guards($plan, $node));
+        $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, static fn (int $index): ?string => $read("pool-{$index}"));
         $leaf = static function () use ($plan, $index, $account): array {
             $leaf = RouteExecutionProof::objects($plan['leaves'])[$index];
             $scope = ValidatedData::string($leaf['scope']);
@@ -387,7 +392,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'copylink' => RouteHostSteps::link(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/current', $leaf()[1], $account, $group),
             'trust' => ['state' => 'present', 'name' => RouteHostSteps::TrustName, 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
-            'caddy' => RouteHostSteps::caddy(ValidatedData::string(end($caddy)['content'] ?? null), self::guards($plan, $node)['caddy'] ?? null),
+            // A read names the file its write replaces: the Caddyfile, or the pool at an index.
+            'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ValidatedData::string(RouteHostSteps::pools(
+                self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null)),
+            'caddy' => RouteHostSteps::caddy(ValidatedData::string(end($caddy)['content'] ?? null), $read('caddy')),
             default => throw new LogicException("Site step [{$part}] has no input."),
         };
     }

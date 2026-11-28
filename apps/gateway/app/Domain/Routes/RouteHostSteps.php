@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Engine\EngineUnsupported;
-use App\Support\ValidatedData;
 
 /**
  * The inputs of the host catalogue primitives (docs/reference/executor.md#the-host-family) for a Route's files on one Node.
- * The Gateway renders every file whole and sends each path, owner, mode, unit, lock and the digest a file was rendered from;
+ * The Gateway renders every file whole and sends each path, owner, mode, unit, lock and the live digest a `file.read` step
+ * returned under the Node publication hold;
  * the executor holds no Route path. Each builder answers one order's input, derived from the admitted plan alone, so a resend
  * of a step carries the same bytes (config.apply's identity is the SHA-256 of its input).
  */
@@ -70,22 +70,22 @@ final readonly class RouteHostSteps
      * shared pool render leaves (SharedPhpPoolInput), as Swamp's site phase does.
      *
      * @param  list<array{version: string, user: ?string, content: array{blob: array{content: string}}}>  $pools  RouteEngineFlow::pools
-     * @param  array<string, string>  $guards  The Node's rendered-from digests (`php:<version>`).
+     * @param  callable(int): ?string  $from  The live digest of the pool at an index, from its read (`read-pool-<k>`); null when absent.
      * @return array{files: list<array<string, mixed>>, validators: list<array<string, mixed>>, units: list<string>}
      */
-    public static function pools(array $pools, string $group, string $home, array $guards): array
+    public static function pools(array $pools, string $group, string $home, callable $from): array
     {
         $files = $validators = $units = [];
-        foreach ($pools as $pool) {
+        foreach ($pools as $index => $pool) {
             ['version' => $version, 'user' => $user] = $pool;
             $content = self::render($pool['content']['blob']['content'], $group, $home);
             if ($user === null) {
-                $files[] = self::file("/etc/php/{$version}/fpm/pool.d/orbit-scopes.conf", $content, $guards['php:'.$version] ?? null, 'root', 'root', '0644');
+                $files[] = self::file("/etc/php/{$version}/fpm/pool.d/orbit-scopes.conf", $content, $from($index), 'root', 'root', '0644');
                 $validators[] = ['kind' => 'php-fpm', 'version' => $version];
                 $units[] = "php{$version}-fpm.service";
             } else {
                 $generated = "/etc/orbit/php-fpm/{$user}/generated";
-                $files[] = self::file("{$generated}/pool.conf", $content, null, 'root', 'root', '0644');
+                $files[] = self::file("{$generated}/pool.conf", $content, $from($index), 'root', 'root', '0644');
                 $validators[] = ['kind' => 'php-fpm', 'version' => $version, 'fpm_config' => "{$generated}/php-fpm.conf",
                     'ini_scan_dir' => ["/etc/php/{$version}/fpm/conf.d", $generated]];
                 $units[] = "orbit-{$user}-php{$version}-fpm.service";
@@ -116,14 +116,13 @@ final readonly class RouteHostSteps
      * A VPN Node's records and catalog under the DNS lock, checked as dnsmasq.service loads them, then dnsmasq and the private DNS
      * listener restart on every run.
      *
-     * @param  array<string, string>  $guards  The Node's rendered-from digests (`records`, `catalog`).
      * @return array<string, mixed>
      */
-    public static function dns(string $records, string $catalog, array $guards): array
+    public static function dns(string $records, string $catalog, ?string $recordsFrom, ?string $catalogFrom): array
     {
         return self::apply(self::DnsLock, [
-            self::file(self::Records, $records, $guards['records'] ?? null, 'root', 'root', '0644'),
-            self::file(self::Catalog, $catalog, $guards['catalog'] ?? null, 'root', 'root', '0644'),
+            self::file(self::Records, $records, $recordsFrom, 'root', 'root', '0644'),
+            self::file(self::Catalog, $catalog, $catalogFrom, 'root', 'root', '0644'),
         ], [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => self::DnsmasqSkip]],
             [['unit' => 'dnsmasq.service', 'load' => 'restart'], ['unit' => 'orbit-private-dns.service', 'load' => 'restart']]);
     }
@@ -186,12 +185,26 @@ final readonly class RouteHostSteps
         return $account === 'root' ? '/root' : '/home/'.$account;
     }
 
-    /**
-     * @param  array<string, mixed>  $guards
-     * @return array<string, string>
-     */
-    public static function guards(array $guards): array
+    /** @return array{path: string} */
+    public static function read(string $path): array
     {
-        return array_map(ValidatedData::string(...), $guards);
+        return ['path' => $path];
+    }
+
+    /**
+     * The `from_sha256` a config.apply file takes from its read (`file.read`): the live file's digest, or none when it is
+     * absent. A path that is present but no regular file has no digest, so config.apply refuses it unless it already holds the
+     * desired bytes. The read's recorded output is fixed once the step is done, so a resend of the write carries the same input.
+     */
+    public static function digest(?string $read): ?string
+    {
+        $answer = is_string($read) ? json_decode($read, true) : null;
+
+        return match (true) {
+            ! is_array($answer) => throw new \LogicException('A file read has no recorded answer.'),
+            ($answer['state'] ?? null) === 'absent' => null,
+            ($answer['state'] ?? null) === 'present' => is_string($answer['sha256'] ?? null) && preg_match('/\A[0-9a-f]{64}\z/', $answer['sha256']) === 1 ? $answer['sha256'] : null,
+            default => throw new \LogicException('A file read answered an unknown state.'),
+        };
     }
 }
