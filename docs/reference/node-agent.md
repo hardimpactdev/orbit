@@ -33,9 +33,10 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
 - **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
 
-From agent `0.39.0`, the executor adds these primitives:
+The Incus and Git families follow, each on app-dev Nodes only, then the Conn Server primitives.
 
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
+- **Git primitives:** Agent `0.41.0` adds the [git family](/reference/executor#the-git-family) with `git.fetch`, `git.checkout`, `git.ref.ensure` and `git.worktree.read` on app-dev Nodes.
 - **Conn Server primitives:** Agent `0.42.0` adds the [Conn Server primitives](/reference/executor#the-conn-server-primitives) `conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue`.
 
 Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.

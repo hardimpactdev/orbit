@@ -1,0 +1,17 @@
+[package]
+name = "orbit-executor-git"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Git primitives of the Orbit executor: one ref fetched, one work tree's branch, one ref compared and set, one work tree read (ADR 0271 N3)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

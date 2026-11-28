@@ -319,10 +319,17 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::HttpProbe
             | orbit_executor_core::action::Action::FileRead
             | orbit_executor_core::action::Action::AccountRead
+            | orbit_executor_core::action::Action::GitFetch
+            | orbit_executor_core::action::Action::GitCheckout
+            | orbit_executor_core::action::Action::GitRefEnsure
+            | orbit_executor_core::action::Action::GitWorktreeRead
             | orbit_executor_core::action::Action::IncusInstanceEnsure
             | orbit_executor_core::action::Action::IncusAclEnsure
             | orbit_executor_core::action::Action::IncusDeviceEnsure
-            | orbit_executor_core::action::Action::IncusVolumeEnsure => {
+            | orbit_executor_core::action::Action::IncusVolumeEnsure
+            | orbit_executor_core::action::Action::ConnSessionIssue
+            | orbit_executor_core::action::Action::ConnProjectEnsure
+            | orbit_executor_core::action::Action::ConnPairingIssue => {
                 panic!("power actions only")
             }
         }
