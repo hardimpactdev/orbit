@@ -39,13 +39,19 @@ function routePlan(array $overrides = []): array
         'url_lines' => [['node_id' => 3, 'path' => '/home/orbit/apps/shop/.env', 'line' => 'APP_URL=https://shop.orbit', 'owner' => 'orbit']],
         'env_files' => [], 'probes' => [['node_id' => 3, 'address' => '10.44.0.2', 'domain' => 'shop.orbit']], 'ingress' => [], 'dns' => [], 'awake' => [],
         'leaf_indexes' => [0], 'trust' => [3], 'root_certificate' => "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
-        'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']], 'accounts' => [3 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']],
     ], ...$overrides];
 }
 
 function routeOperation(array $plan): Operation
 {
     return (new Operation)->forceFill(['id' => 41, 'kind' => 'route.create', 'input' => ['route_create' => $plan]]);
+}
+
+/** An account.read answer for a present account, as the executor records it: its primary group shares its name here. */
+function routeAccount(string $user, string $home): string
+{
+    return json_encode(['state' => 'present', 'uid' => 1000, 'gid' => 1000, 'group' => $user, 'home' => $home], JSON_THROW_ON_ERROR);
 }
 
 /** A file.read answer for a regular file with this digest, as the executor records it. */
@@ -58,6 +64,7 @@ function routeRead(string $sha256): string
 function routeRun(array $outputs = []): EngineRun
 {
     $outputs = [...['sign-0' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
+        'site-3-account-0' => routeAccount('orbit', '/home/orbit'),
         'site-3-read-pool-0' => routeRead(str_repeat('1', 64)), 'site-3-read-caddy' => routeRead(str_repeat('c', 64)),
         'dns-0-read-records' => routeRead(str_repeat('2', 64)), 'dns-0-read-catalog' => routeRead(str_repeat('3', 64))], ...$outputs];
 
@@ -71,7 +78,8 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
     expect(array_map(static fn ($step): array => [$step->name, $step->node, $step->action, $step->after], $steps))->toBe([
         ['csr-0', 3, 'tls.ensure_csr', []],
         ['sign-0', 0, 'certificate.sign', ['csr-0']],
-        ['site-3-url-0', 3, 'dotenv.ensure', ['sign-0']],
+        ['site-3-account-0', 3, 'account.read', ['sign-0']],
+        ['site-3-url-0', 3, 'dotenv.ensure', ['site-3-account-0']],
         ['site-3-link-0', 3, 'file.ensure', ['site-3-url-0']],
         ['site-3-read-pool-0', 3, 'file.read', ['site-3-link-0']],
         ['site-3-unlink-pool-0', 3, 'file.ensure', ['site-3-read-pool-0']],
@@ -373,3 +381,31 @@ it('sizes each order with real 64-hex guards: every admitted pool count fits at 
     expect($admitted)->toBeGreaterThan(0)
         ->and(fn () => app(RouteEngineFlow::class)->steps(routeOperation(routePlan($pools(16)))))->toThrow(EngineUnsupported::class);
 });
+
+it('reads each account the Node\'s steps write for and renders home and group from its recorded answer', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $plan = routePlan(['links' => [['node_id' => 3, 'path' => '/srv/shop/current', 'target' => 'releases/1', 'owner' => 'shop']]]);
+    // A home outside /home/<name> and a primary group with another name: both come from the Node, never from the user's name.
+    $run = routeRun(['site-3-account-0' => json_encode(['state' => 'present', 'uid' => 1000, 'gid' => 2000, 'group' => 'staff', 'home' => '/srv/orbit']),
+        'site-3-account-1' => json_encode(['state' => 'present', 'uid' => 1001, 'gid' => 1001, 'group' => 'shopgrp', 'home' => '/srv/shop'])]);
+    $steps = array_map(static fn ($step): string => $step->name, array_filter($flow->steps(routeOperation($plan)), static fn ($step): bool => $step->action === 'account.read'));
+
+    expect(array_values($steps))->toBe(['site-3-account-0', 'site-3-account-1'])
+        ->and($flow->input(routeOperation($plan), 'site-3-account-0', $run))->toBe(['user' => 'orbit'])
+        ->and($flow->input(routeOperation($plan), 'site-3-account-1', $run))->toBe(['user' => 'shop'])
+        ->and($flow->input(routeOperation($plan), 'site-3-link-0', $run))->toBe(['state' => 'link', 'path' => '/srv/shop/current', 'target' => 'releases/1', 'user' => 'shop', 'group' => 'shopgrp'])
+        ->and($flow->input(routeOperation($plan), 'site-3-key-0', $run))->toMatchArray(['path' => '/srv/orbit/.orbit/certificates/app-instance-7/versions/0123456789abcdef/key.pem',
+            'owner' => ['user' => 'orbit', 'group' => 'staff', 'mode' => '0600']])
+        ->and($flow->input(routeOperation($plan), 'site-3-pools', $run)['files'][0]['content']['blob']['content'])->toBe("[shop]\ngroup = staff\nchdir = /srv/orbit/apps/shop\n")
+        // A retry reads the same recorded answer, so it sends the same bytes.
+        ->and(json_encode($flow->input(routeOperation($plan), 'site-3-copy-0', new EngineRun(41, $run->steps, 99_000, null))))
+        ->toBe(json_encode($flow->input(routeOperation($plan), 'site-3-copy-0', $run)));
+});
+
+it('fails a step that needs an absent or unreadable account, which records main\'s route.publish_failed', function (?string $answer, string $code): void {
+    app(RouteEngineFlow::class)->input(routeOperation(routePlan()), 'site-3-copy-0', routeRun(['site-3-account-0' => $answer]));
+})->with([
+    'an absent account' => ['{"state":"absent"}', 'route.account_missing'],
+    'no recorded answer' => [null, 'route.account_missing'],
+    'a relative home' => ['{"state":"present","uid":1000,"gid":1000,"group":"orbit","home":"orbit"}', 'route.account_invalid'],
+])->throws(RuntimeException::class);

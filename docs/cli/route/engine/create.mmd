@@ -19,10 +19,10 @@ sequenceDiagram
   Note over GW: Validate, hold Nodes<br/>render whole files
   %%> Same guards and admitted plan as route/create.mmd (`route_create`, NativeRouteCreatePlan)
   %%> The publication hold covers every Node of the plan: site and leaf Nodes and each VPN Node with DNS work, from the reads to the guarded writes, also after an admission wait (RoutePublicationHolds)
-  %%> The account's observed home and primary group (`accounts.<node>`): the Gateway records neither today, so a Route whose steps need them runs on Swamp; pools are rendered with the group's name
+  %%> Each account the Node's steps write for is read on the Node first (`account.read`): home, primary group and gid by NSS; pools are rendered with the group's name
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
-    %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node; every build with the host family has file.ensure `source_path`, so the key copy needs no feature
+    %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family with `account.read`, agent 0.37.0), with `tls.csr_input` on the leaf Node; every build with the host family has file.ensure `source_path`, so the key copy needs no feature
     %%> - the flow accepts the plan shape; an Ingress edge, a LAN rule, a production `.env`, awake markers, Caddy access rows, or a pool outside the two pool kinds throws `EngineUnsupported`
     %%> - the kind's own admission (RouteEngineFlow::admit) also refuses a Route with Caddy access rows, and a Node with work that lacks one host primitive, or a leaf Node that lacks `tls.csr_input`
     %%> - production never moves: a site or leaf Node that is not an app-dev Node (app-prod, unclassified, no role), a DNS Node without the vpn role, a target Instance outside development, or an intent with a production placement or `production_control` keeps the whole Operation on Swamp
@@ -32,6 +32,8 @@ sequenceDiagram
     %%> The Gateway sends the folder, its root:caddy owner, modes 0750 and 0640, and the subject; the key never leaves the Node
     Note over EN: Sign the CSR<br/>Gateway step · sign-i
     %%> As `operation:direct:certificate-sign`; a pending cancel refuses
+    EN->>N: Read each account<br/>account.read · account-k
+    %%> The Node's account (leaf copies, pools) and each other link owner; the recorded answer keeps a retry byte for byte; an absent account fails the next step that needs it (`route.publish_failed`)
     EN->>N: Set APP_URL and links<br/>dotenv.ensure · file.ensure
     %%> `site-node-url-k`: the last `APP_URL=` line of an existing `.env` that the account owns, replaced or appended; `site-node-link-k`: a release link owned by its account
     EN->>N: Read each pool file<br/>file.read · read-pool-k

@@ -65,8 +65,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
     private const int OrderOverhead = 400;
 
+    /** An account answer as the shape check reads it: the longest names, so each order is sized as at run time. */
+    private const string PlannedAccount = '{"state":"present","uid":4294967294,"gid":4294967294,"group":"abcdefghijklmnopqrstuvwxyzabcdef","home":"/home/abcdefghijklmnopqrstuvwxyzabcdef"}';
+
     /** The host primitives route.create sends: a Node reports the `host` family (agent 0.36.0) when it lists each. */
-    private const array HostFamily = ['config.apply', 'file.read', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
+    private const array HostFamily = ['account.read', 'config.apply', 'file.read', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
 
     public function __construct(private NativeRouteConvergenceProjection $projection, private SignDirectCertificatesAction $signer,
         private LeafCertificateSigner $root, private MachineBus $bus) {}
@@ -95,7 +98,8 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             foreach ($this->site($plan, $node) as [$part, $action, $features, $budget]) {
                 $name = "site-{$node}-{$part}";
                 // Shapes the executor cannot take, or an order over its size, send the Route to Swamp now, before anything starts.
-                self::fits($this->hostInput($plan, $node, $part, static fn (string $step): string => self::PlannedOutput[explode('-', $step, 2)[0]]));
+                self::fits($this->hostInput($plan, $node, $part, static fn (string $step): string => str_contains($step, '-account-')
+                    ? self::PlannedAccount : self::PlannedOutput[explode('-', $step, 2)[0]]));
                 $steps[] = new StepSpec($name, $node, $action, (string) $node, $after, budgetMs: $budget, resendMs: 15_000, features: $features);
                 $after = [$name];
             }
@@ -183,6 +187,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     {
         $mine = self::mine($plan, $node);
         $parts = [];
+        // Each account the Node's steps write for, read first: its home, primary group and gid come from the Node, never a guess.
+        foreach (array_keys(self::users($plan, $node)) as $index) {
+            $parts[] = ["account-{$index}", 'account.read', [], 30_000];
+        }
         foreach (array_keys(RouteHostSteps::access($mine('acl'))) as $index) {
             $parts[] = ["acl-{$index}", 'posix.acl.ensure', [], 150_000];
         }
@@ -337,30 +345,54 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * The Node's account, its observed home and its primary group. The Gateway records neither: Swamp's site phase reads them on
-     * the Node, and every other renderer leaves tokens the Node resolves. The engine never guesses them, so a Route whose steps
-     * need them (shared pools, the account's certificate copies, a link the account owns) runs on Swamp until an observed source
-     * exists (`accounts.<node>`).
+     * The accounts a Node's steps write for: the Node's account (the leaf copies and the pools' group and home) first, then each
+     * other owner of a link, in order.
      *
      * @param  array<string, mixed>  $plan
-     * @return array{string, string, string}
+     * @return list<string>
      */
-    private static function account(array $plan, int $node): array
+    private static function users(array $plan, int $node): array
     {
         $nodes = is_array($plan['nodes'] ?? null) ? $plan['nodes'] : [];
-        $accounts = is_array($plan['accounts'] ?? null) ? $plan['accounts'] : [];
         $user = is_array($nodes[$node] ?? null) ? ($nodes[$node]['account'] ?? null) : null;
-        $owner = is_array($accounts[$node] ?? null) ? $accounts[$node] : [];
-        if (! is_string($user) || ! is_string($owner['group'] ?? null) || ! is_string($owner['home'] ?? null)) {
-            throw new EngineUnsupported("The observed home and group of Node {$node}'s account are unknown; the Route runs on Swamp.");
+        if (! is_string($user)) {
+            throw new EngineUnsupported("Node {$node} has no account.");
         }
-        foreach ([$user, $owner['group']] as $name) {
+        $users = [$user];
+        foreach (self::mine($plan, $node)('links') as $link) {
+            $users[] = ValidatedData::string($link['owner']);
+        }
+        $users = array_values(array_unique($users));
+        foreach ($users as $name) {
             if (preg_match(self::Name, $name) !== 1) {
                 throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
             }
         }
 
-        return [$user, $owner['group'], $owner['home']];
+        return $users;
+    }
+
+    /**
+     * An account as its recorded `account.read` answered it: `[group, home, gid]`, the primary group by NSS on the Node. An absent
+     * account fails the step that needs it, which records `route.publish_failed`, as `route.publish_site` did.
+     *
+     * @return array{string, string, int}
+     */
+    public static function owner(?string $read): array
+    {
+        $answer = is_string($read) ? json_decode($read, true) : null;
+        if (! is_array($answer) || ($answer['state'] ?? null) === 'absent') {
+            throw new RuntimeException('route.account_missing');
+        }
+        $group = $answer['group'] ?? null;
+        $home = $answer['home'] ?? null;
+        $gid = $answer['gid'] ?? null;
+        if (($answer['state'] ?? null) !== 'present' || ! is_string($group) || preg_match(self::Name, $group) !== 1 || ! is_string($home)
+            || ! str_starts_with($home, '/') || str_contains($home, "\n") || ! is_int($gid)) {
+            throw new RuntimeException('route.account_invalid');
+        }
+
+        return [$group, rtrim($home, '/') === '' ? '/' : rtrim($home, '/'), $gid];
     }
 
     /**
@@ -376,12 +408,16 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         $signed = static fn (int $leaf): string => $output("sign-{$leaf}") ?? throw new LogicException("Leaf {$leaf} has no signed certificate.");
         $read = static fn (string $file): ?string => RouteHostSteps::digest($output("site-{$node}-read-{$file}"));
         $mine = self::mine($plan, $node);
-        [$account, $group, $home] = self::account($plan, $node);
+        $users = self::users($plan, $node);
+        $account = $users[0];
+        $who = static fn (string $user): array => self::owner($output("site-{$node}-account-".array_search($user, $users, true)));
         [$kind, $index] = explode('-', $part, 2) + [1 => '0'];
         $index = (int) $index;
         $caddy = $mine('caddy');
         $named = static fn (string $name): string => preg_match(self::Name, $name) === 1 ? $name : throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
-        $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, static fn (int $index): ?string => $read("pool-{$index}"));
+        $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $who($account)[0], $who($account)[1],
+            static fn (int $index): ?string => $read("pool-{$index}"));
+        $copies = static fn (): string => $who($account)[1].'/.orbit/certificates/';
         $leaf = static function () use ($plan, $index, $account): array {
             $leaf = RouteExecutionProof::objects($plan['leaves'])[$index];
             $scope = ValidatedData::string($leaf['scope']);
@@ -403,10 +439,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
                 return ['path' => $path, 'user' => $named(ValidatedData::string($row['owner'])), 'values' => [['key' => 'APP_URL', 'value' => substr($line, 8)]]];
             })($mine('url_lines')[$index]),
-            // Only the Node's own account has an observed group; a link another account owns runs on Swamp.
-            'link' => ValidatedData::string($mine('links')[$index]['owner']) === $account
-                ? RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']), $account, $group)
-                : throw new EngineUnsupported('A link owned by another account runs on Swamp.'),
+            'account' => ['user' => $users[$index]],
+            // A link belongs to its owner and the owner's primary group, as its account read answered them.
+            'link' => RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']),
+                ValidatedData::string($mine('links')[$index]['owner']), $who(ValidatedData::string($mine('links')[$index]['owner']))[0]),
             'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, 'pool-install', $pools()['files'], $pools()['validators']),
             'unit' => RouteHostSteps::running($pools()['units'][$index]),
             // The reload writes nothing: each file's guard is the bytes the install left, so a change since then refuses.
@@ -416,16 +452,16 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'cert' => RouteHostSteps::plain($leaf()[2].'/cert.pem', self::leafPem($signed($index)), 'root', 'caddy', '0644'),
             'current' => RouteHostSteps::link($leaf()[3], $leaf()[1], 'root', 'root'),
             // `install -D` made the account copy's folders as root, 0755.
-            'folder' => RouteHostSteps::directory(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1], 'root', 'root', '0755'),
-            'key' => RouteHostSteps::copy(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $account, $group, '0600'),
-            'copy' => RouteHostSteps::plain(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $account, $group, '0600'),
-            'copylink' => RouteHostSteps::link(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/current', $leaf()[1], $account, $group),
+            'folder' => RouteHostSteps::directory($copies().$leaf()[0].'/'.$leaf()[1], 'root', 'root', '0755'),
+            'key' => RouteHostSteps::copy($copies().$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $account, $who($account)[0], '0600'),
+            'copy' => RouteHostSteps::plain($copies().$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $account, $who($account)[0], '0600'),
+            'copylink' => RouteHostSteps::link($copies().$leaf()[0].'/current', $leaf()[1], $account, $who($account)[0]),
             'trust' => ['state' => 'present', 'name' => RouteHostSteps::trustName(ValidatedData::string($plan['root_certificate'])), 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
             'unlink' => RouteHostSteps::absent(ValidatedData::string($this->hostInput($plan, $node, 'read-'.substr($part, strlen('unlink-')), $output)['path'])),
             // A read names the file its write replaces: the Caddyfile, or the pool at an index.
             'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ValidatedData::string(RouteHostSteps::pools(
-                self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null)),
+                self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), '', '', static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null)),
             'caddy' => RouteHostSteps::caddy(ValidatedData::string(end($caddy)['content'] ?? null), $read('caddy')),
             default => throw new LogicException("Site step [{$part}] has no input."),
         };

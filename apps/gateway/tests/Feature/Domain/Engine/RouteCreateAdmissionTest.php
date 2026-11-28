@@ -45,7 +45,7 @@ function admissionPlan(array $overrides = []): array
         'caddy' => [['node_id' => 3, 'content' => "shop.orbit {\n}\n"]], 'url_lines' => [], 'env_files' => [], 'probes' => [], 'ingress' => [],
         'dns' => [['node_id' => 1, 'records' => "address=/shop.orbit/10.44.0.3\n", 'catalog' => "{}\n"]], 'awake' => [],
         'leaf_indexes' => [0], 'trust' => [3], 'root_certificate' => "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
-        'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']], 'accounts' => [3 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']],
     ], ...$overrides];
 }
 
@@ -59,14 +59,15 @@ beforeEach(function (): void {
     $this->dev = admissionNode(3, [RoleName::AppDev]);
     $this->vpn = admissionNode(1, [RoleName::Gateway, RoleName::Vpn]);
     $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'account.read', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
     $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
     $this->app->instance(MachineBus::class, $bus);
     $this->routes = fn (Operation $operation): bool => app(EngineKinds::class)->routes($operation);
 });
 
-it('runs a development Route on the engine when every condition holds', function (): void {
-    expect(($this->routes)(admissionOperation(admissionPlan())))->toBeTrue();
+it('runs a development Route on the engine when every condition holds, a link another account owns included', function (): void {
+    expect(($this->routes)(admissionOperation(admissionPlan())))->toBeTrue()
+        ->and(($this->routes)(admissionOperation(admissionPlan(['links' => [['node_id' => 3, 'path' => '/home/shop/current', 'target' => 'releases/1', 'owner' => 'shop']]]))))->toBeTrue();
 });
 
 it('keeps a Route on Swamp when one condition fails', function (Closure $operation): void {
@@ -75,17 +76,23 @@ it('keeps a Route on Swamp when one condition fails', function (Closure $operati
     'Caddy access rows' => [fn () => admissionOperation(admissionPlan(['acl' => RouteWebRootCommands::access(3, ['user' => 'orbit', 'sites' => [
         ['checkout' => '/home/orbit/apps/shop', 'relative_root' => 'public', 'application' => '/home/orbit/apps/shop']]], (new Instance)->forceFill(['source_is_laravel' => true]))]))],
     'an app-prod site Node' => [fn () => admissionOperation(admissionPlan(['site_nodes' => [4], 'leaves' => [[...admissionPlan()['leaves'][0], 'node_id' => 4]], 'trust' => [4],
-        'caddy' => [['node_id' => 4, 'content' => "x\n"]], 'nodes' => ['4' => ['account' => 'orbit']], 'accounts' => [4 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'caddy' => [['node_id' => 4, 'content' => "x\n"]], 'nodes' => ['4' => ['account' => 'orbit']],
         'route_id' => admissionNode(4, [RoleName::AppProd])->id * 0 + 9]))],
     'an unclassified site Node' => [fn () => admissionOperation(admissionPlan(['site_nodes' => [5], 'leaves' => [[...admissionPlan()['leaves'][0], 'node_id' => 5]], 'trust' => [5],
-        'caddy' => [['node_id' => 5, 'content' => "x\n"]], 'nodes' => ['5' => ['account' => 'orbit']], 'accounts' => [5 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'caddy' => [['node_id' => 5, 'content' => "x\n"]], 'nodes' => ['5' => ['account' => 'orbit']],
         'route_id' => admissionNode(5, [])->id * 0 + 9]))],
     'a DNS Node without the vpn role' => [fn () => admissionOperation(admissionPlan(['dns' => [['node_id' => 6, 'records' => "r\n", 'catalog' => "{}\n"]],
         'route_id' => admissionNode(6, [RoleName::AppProd])->id * 0 + 9]))],
     'a production release in the intent' => [fn () => admissionOperation(admissionPlan(), ['production_control' => ['instance_id' => 7, 'release' => 'current']])],
     'a production workload in the intent' => [fn () => admissionOperation(admissionPlan(), ['route_lifecycle' => ['effectful' => true, 'workloads' => [['node_id' => 3, 'production' => true]]]])],
-    'no observed account home and group' => [fn () => admissionOperation(admissionPlan(['accounts' => []]))],
-    'a link another account owns' => [fn () => admissionOperation(admissionPlan(['links' => [['node_id' => 3, 'path' => '/home/shop/current', 'target' => 'releases/1', 'owner' => 'shop']]]))],
+    'a Node without account.read' => [function () {
+        $bus = Mockery::mock(MachineBus::class);
+        $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+        $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
+        app()->instance(MachineBus::class, $bus);
+
+        return admissionOperation(admissionPlan());
+    }],
 ]);
 
 it('keeps a Route to an Instance outside development on Swamp', function (): void {
@@ -122,4 +129,6 @@ it('persists main\'s public code for a failed step and the guard conflict as own
     'a dnsmasq check' => ['dns-0', 'config.validate_failed', 'private_dns.publication_failed'],
     'a guarded catalog' => ['dns-0', 'owned_revision_conflict', 'owned_revision_conflict'],
     'a request' => ['csr-0', 'app-dev.certificate_request_failed', 'app-dev.certificate_request_failed'],
+    'an account lookup error' => ['site-3-account-0', 'account.read_failed', 'route.publish_failed'],
+    'an absent account' => ['site-3-key-0', 'engine.order_invalid', 'route.publish_failed'],
 ]);

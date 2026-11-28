@@ -60,6 +60,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | --- | --- | --- |
 | `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
 | `link-<k>` | `file.ensure` | Places a release link |
+| `account-<k>` | `account.read` | Reads the home, primary group and gid of an account the Node's steps write for |
 | `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
 | `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
 | `unit-<k>` | `systemd.unit.ensure` | Enables and starts a pool unit |
@@ -73,6 +74,8 @@ The Gateway renders every file whole and sends each Caddyfile, pool, records and
 
 The pool reload rewrites nothing: each file's guard is the digest of the bytes the install left. The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, and the records and the catalog `/run/lock/orbit-dnsmasq.lock`. Each `config.apply` step has its own `recovery_dir` under `/var/lib/orbit/executor/config-recovery`: `pool-install`, `pool-reload`, `caddy` and `dns`. Each input comes from the plan and the recorded reads, so a resend carries the same bytes. The trust source is named after the root's fingerprint, so a new root gets its own name and subject-hash link.
 
+Each account the Node's steps write for is read first with `account.read`: the Node's account for the leaf copies and the pools, and each other link owner. Its recorded answer gives the home and primary group, so a retry sends the same bytes. An absent account fails the step that needs it with `route.publish_failed`, as `route.publish_site` did.
+
 The publication hold covers every Node of the plan: site and leaf Nodes, and each VPN Node with DNS work. A failed step records main's code for its chart step: `route.publish_failed` for `Install cert, publish site-<node>` and `private_dns.publication_failed` for `Publish private DNS-<i>`. A guard refusal keeps `owned_revision_conflict`.
 
 Admission runs `route.create` on the engine only when all of these hold:
@@ -80,9 +83,8 @@ Admission runs `route.create` on the engine only when all of these hold:
 - The Route has no Caddy access rows. Their recursive work stays on Swamp until `posix.acl.ensure` takes a tree scope, which Nick decides.
 - Each site or leaf Node is an app-dev Node, and each Node with DNS work alone has the vpn role.
 - No target Instance lies outside development, and the intent has no production placement and no `production_control`.
-- Every Node with work reports the `host` family, agent 0.36.0 and later, which also brings `file.read` and the `source_path` input of `file.ensure`.
+- Every Node with work reports the `host` family with `account.read` (agent 0.37.0), which also brings `file.read` and the `source_path` input of `file.ensure`.
 - Every leaf Node reports `tls.csr_input`.
-- The plan carries the account's observed home and primary group (`accounts`). The Gateway records neither today, so a Route that needs them runs on Swamp.
 - Each order fits the signer's limit with real 64-hex guards.
 
 Any other `route.create` runs on Swamp as a whole. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env` or awake markers stay on Swamp in any case, as do Routes with other PHP-FPM pools.
