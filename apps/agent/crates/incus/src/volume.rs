@@ -139,15 +139,20 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
         None => format!("{project}/{}/{}", source.pool, source.volume),
     };
     let mut changes = 0;
-    // Every refusal reads only: the provenance and the content type are checked before any write to the destination.
-    if let Some((found, _)) = client.get(path)? {
-        refuse_unsupported(&found, &input.name)?;
+    // Every refusal reads only: the destination's content type and provenance, then the source, are checked before any
+    // write to the destination, a recovery's delete included.
+    let existing = client.get(path)?;
+    if let Some((found, _)) = &existing {
+        refuse_unsupported(found, &input.name)?;
         if found["config"][SOURCE_KEY] != json!(record) {
             return Err(Failure::new(
                 "incus.volume_source_conflict",
                 format!("{} records source {} instead of {record}", input.name, found["config"][SOURCE_KEY]),
             ));
         }
+    }
+    let settings = checked_source(&client, source, project, &record)?;
+    if let Some((found, _)) = existing {
         if found["config"].get(COPYING_KEY).is_some() {
             // No order saw this copy succeed. Wait for the project's running copies, then a volume still marked is an
             // incomplete copy that this primitive made: delete it and copy again.
@@ -163,7 +168,7 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
     let (found, etag) = if let Some(found) = client.get(path)? {
         found
     } else {
-        copy(&client, input, source, project, &record, path).map_err(|failure| {
+        copy(&client, input, source, project, &record, path, &settings).map_err(|failure| {
             if changes > 0 && failure.code == crate::api::TIMEOUT {
                 Failure::new("incus.copy_incomplete", format!("{}: the copy again did not finish within the deadline", input.name))
             } else {
@@ -252,16 +257,15 @@ fn discard(client: &Client, input: &Input, path: &str, found: &Value) -> Result<
     }
 }
 
-/// Copies the volume, without its snapshots, from a complete source that must exist, then removes the copy mark once the
-/// copy's operation has succeeded. The copy keeps the source's settings, apart from its volatile keys, its provenance and
-/// its mark, sets the given keys over them and records the source.
-fn copy(client: &Client, input: &Input, source: &Source, project: &str, record: &str, path: &str) -> Result<(), Failure> {
+/// Reads the source volume, and its snapshot when the input names one, and answers the settings a copy takes. A missing
+/// volume or snapshot refuses `incus.volume_source_missing`, an ISO volume `incus.volume_type_unsupported`, and a volume or
+/// snapshot that is itself a copy no order saw succeed `incus.source_incomplete`: it may hold only part of its data.
+fn checked_source(client: &Client, source: &Source, project: &str, record: &str) -> Result<Value, Failure> {
     let parent = format!("/1.0/storage-pools/{}/volumes/custom/{}?project={project}", source.pool, source.volume);
     let missing = || Failure::new("incus.volume_source_missing", record.to_owned());
+    let incomplete = || Failure::new("incus.source_incomplete", format!("{record} is an incomplete copy"));
     let (volume, _) = client.get(&parent)?.ok_or_else(missing)?;
     refuse_unsupported(&volume, &source.volume)?;
-    // A source that is itself a copy no order saw succeed may hold only part of its data, and so may its snapshots.
-    let incomplete = || Failure::new("incus.source_incomplete", format!("{record} is an incomplete copy"));
     if volume["config"].get(COPYING_KEY).is_some() {
         return Err(incomplete());
     }
@@ -275,7 +279,14 @@ fn copy(client: &Client, input: &Input, source: &Source, project: &str, record: 
     if found["config"].get(COPYING_KEY).is_some() {
         return Err(incomplete());
     }
-    let mut config = found["config"].as_object().cloned().unwrap_or_default();
+    Ok(found["config"].clone())
+}
+
+/// Copies the volume, without its snapshots, from the checked source, then removes the copy mark once the copy's
+/// operation has succeeded. The copy keeps the source's settings, apart from its volatile keys, its provenance and its
+/// mark, sets the given keys over them and records the source.
+fn copy(client: &Client, input: &Input, source: &Source, project: &str, record: &str, path: &str, settings: &Value) -> Result<(), Failure> {
+    let mut config = settings.as_object().cloned().unwrap_or_default();
     config.retain(|key, _| !key.starts_with("volatile.") && key != SOURCE_KEY && key != COPYING_KEY);
     for (key, value) in &input.config {
         config.insert(key.clone(), json!(value));

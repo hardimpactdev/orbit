@@ -477,10 +477,10 @@ fn snapshot() -> Reply {
     ok(json!({"name": "s1", "config": {"size": "512MiB", "block.filesystem": "ext4", "volatile.uuid": "x", "user.source": "older"}}))
 }
 
-/// The replies of one copy that succeeds: the source, its snapshot, the copy, its wait, the marked read, the PUT that
+/// The replies of one copy that succeeds, after the source checks: the copy, its wait, the marked read, the PUT that
 /// removes the mark and the final read.
 fn copy_replies() -> Vec<Reply> {
-    vec![parent(), snapshot(), queued(), finished(200), ok(marked()), ok(json!({})), ok(stored_volume("p1/pool1/v1/s1", json!([])))]
+    vec![queued(), finished(200), ok(marked()), ok(json!({})), ok(stored_volume("p1/pool1/v1/s1", json!([])))]
 }
 
 /// The given replies, then those of one copy that succeeds.
@@ -494,13 +494,13 @@ fn writes(fake: &Fake) -> Vec<String> {
 
 #[test]
 fn volume_present_copies_from_the_snapshot_keeping_its_settings() {
-    let fake = Fake::new(then(vec![project("true"), missing(), missing()]));
+    let fake = Fake::new(then(vec![project("true"), missing(), parent(), snapshot(), missing()]));
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(1));
     let seen = fake.seen();
     assert_eq!(seen[0].path, "/1.0/projects/p1");
     assert_eq!(seen[1].path, "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1");
-    assert_eq!(seen[3].path, "/1.0/storage-pools/pool1/volumes/custom/v1?project=p1");
-    assert_eq!(seen[4].path, "/1.0/storage-pools/pool1/volumes/custom/v1/snapshots/s1?project=p1");
+    assert_eq!(seen[2].path, "/1.0/storage-pools/pool1/volumes/custom/v1?project=p1");
+    assert_eq!(seen[3].path, "/1.0/storage-pools/pool1/volumes/custom/v1/snapshots/s1?project=p1");
     assert_eq!((seen[5].method.as_str(), seen[5].path.as_str()), ("POST", "/1.0/storage-pools/pool1/volumes/custom?project=p1"));
     // The source's settings stay, the input's keys win, only the source's volatile keys and provenance go, and the copy
     // carries its mark until its operation succeeds.
@@ -517,7 +517,7 @@ fn volume_present_copies_from_the_snapshot_keeping_its_settings() {
 
 #[test]
 fn volume_repeat_answers_zero_and_a_changed_key_keeps_description_and_volatile_keys() {
-    let fake = Fake::new(vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([]))), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
+    let fake = Fake::new(vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([]))), parent(), snapshot(), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
 
     let mut described = stored_volume("p1/pool1/v1/s1", json!([]));
@@ -525,11 +525,11 @@ fn volume_repeat_answers_zero_and_a_changed_key_keeps_description_and_volatile_k
     described["config"]["volatile.idmap.last"] = json!("[]");
     let mut grown = described.clone();
     grown["config"]["size"] = json!("2GiB");
-    let fake = Fake::new(vec![project("true"), ok(described.clone()), ok(described), ok(json!({})), ok(grown)]);
+    let fake = Fake::new(vec![project("true"), ok(described.clone()), parent(), snapshot(), ok(described), ok(json!({})), ok(grown)]);
     let mut input = volume(&fake, "present");
     input["config"] = json!({"size": "2GiB"});
     assert_eq!(volume_ensure(&input), Ok(1));
-    let put = &fake.seen()[3];
+    let put = &fake.seen()[5];
     assert_eq!((put.method.as_str(), put.if_match.as_deref()), ("PUT", Some("\"e1\"")));
     assert_eq!(
         put.body,
@@ -541,7 +541,7 @@ fn volume_repeat_answers_zero_and_a_changed_key_keeps_description_and_volatile_k
 fn volume_marked_without_a_running_copy_is_deleted_and_copied_again() {
     // An interrupted copy: the mark, and no copy running. It is never certified; it is deleted and copied again.
     let fake = Fake::new(
-        then(vec![project("true"), ok(marked()), no_operations(), ok(marked()), ok(json!([])), ok(json!([])), queued(), finished(200), missing(), missing()]),
+        then(vec![project("true"), ok(marked()), parent(), snapshot(), no_operations(), ok(marked()), ok(json!([])), ok(json!([])), queued(), finished(200), missing(), missing()]),
     );
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(2));
     assert_eq!(
@@ -555,13 +555,13 @@ fn volume_marked_without_a_running_copy_is_deleted_and_copied_again() {
 
     // A copy still running is waited for, and a volume still marked afterwards is copied again too.
     let fake = Fake::new(
-        then(vec![project("true"), ok(marked()), copying(), finished(200), ok(marked()), ok(json!([])), ok(json!([])), ok(json!({})), missing(), missing()]),
+        then(vec![project("true"), ok(marked()), parent(), snapshot(), copying(), finished(200), ok(marked()), ok(json!([])), ok(json!([])), ok(json!({})), missing(), missing()]),
     );
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(2));
-    assert!(fake.seen()[3].path.starts_with("/1.0/operations/op9/wait?timeout="));
+    assert!(fake.seen()[5].path.starts_with("/1.0/operations/op9/wait?timeout="));
 
     // A copy that failed is gone: Incus removes it, and the order copies anew.
-    let fake = Fake::new(then(vec![project("true"), ok(marked()), no_operations(), missing(), missing()]));
+    let fake = Fake::new(then(vec![project("true"), ok(marked()), parent(), snapshot(), no_operations(), missing(), missing()]));
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(1));
 }
 
@@ -569,7 +569,7 @@ fn volume_marked_without_a_running_copy_is_deleted_and_copied_again() {
 fn volume_marked_never_answers_ok_when_the_copy_cannot_finish() {
     // A copy still running at the deadline.
     let running = || Reply::After(Duration::from_millis(400), Box::new(finished(103)));
-    let fake = Fake::new(vec![project("true"), ok(marked()), copying(), running(), running(), running(), running()]);
+    let fake = Fake::new(vec![project("true"), ok(marked()), parent(), snapshot(), copying(), running(), running(), running(), running()]);
     let mut input = volume(&fake, "present");
     input["timeout_ms"] = json!(1000);
     assert_eq!(codes(volume_ensure(&input)), Err("incus.copy_in_progress"));
@@ -577,8 +577,8 @@ fn volume_marked_never_answers_ok_when_the_copy_cannot_finish() {
 
     // The copy again outlasts the deadline: the new copy keeps its mark, and the order refuses.
     let fake = Fake::new(vec![
-        project("true"), ok(marked()), no_operations(), ok(marked()), ok(json!([])), ok(json!([])), ok(json!({})), missing(), missing(),
-        parent(), snapshot(), queued(), running(), running(), running(), running(),
+        project("true"), ok(marked()), parent(), snapshot(), no_operations(), ok(marked()), ok(json!([])), ok(json!([])), ok(json!({})), missing(),
+        missing(), queued(), running(), running(), running(), running(),
     ]);
     let mut input = volume(&fake, "present");
     input["timeout_ms"] = json!(1000);
@@ -589,12 +589,47 @@ fn volume_marked_never_answers_ok_when_the_copy_cannot_finish() {
     let mut attached = marked();
     attached["used_by"] = json!(["/1.0/instances/c1?project=p1"]);
     for replies in [
-        vec![project("true"), ok(marked()), no_operations(), ok(attached)],
-        vec![project("true"), ok(marked()), no_operations(), ok(marked()), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/snapshots/s"]))],
+        vec![project("true"), ok(marked()), parent(), snapshot(), no_operations(), ok(attached)],
+        vec![project("true"), ok(marked()), parent(), snapshot(), no_operations(), ok(marked()), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/snapshots/s"]))],
     ] {
         let fake = Fake::new(replies);
         assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.copy_incomplete"));
         assert_eq!(writes(&fake), Vec::<String>::new());
+    }
+}
+
+/// The source checks that refuse, each with the replies after the destination read: a missing volume, a missing
+/// snapshot, an ISO volume, a marked volume and a marked snapshot.
+fn refused_sources() -> Vec<(Vec<Reply>, &'static str)> {
+    let mut marked_parent = marked();
+    marked_parent["content_type"] = json!("filesystem");
+    vec![
+        (vec![missing()], "incus.volume_source_missing"),
+        (vec![parent(), missing()], "incus.volume_source_missing"),
+        (vec![ok(json!({"name": "v1", "content_type": "iso", "config": {}}))], "incus.volume_type_unsupported"),
+        (vec![ok(marked_parent)], "incus.source_incomplete"),
+        (vec![parent(), ok(json!({"name": "s1", "config": {"user.source.copying": "true"}}))], "incus.source_incomplete"),
+    ]
+}
+
+#[test]
+fn volume_recovery_checks_the_source_before_it_deletes_the_marked_copy() {
+    for (source, code) in refused_sources() {
+        let fake = Fake::new([vec![project("true"), ok(marked())], source].into_iter().flatten().collect());
+        assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err(code));
+        // No DELETE, no PUT: the marked destination stays as it was.
+        assert_eq!(writes(&fake), Vec::<String>::new(), "{code}: the marked destination is intact");
+    }
+}
+
+#[test]
+fn volume_complete_destination_checks_the_source_before_any_write_or_ok() {
+    for (source, code) in refused_sources() {
+        let fake = Fake::new([vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))], source].into_iter().flatten().collect());
+        let mut input = volume(&fake, "present");
+        input["config"] = json!({"size": "2GiB"});
+        assert_eq!(codes(volume_ensure(&input)), Err(code), "{code}: never Ok");
+        assert_eq!(writes(&fake), Vec::<String>::new(), "{code}: no PUT");
     }
 }
 
@@ -618,9 +653,9 @@ fn volume_refuses_a_marked_source_and_iso_volumes_before_creating() {
     let mut marked_snapshot = json!({"name": "s1", "config": {"user.source.copying": "true"}});
     marked_snapshot["config"]["size"] = json!("1GiB");
     for (replies, code) in [
-        (vec![project("true"), missing(), missing(), ok(marked_parent)], "incus.source_incomplete"),
-        (vec![project("true"), missing(), missing(), parent(), ok(marked_snapshot)], "incus.source_incomplete"),
-        (vec![project("true"), missing(), missing(), ok(json!({"name": "v1", "content_type": "iso", "config": {}}))], "incus.volume_type_unsupported"),
+        (vec![project("true"), missing(), ok(marked_parent)], "incus.source_incomplete"),
+        (vec![project("true"), missing(), parent(), ok(marked_snapshot)], "incus.source_incomplete"),
+        (vec![project("true"), missing(), ok(json!({"name": "v1", "content_type": "iso", "config": {}}))], "incus.volume_type_unsupported"),
         (vec![project("true"), ok(json!({"name": "v2", "content_type": "iso", "config": {"user.source": "p1/pool1/v1/s1"}}))], "incus.volume_type_unsupported"),
     ] {
         let fake = Fake::new(replies);
@@ -657,10 +692,10 @@ fn volume_from_another_source_refuses_and_is_never_written() {
 
 #[test]
 fn volume_with_a_missing_source_refuses() {
-    let fake = Fake::new(vec![project("true"), missing(), missing(), missing()]);
+    let fake = Fake::new(vec![project("true"), missing(), missing()]);
     assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_missing"));
-    assert_eq!(fake.seen().len(), 4);
-    let fake = Fake::new(vec![project("true"), missing(), missing(), parent(), missing()]);
+    assert_eq!(fake.seen().len(), 3);
+    let fake = Fake::new(vec![project("true"), missing(), parent(), missing()]);
     assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_missing"));
     assert_eq!(writes(&fake), Vec::<String>::new());
 }

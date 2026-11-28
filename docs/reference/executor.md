@@ -374,6 +374,8 @@ The create sets `user.source.copying`. Only the order that sees the copy's opera
 
 A volume still marked afterwards is never counted: the primitive deletes it and copies again. A delete or copy that does not finish within the deadline, or a marked volume that is attached or has snapshots or backups, refuses `incus.copy_incomplete`; the mark stays until a copy succeeds. A marked source volume or snapshot refuses `incus.source_incomplete`.
 
+Every `present` checks the source after the destination's content type and provenance and before any write or answer: the source volume and the named snapshot must exist (`incus.volume_source_missing`), the volume must not be ISO (`incus.volume_type_unsupported`), and neither may be marked (`incus.source_incomplete`). So a refusal leaves a marked destination undeleted, and a complete destination is neither changed nor answered `applied` while its source fails a check.
+
 An ISO volume, as the destination or the source, refuses `incus.volume_type_unsupported` before anything is created or deleted.
 
 `absent` deletes the volume only when its `used_by` is empty, else it refuses `incus.volume_in_use`. A DELETE also removes the volume's snapshots and backups, so a volume that has any refuses `incus.volume_has_snapshots` or `incus.volume_has_backups`. A marked volume while a copy runs refuses `incus.copy_in_progress`.
