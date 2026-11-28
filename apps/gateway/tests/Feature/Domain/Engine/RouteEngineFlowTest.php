@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Engine\EngineContent;
-use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
@@ -203,27 +202,11 @@ it('publishes private DNS on the VPN Node under its lock after the signature, be
         ]);
 });
 
-it('records the chart\'s failed step and main\'s error code for a failed host step', function (string $step, string $code, string $chart, string $recorded): void {
-    expect(RouteEngineFlow::chartStep($step))->toBe($chart)
-        ->and(RouteEngineFlow::code($step, $code))->toBe($recorded);
+it('names every site step of a Node as the chart\'s iteration of its Node', function (string $step, string $chart): void {
+    expect(RouteEngineFlow::chartStep($step))->toBe($chart);
 })->with([
-    'a site write' => ['site-3-cert-0', 'file.ensure_failed', 'Install cert, publish site-3', 'route.publish_failed'],
-    'a pool test' => ['site-3-pools', 'config.validate_failed', 'Install cert, publish site-3', 'route.publish_failed'],
-    'a pool unit' => ['site-3-unit-0', 'unit.ensure_failed', 'Install cert, publish site-3', 'route.publish_failed'],
-    'a trust update' => ['site-3-trust', 'trust.not_converged', 'Install cert, publish site-3', 'route.publish_failed'],
-    'a site input' => ['site-3-url-0', 'host.input_invalid', 'Install cert, publish site-3', 'route.input_invalid'],
-    'a site read' => ['site-3-read-caddy', 'file.read_failed', 'Install cert, publish site-3', 'route.publish_failed'],
-    'a DNS read' => ['dns-0-read-catalog', 'file.read_failed', 'Publish private DNS-0', 'dns.write_failed'],
-    'a site blob' => ['site-3-caddy', 'host.content_missing', 'Install cert, publish site-3', 'route.content_missing'],
-    'a guarded Caddyfile' => ['site-3-caddy', 'owned_revision_conflict', 'Install cert, publish site-3', 'owned_revision_conflict'],
-    'a dnsmasq check' => ['dns-0', 'config.validate_failed', 'Publish private DNS-0', 'dns.check_failed'],
-    'a DNS restart' => ['dns-0', 'config.load_failed', 'Publish private DNS-0', 'dns.restart_failed'],
-    'a DNS write' => ['dns-0', 'config.write_failed', 'Publish private DNS-0', 'dns.write_failed'],
-    'a held DNS lock' => ['dns-0', 'host.lock_busy', 'Publish private DNS-0', 'dns.publish_busy'],
-    'a guarded record' => ['dns-0', 'owned_revision_conflict', 'Publish private DNS-0', 'owned_revision_conflict'],
-    'a request' => ['csr-0', 'app-dev.certificate_request_failed', 'Make a CSR on the Node-0', 'app-dev.certificate_request_failed'],
-    'a signature' => ['sign-1', 'certificate.sign_failed', 'Sign the CSR-1', 'certificate.sign_failed'],
-    'a probe' => ['probe-0', 'route.probe_failed', 'Probe the site over TLS-0', 'route.probe_failed'],
+    ['site-3-cert-0', 'Install cert, publish site-3'], ['site-3-read-caddy', 'Install cert, publish site-3'], ['dns-0', 'Publish private DNS-0'],
+    ['dns-0-read-catalog', 'Publish private DNS-0'], ['csr-0', 'Make a CSR on the Node-0'], ['sign-1', 'Sign the CSR-1'], ['probe-0', 'Probe the site over TLS-0'],
 ]);
 
 it('leaves a Route with Caddy access to Swamp until posix.acl.ensure takes a tree scope', function (): void {
@@ -310,37 +293,7 @@ it('leaves a Route to Swamp when a leaf or account is outside the executor\'s sh
     'a pool without its unit' => [['php_reloads' => []]],
 ]);
 
-it('runs route.create on the engine only without access rows, on Nodes with the host family and the request input', function (array $plan, array $actions, array $features, bool $engine): void {
-    config(['orbit.engine.kinds' => ['route.create']]);
-    $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->andReturn($actions);
-    $bus->shouldReceive('nodeFeatures')->andReturn($features);
-    $this->app->instance(MachineBus::class, $bus);
-
-    expect(app(EngineKinds::class)->routes(routeOperation(routePlan($plan))))->toBe($engine);
-})->with([
-    'every condition' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'],
-        ['tls.csr_input'], true],
-    'Caddy access rows' => [['acl' => routeAccess()], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure', 'posix.acl.ensure'],
-        ['tls.csr_input'], false],
-    'no host family' => [[], ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records'], ['tls.csr_input'], false],
-    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], [], false],
-    'one host primitive missing' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure'], ['tls.csr_input'], false],
-]);
-
-it('refuses a VPN Node without the host family in the kind\'s own admission', function (): void {
-    $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->with(3)->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.read', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
-    $bus->shouldReceive('nodeActions')->with(1)->andReturn(['dns.publish_records']);
-    $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
-    $this->app->instance(MachineBus::class, $bus);
-
-    app(RouteEngineFlow::class)->admit(routeOperation(routePlan(['dns' => [['node_id' => 1, 'records' => "r\n", 'catalog' => "{}\n"]]])));
-})->throws(EngineUnsupported::class, 'Node 1 lacks the host family');
-
 it('renders a shared pool with the account\'s group and home in place of the render\'s placeholders', function (): void {
     expect(RouteHostSteps::render("group = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/app-1\n", 'orbit', '/home/orbit'))
-        ->toBe("group = orbit\nchdir = /home/orbit/app-1\n")
-        ->and(RouteHostSteps::home('root'))->toBe('/root')
-        ->and(RouteHostSteps::home('orbit'))->toBe('/home/orbit');
+        ->toBe("group = orbit\nchdir = /home/orbit/app-1\n");
 });

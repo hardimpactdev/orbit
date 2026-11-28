@@ -179,12 +179,6 @@ final readonly class RouteHostSteps
         return [];
     }
 
-    /** The account's group and home: the managed account's group shares its name (NodeEnrollmentPolicy). */
-    public static function home(string $account): string
-    {
-        return $account === 'root' ? '/root' : '/home/'.$account;
-    }
-
     /** @return array{path: string} */
     public static function read(string $path): array
     {

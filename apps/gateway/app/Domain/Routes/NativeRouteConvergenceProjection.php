@@ -46,7 +46,8 @@ final readonly class NativeRouteConvergenceProjection implements DirectOperation
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $wasTerminal = $operation->status->terminal();
             $step = NativeFailedStep::label($data, array_keys(self::StepCodes));
-            if ($data['status'] === 'failed') {
+            // A guard that found a file changed outside the write keeps its own code (route/create.mmd); any other failure takes its step's.
+            if ($data['status'] === 'failed' && ($data['error_code'] ?? null) !== 'owned_revision_conflict') {
                 $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.create_failed') : self::StepCodes[$step];
             }
             $intent = ValidatedData::object($operation->input['route_lifecycle']);

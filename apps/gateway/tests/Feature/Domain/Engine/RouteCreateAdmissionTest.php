@@ -1,0 +1,125 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Engine\EngineKinds;
+use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\MachineBus;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteEngineFlow;
+use App\Domain\Routes\RouteWebRootCommands;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\OperationEngineStep;
+use App\Models\Project;
+use App\Models\Route;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+
+uses(LazilyRefreshDatabase::class);
+
+/** A Node with these roles under a fixed ID, as the plan names it. */
+function admissionNode(int $id, array $roles): Node
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->forceCreate(['id' => $id, 'name' => "node-{$id}", 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => "10.44.0.{$id}", 'public_ssh_host' => "10.44.0.{$id}", 'user' => 'orbit']));
+    foreach ($roles as $role) {
+        $node->roles()->create(['role' => $role, 'status' => 'active']);
+    }
+
+    return $node;
+}
+
+/** A route_create plan for a Route on app-dev Node 3 with DNS on VPN Node 1, with the account's observed home and group. */
+function admissionPlan(array $overrides = []): array
+{
+    return [...[
+        'route_id' => 9, 'domain' => 'shop.orbit', 'lan' => [], 'ingress_ports' => [], 'acl' => [], 'links' => [], 'php_files' => [], 'php_tests' => [], 'php_reloads' => [],
+        'leaves' => [['node_id' => 3, 'scope' => 'app-instance-7', 'domain' => 'shop.orbit', 'root_hash' => str_repeat('a', 64),
+            'directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef',
+            'current' => '/etc/caddy/orbit-certificates/app-instance-7/current', 'target' => 'versions/0123456789abcdef', 'user' => 'orbit']],
+        'caddy' => [['node_id' => 3, 'content' => "shop.orbit {\n}\n"]], 'url_lines' => [], 'env_files' => [], 'probes' => [], 'ingress' => [],
+        'dns' => [['node_id' => 1, 'records' => "address=/shop.orbit/10.44.0.3\n", 'catalog' => "{}\n"]], 'awake' => [],
+        'leaf_indexes' => [0], 'trust' => [3], 'root_certificate' => "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n",
+        'site_nodes' => [3], 'nodes' => ['3' => ['account' => 'orbit']], 'accounts' => [3 => ['group' => 'orbit', 'home' => '/home/orbit']],
+    ], ...$overrides];
+}
+
+function admissionOperation(array $plan, array $input = []): Operation
+{
+    return (new Operation)->forceFill(['id' => 41, 'kind' => 'route.create', 'input' => ['route_create' => $plan, 'route_lifecycle' => ['effectful' => true, 'workloads' => []], ...$input]]);
+}
+
+beforeEach(function (): void {
+    config(['orbit.engine.kinds' => ['route.create']]);
+    $this->dev = admissionNode(3, [RoleName::AppDev]);
+    $this->vpn = admissionNode(1, [RoleName::Gateway, RoleName::Vpn]);
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+    $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
+    $this->app->instance(MachineBus::class, $bus);
+    $this->routes = fn (Operation $operation): bool => app(EngineKinds::class)->routes($operation);
+});
+
+it('runs a development Route on the engine when every condition holds', function (): void {
+    expect(($this->routes)(admissionOperation(admissionPlan())))->toBeTrue();
+});
+
+it('keeps a Route on Swamp when one condition fails', function (Closure $operation): void {
+    expect(($this->routes)($operation()))->toBeFalse();
+})->with([
+    'Caddy access rows' => [fn () => admissionOperation(admissionPlan(['acl' => RouteWebRootCommands::access(3, ['user' => 'orbit', 'sites' => [
+        ['checkout' => '/home/orbit/apps/shop', 'relative_root' => 'public', 'application' => '/home/orbit/apps/shop']]], (new Instance)->forceFill(['source_is_laravel' => true]))]))],
+    'an app-prod site Node' => [fn () => admissionOperation(admissionPlan(['site_nodes' => [4], 'leaves' => [[...admissionPlan()['leaves'][0], 'node_id' => 4]], 'trust' => [4],
+        'caddy' => [['node_id' => 4, 'content' => "x\n"]], 'nodes' => ['4' => ['account' => 'orbit']], 'accounts' => [4 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'route_id' => admissionNode(4, [RoleName::AppProd])->id * 0 + 9]))],
+    'an unclassified site Node' => [fn () => admissionOperation(admissionPlan(['site_nodes' => [5], 'leaves' => [[...admissionPlan()['leaves'][0], 'node_id' => 5]], 'trust' => [5],
+        'caddy' => [['node_id' => 5, 'content' => "x\n"]], 'nodes' => ['5' => ['account' => 'orbit']], 'accounts' => [5 => ['group' => 'orbit', 'home' => '/home/orbit']],
+        'route_id' => admissionNode(5, [])->id * 0 + 9]))],
+    'a DNS Node without the vpn role' => [fn () => admissionOperation(admissionPlan(['dns' => [['node_id' => 6, 'records' => "r\n", 'catalog' => "{}\n"]],
+        'route_id' => admissionNode(6, [RoleName::AppProd])->id * 0 + 9]))],
+    'a production release in the intent' => [fn () => admissionOperation(admissionPlan(), ['production_control' => ['instance_id' => 7, 'release' => 'current']])],
+    'a production workload in the intent' => [fn () => admissionOperation(admissionPlan(), ['route_lifecycle' => ['effectful' => true, 'workloads' => [['node_id' => 3, 'production' => true]]]])],
+    'no observed account home and group' => [fn () => admissionOperation(admissionPlan(['accounts' => []]))],
+    'a link another account owns' => [fn () => admissionOperation(admissionPlan(['links' => [['node_id' => 3, 'path' => '/home/shop/current', 'target' => 'releases/1', 'owner' => 'shop']]]))],
+]);
+
+it('keeps a Route to an Instance outside development on Swamp', function (): void {
+    $prod = admissionNode(4, [RoleName::AppProd]);
+    $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/shop.git',
+        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $prod->id, 'name' => 'shop', 'checkout_path' => '/home/orbit/apps/shop', 'branch' => 'main',
+        'vite_port' => 5173, 'status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => false]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $prod->id, 'provenance' => 'explicit', 'publication' => 'private',
+        'domain' => 'shop.orbit', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+
+    expect(($this->routes)(admissionOperation(admissionPlan(['route_id' => $route->id]))))->toBeFalse()
+        ->and(fn () => app(RouteEngineFlow::class)->admit(admissionOperation(admissionPlan(['route_id' => $route->id]))))->toThrow(EngineUnsupported::class, 'outside development');
+});
+
+it('holds every Node of the plan, the VPN Node with DNS work alone included', function (): void {
+    expect(RoutePublicationHolds::nodes(admissionOperation(admissionPlan())))->toBe([1, 3]);
+});
+
+it('persists main\'s public code for a failed step and the guard conflict as owned_revision_conflict', function (string $step, string $code, string $persisted): void {
+    $operation = Operation::query()->forceCreate(['kind' => 'route.create', 'status' => OperationStatus::Running, 'target_type' => 'route', 'target_id' => 9,
+        'node_id' => null, 'input' => ['route_create' => admissionPlan(), 'route_lifecycle' => ['effectful' => false], 'execution_secrets' => []]]);
+    $operation->forceFill(['state' => ['swamp_run_id' => 'engine-'.$operation->id]])->save();
+    $failed = (new OperationEngineStep)->forceFill(['name' => $step, 'status' => 'failed', 'error_code' => $code, 'on_failure' => false, 'optional' => false]);
+
+    app(RouteEngineFlow::class)->finish($operation, new EngineRun($operation->id, [$step => $failed], 0, 1));
+
+    expect($operation->fresh()->error_code)->toBe($persisted);
+})->with([
+    'a site write' => ['site-3-cert-0', 'file.ensure_failed', 'route.publish_failed'],
+    'a pool test' => ['site-3-pools', 'config.validate_failed', 'route.publish_failed'],
+    'a guarded Caddyfile' => ['site-3-caddy', 'owned_revision_conflict', 'owned_revision_conflict'],
+    'a dnsmasq check' => ['dns-0', 'config.validate_failed', 'private_dns.publication_failed'],
+    'a guarded catalog' => ['dns-0', 'owned_revision_conflict', 'owned_revision_conflict'],
+    'a request' => ['csr-0', 'app-dev.certificate_request_failed', 'app-dev.certificate_request_failed'],
+]);

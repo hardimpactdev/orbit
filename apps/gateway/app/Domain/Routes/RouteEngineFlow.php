@@ -13,7 +13,10 @@ use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Nodes\RoleName;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use LogicException;
 use RuntimeException;
@@ -123,13 +126,32 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     public function admit(Operation $operation): void
     {
         $plan = self::plan($operation);
+        // Production never moves (as ORB-6337's Process gate): a production placement or release keeps the whole Operation on Swamp.
+        if (isset($operation->input['production_control']) || self::production($operation->input['route_lifecycle'] ?? null)) {
+            throw new EngineUnsupported('A Route with a production placement stays on Swamp.');
+        }
+        foreach (Route::query()->find(ValidatedData::integer($plan['route_id']))?->targets()->with('instance')->get() ?? [] as $target) {
+            if (! $target->instance->placedOnAppDev()) {
+                throw new EngineUnsupported('A Route to an Instance outside development stays on Swamp.');
+            }
+        }
         if (($plan['acl'] ?? []) !== []) {
             throw new EngineUnsupported('A Route with Caddy access rows runs on Swamp until posix.acl.ensure takes a tree scope.');
         }
         $leaves = array_map(static fn (array $leaf): int => ValidatedData::integer($leaf['node_id']), RouteExecutionProof::objects($plan['leaves']));
         $nodes = array_values(array_unique([...ValidatedData::integerList($plan['site_nodes']), ...$leaves,
             ...array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns'] ?? []))]));
+        $vpn = array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns'] ?? []));
+        $sites = array_values(array_unique([...ValidatedData::integerList($plan['site_nodes']), ...$leaves]));
         foreach ($nodes as $node) {
+            $host = Node::query()->find($node);
+            // A Node with site work is an app-dev Node; a Node with DNS work alone is a VPN Node. Any other Node stays on Swamp.
+            $allowed = in_array($node, $sites, true)
+                ? $host?->placementEnvironment() === 'development' && $host->roles->contains('role', RoleName::AppDev)
+                : in_array($node, $vpn, true) && $host?->roles->contains('role', RoleName::Vpn) === true;
+            if (! $allowed) {
+                throw new EngineUnsupported("Node {$node} is not an app-dev Node; the Route runs on Swamp.");
+            }
             if (array_diff(self::HostFamily, $this->bus->nodeActions($node)) !== []) {
                 throw new EngineUnsupported("Node {$node} lacks the host family; the Route runs on Swamp.");
             }
@@ -225,7 +247,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             $failed = null;
         }
         $data = match (true) {
-            $failed !== null => ['status' => 'failed', 'error_code' => self::code($failed->name, $failed->error_code),
+            $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
                 'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
@@ -260,38 +282,6 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * The code a failed step records, as route.publish_site and dns.publish_records answered it on main. A host primitive's
-     * code maps onto the action's: a site step's input or content code keeps its kind and any other failure is
-     * `route.publish_failed`; a DNS step's lock, check and restart codes keep their `dns.*` names. A guard refusal stays
-     * `owned_revision_conflict`, as the guarded writers answer it.
-     */
-    public static function code(string $step, ?string $code): ?string
-    {
-        if ($code === null || $code === 'owned_revision_conflict') {
-            return $code;
-        }
-
-        return match (explode('-', $step, 2)[0]) {
-            'site' => match ($code) {
-                'host.input_invalid' => 'route.input_invalid',
-                'host.content_missing' => 'route.content_missing',
-                default => 'route.publish_failed',
-            },
-            'dns' => match ($code) {
-                'host.input_invalid' => 'dns.input_invalid',
-                'host.content_missing' => 'dns.content_missing',
-                'host.lock_busy', 'config.recovery_pending' => 'dns.publish_busy',
-                'host.lock_failed' => 'dns.publish_lock_failed',
-                'host.lock_invalid' => 'dns.publish_lock_invalid',
-                'config.validate_failed' => 'dns.check_failed',
-                'config.load_failed' => 'dns.restart_failed',
-                default => 'dns.write_failed',
-            },
-            default => $code,
-        };
-    }
-
-    /**
      * A VPN Node's records and catalog, as the Gateway rendered them, each guarded by the live digest its read returned.
      *
      * @param  array<string, mixed>  $row
@@ -312,8 +302,29 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
     }
 
+    /** Whether a lifecycle intent names a production workload anywhere (`production: true`). */
+    private static function production(mixed $value): bool
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+        if (($value['production'] ?? null) === true) {
+            return true;
+        }
+        foreach ($value as $child) {
+            if (self::production($child)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
-     * The Node's account as the admitted plan names it: the user, its group and its home.
+     * The Node's account, its observed home and its primary group. The Gateway records neither: Swamp's site phase reads them on
+     * the Node, and every other renderer leaves tokens the Node resolves. The engine never guesses them, so a Route whose steps
+     * need them (shared pools, the account's certificate copies, a link the account owns) runs on Swamp until an observed source
+     * exists (`accounts.<node>`).
      *
      * @param  array<string, mixed>  $plan
      * @return array{string, string, string}
@@ -325,7 +336,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         $user = is_array($nodes[$node] ?? null) ? ($nodes[$node]['account'] ?? null) : null;
         $owner = is_array($accounts[$node] ?? null) ? $accounts[$node] : [];
         if (! is_string($user) || ! is_string($owner['group'] ?? null) || ! is_string($owner['home'] ?? null)) {
-            throw new EngineUnsupported("Node {$node} has no account.");
+            throw new EngineUnsupported("The observed home and group of Node {$node}'s account are unknown; the Route runs on Swamp.");
         }
         foreach ([$user, $owner['group']] as $name) {
             if (preg_match(self::Name, $name) !== 1) {
@@ -376,9 +387,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
                 return ['path' => $path, 'user' => $named(ValidatedData::string($row['owner'])), 'values' => [['key' => 'APP_URL', 'value' => substr($line, 8)]]];
             })($mine('url_lines')[$index]),
-            // The managed account's group shares its name (NodeEnrollmentPolicy).
-            'link' => RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']),
-                $named(ValidatedData::string($mine('links')[$index]['owner'])), $named(ValidatedData::string($mine('links')[$index]['owner']))),
+            // Only the Node's own account has an observed group; a link another account owns runs on Swamp.
+            'link' => ValidatedData::string($mine('links')[$index]['owner']) === $account
+                ? RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']), $account, $group)
+                : throw new EngineUnsupported('A link owned by another account runs on Swamp.'),
             'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators']),
             'unit' => RouteHostSteps::running($pools()['units'][$index]),
             'reload' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators'],
