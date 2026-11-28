@@ -121,7 +121,7 @@ sequenceDiagram
       Note over GW: Record verified<br/>fleet rollout follows
       %%> - the cleanup step files Tasks for earlier releases' versions once a later verified release has deleted the stopped old that held the earlier code
       %%> Next:
-      %%> - the Gateway queues the existing fleet admission job; it follows each Node’s delivery and scoped role converge in order
+      %%> - the Gateway queues the existing fleet admission job; it follows each Node’s delivery and Node converge in order
       %%> - when enabled, nested-fleet refresh follows the first transition to `current`; with fleet rollout disabled it follows verification
     else a step before Migrate fails
       SW--xGW: Run failed<br/>failed step

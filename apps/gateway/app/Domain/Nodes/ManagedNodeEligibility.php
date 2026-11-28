@@ -26,6 +26,14 @@ final readonly class ManagedNodeEligibility
             && $this->hasVerifiedSshManagement($node);
     }
 
+    /** A managed Linux Node whose Orbit agent holds a verifier: the Nodes `node.converge` admits. */
+    public function convergeable(Node $node): bool
+    {
+        $verifier = $node->agent_secret_hash;
+
+        return $this->allows($node) && is_string($verifier) && preg_match('/\A[0-9a-f]{64}\z/D', $verifier) === 1;
+    }
+
     private function hasVerifiedSshManagement(Node $node): bool
     {
         return is_string($node->wireguard_ip)

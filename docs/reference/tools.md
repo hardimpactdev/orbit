@@ -133,6 +133,8 @@ Before JavaScript deploy steps, Orbit reads the release's manifest, lockfile, an
 
 Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, `authorization_required`, `removal_pending`, and `held`.
 
+When a Homebrew formula has several Cellar versions, its installed version is the one its `opt` link names, so an old folder that `brew cleanup` has not removed yet changes neither the scan, Doctor nor adoption ([brew fact](/reference/node-agent#packages)). However, several versions and no link leave the version unknown: the row carries `version_unreadable` and Doctor cannot verify the Tool.
+
 An apt package held with `apt-mark hold` (dpkg status `hold ok installed`) is installed: its row keeps its version, and Doctor checks a managed held package like any other. apt will not change a held package, so it carries the `held` block and adoption refuses it with `tool.adoption_unsupported`.
 
 A held apt Tool at its desired coordinate or constraint needs no write: a converge, update or reinstall records it `installed` with that version. At any other version Orbit runs no apt write and fails the Tool with `tool.package_held`, because the hold blocks the change. A removal of a held package fails with `tool.package_held` before `dpkg` runs. Release the hold with `apt-mark unhold` to let Orbit change the package.
