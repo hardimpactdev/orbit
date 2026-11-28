@@ -11,8 +11,6 @@ use crate::{
 };
 
 const CODE: &str = "git.read_failed";
-/// How many paths a list carries; a longer list says `truncated`, as `instance.work_read` holds at most 5,000.
-const PATHS: usize = 5000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,7 +26,7 @@ struct ReadInput {
 pub struct Listed {
     /// How many paths the work tree has in this list.
     pub count: u32,
-    /// The first 5,000 of them.
+    /// Those that fit the answer's byte bound, in Git's order.
     pub paths: Vec<String>,
     /// Whether `paths` holds fewer than `count`.
     pub truncated: bool,
@@ -96,11 +94,7 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
         Ok(_) => {}
     }
     require_repository(system, CODE, &tree, crate::Kind::WorkTree)?;
-    if !system
-        .text(CODE, &tree, &["rev-parse", "--shared-index-path"])?
-        .trim()
-        .is_empty()
-    {
+    if split_index(system, &tree)? {
         return Err(Failure::new(
             "git.repository_refused",
             "the work tree uses a split index",
@@ -143,19 +137,73 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
         (Some(against), Some(_)) => counts(system, &tree, against)?,
         _ => (None, None),
     };
-    Ok(Worktree::Present {
+    let (modified, untracked) = (named(&modified)?, named(&untracked)?);
+    let mut read = Worktree::Present {
         head,
         branch,
         staged,
         unstaged,
         unmerged,
-        modified: listed(&modified)?,
-        untracked: listed(&untracked)?,
+        modified: Listed {
+            count: count(modified.len()),
+            paths: Vec::new(),
+            truncated: !modified.is_empty(),
+        },
+        untracked: Listed {
+            count: count(untracked.len()),
+            paths: Vec::new(),
+            truncated: !untracked.is_empty(),
+        },
         stashes,
         heads,
         ahead,
         behind,
-    })
+    };
+    let mut left = ANSWER_BYTES.checked_sub(embedded(&read)).ok_or_else(|| {
+        Failure::new(
+            CODE,
+            "the work tree's branches and stashes exceed the answer's bound",
+        )
+    })?;
+    if let Worktree::Present {
+        modified: held_modified,
+        untracked: held_untracked,
+        ..
+    } = &mut read
+    {
+        fill(held_modified, modified, &mut left);
+        fill(held_untracked, untracked, &mut left);
+    }
+    Ok(read)
+}
+
+/// The answer's bound, as the receipt embeds it: the JSON answer inside a JSON string, so every quote and backslash is
+/// escaped twice. 48 KiB leaves 16 KiB of the relay's 64 KiB for the receipt's other fields.
+pub(crate) const ANSWER_BYTES: usize = 48 * 1024;
+
+/// The bytes a value takes once the receipt embeds its JSON as a string.
+pub(crate) fn embedded(value: &impl Serialize) -> usize {
+    serde_json::to_string(&serde_json::to_string(value).unwrap_or_default())
+        .map_or(usize::MAX, |text| text.len())
+}
+
+/// Adds paths in Git's order while they fit; the first that does not fit ends the list, which stays `truncated`.
+fn fill(list: &mut Listed, paths: Vec<String>, left: &mut usize) {
+    let total = paths.len();
+    for path in paths {
+        // The path's own encoded bytes with the receipt's escaping, and its separator.
+        let cost = embedded(&path).saturating_sub(2) + 1;
+        if cost > *left {
+            break;
+        }
+        *left -= cost;
+        list.paths.push(path);
+    }
+    list.truncated = list.paths.len() < total;
+}
+
+fn count(length: usize) -> u32 {
+    u32::try_from(length).unwrap_or(u32::MAX)
 }
 
 /// The bytes after the `skip`-th space of a status record: its path.
@@ -166,19 +214,90 @@ fn field(record: &[u8], skip: usize) -> &[u8] {
         .unwrap_or_default()
 }
 
-fn listed(paths: &[&[u8]]) -> Result<Listed, Failure> {
-    let named = paths
+/// Every path as text; one that is not UTF-8 fails the read instead of being changed.
+fn named(paths: &[&[u8]]) -> Result<Vec<String>, Failure> {
+    paths
         .iter()
-        .take(PATHS)
         .map(|path| {
             String::from_utf8(path.to_vec()).map_err(|_| Failure::new(CODE, "a path is not UTF-8"))
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Listed {
-        count: u32::try_from(paths.len()).unwrap_or(u32::MAX),
-        truncated: named.len() < paths.len(),
-        paths: named,
-    })
+        .collect()
+}
+
+/// Whether the work tree's index is split: its `link` extension names a shared index by a non-null id. It reads the index
+/// file's header and extensions in Rust, so the check runs no Git command that could touch the repository. A missing index
+/// is not split, and a leftover `sharedindex.*` file beside an ordinary index does not count.
+fn split_index(system: &NodeSystem, tree: &Path) -> Result<bool, Failure> {
+    let folder = system.text(CODE, tree, &["rev-parse", "--absolute-git-dir"])?;
+    let hash = match system
+        .text(CODE, tree, &["rev-parse", "--show-object-format"])?
+        .trim()
+    {
+        "sha256" => 32,
+        _ => 20,
+    };
+    match std::fs::read(Path::new(folder.trim()).join("index")) {
+        Ok(index) => linked(&index, hash)
+            .ok_or_else(|| Failure::new(CODE, "the index file cannot be parsed")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Failure::new(CODE, error.to_string())),
+    }
+}
+
+/// Parses an index file (versions 2 to 4): whether its `link` extension holds a non-null shared index id. `None` for a
+/// file that is no index.
+pub(crate) fn linked(index: &[u8], hash: usize) -> Option<bool> {
+    let word = |at: usize| {
+        index
+            .get(at..at + 4)
+            .map(|bytes| u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    };
+    if index.get(..4)? != b"DIRC" {
+        return None;
+    }
+    let version = word(4)?;
+    if !(2..=4).contains(&version) {
+        return None;
+    }
+    let mut at = 12;
+    // ctime, mtime, dev, ino, mode, uid, gid and size, the object id, then 16 bits of flags.
+    let fixed = 40 + hash + 2;
+    for _ in 0..word(8)? {
+        let flags = u16::from_be_bytes([*index.get(at + fixed - 2)?, *index.get(at + fixed - 1)?]);
+        let head = fixed
+            + if version >= 3 && flags & 0x4000 != 0 {
+                2
+            } else {
+                0
+            };
+        let mut name = at + head;
+        if version == 4 {
+            // The length of the previous path's prefix to drop, as Git's offset varint.
+            let mut byte = *index.get(name)?;
+            name += 1;
+            while byte & 0x80 != 0 {
+                byte = *index.get(name)?;
+                name += 1;
+            }
+        }
+        let length = index.get(name..)?.iter().position(|byte| *byte == 0)?;
+        // Version 4 has no padding; earlier versions pad each entry with 1 to 8 NULs to a multiple of 8.
+        at = if version == 4 {
+            name + length + 1
+        } else {
+            at + ((head + length + 8) & !7)
+        };
+    }
+    while index.len().checked_sub(at)? > hash {
+        let signature = index.get(at..at + 4)?;
+        let size = usize::try_from(word(at + 4)?).ok()?;
+        let data = index.get(at + 8..at.checked_add(8)?.checked_add(size)?)?;
+        if signature == b"link" {
+            return Some(data.get(..hash)?.iter().any(|byte| *byte != 0));
+        }
+        at += 8 + size;
+    }
+    Some(false)
 }
 
 /// Every ref under `refs/heads/` by its full name; a symbolic one refuses, and a name that is not UTF-8 fails.

@@ -13,8 +13,8 @@ use crate::{
 
 const CODE: &str = "git.checkout_failed";
 const REFUSED: &str = "git.checkout_refused";
-/// How many entries a clean may look through for another repository before it refuses instead.
-const WALK_LIMIT: usize = 100_000;
+/// How many entries the walk for another repository may read before it refuses instead.
+const WALK_LIMIT: usize = 1_000_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,16 +88,25 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
     if rename_from == Some(wanted) {
         return Err(invalid("rename_from is the branch itself"));
     }
+    if input.clean && (reset.is_some() || start.is_some() || rename_from.is_some()) {
+        return Err(invalid(
+            "clean is an order of its own, after the switch or reset",
+        ));
+    }
     require_repository(system, CODE, &tree, crate::Kind::WorkTree)?;
+    if input.clean && head_branch(system, CODE, &tree)?.as_deref() != Some(wanted) {
+        return Err(invalid(
+            "clean runs only on the branch HEAD is already on, in an order of its own",
+        ));
+    }
+    // No step runs while another repository sits anywhere below the work tree's root.
+    nested_repositories(&tree)?;
     if reset.is_some() || input.clean {
         guard_index(system, &tree)?;
     }
     if let Some(reset) = reset {
         // The reset's target is checked before the switch moves anything.
         guard_tree(system, &tree, reset)?;
-    }
-    if input.clean {
-        guard_untracked(system, &tree)?;
     }
     let mut changes = switch(system, &tree, wanted, start, rename_from)?;
     if let Some(reset) = reset {
@@ -122,7 +131,6 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
         }
     }
     if input.clean && untracked(system, &tree)? > 0 {
-        guard_untracked(system, &tree)?;
         system.text(CODE, &tree, &["clean", "--quiet", "--force", "-d", "--"])?;
         if untracked(system, &tree)? > 0 {
             return Err(Failure::new(CODE, "untracked files remain after clean"));
@@ -282,9 +290,6 @@ fn guard_tree(system: &NodeSystem, tree: &Path, target: &str) -> Result<(), Fail
             Some(false) if !tracked.contains(folder) => {
                 return refused("an untracked file sits where the target needs a folder")
             }
-            Some(true) if repository(&below(tree, folder)) => {
-                return refused("another repository sits where the target needs a folder")
-            }
             _ => {}
         }
     }
@@ -300,57 +305,50 @@ fn split_tab(entry: &[u8]) -> Result<(&[u8], &[u8]), Failure> {
     Ok((&entry[..at], &entry[at + 1..]))
 }
 
-/// Whether a folder is a repository: a `.git` entry, or the `HEAD`, `objects` and `refs` of a bare one.
-fn repository(folder: &Path) -> bool {
-    std::fs::symlink_metadata(folder.join(".git")).is_ok()
-        || (folder.join("HEAD").is_file()
-            && folder.join("objects").is_dir()
-            && folder.join("refs").is_dir())
+/// What is at a path, never following a link: `Some(true)` for a folder, `Some(false)` for anything else.
+fn entry(path: &Path) -> Option<bool> {
+    std::fs::symlink_metadata(path)
+        .ok()
+        .map(|meta| meta.is_dir())
 }
 
-/// Refuses a clean when any untracked path is or holds another repository, so a clean never removes one, bare or not.
-fn guard_untracked(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
-    let listed = system.bytes(
-        CODE,
-        tree,
-        &[
-            "ls-files",
-            "-z",
-            "--others",
-            "--exclude-standard",
-            "--directory",
-            "--no-empty-directory",
-        ],
-    )?;
-    let mut pending: Vec<std::path::PathBuf> = entries(&listed)
-        .filter(|entry| entry.ends_with(b"/"))
-        .map(|entry| below(tree, entry))
-        .collect();
+/// Whether a folder is a repository: a `.git` entry of any type, or a plain `HEAD` with `objects` and `refs` folders, as a
+/// bare repository holds them.
+fn repository(folder: &Path) -> bool {
+    entry(&folder.join(".git")).is_some()
+        || (entry(&folder.join("HEAD")) == Some(false)
+            && entry(&folder.join("objects")) == Some(true)
+            && entry(&folder.join("refs")) == Some(true))
+}
+
+/// Refuses (`git.nested_repository`) when any folder below the work tree's root, tracked or untracked, ignored or not, is
+/// another repository. The walk reads the disk, never follows a link, and skips only the root's own `.git`. A tree too
+/// large to walk refuses too.
+pub(crate) fn nested_repositories(tree: &Path) -> Result<(), Failure> {
+    let failed = |error: std::io::Error| Failure::new(CODE, error.to_string());
+    let mut pending = vec![tree.to_path_buf()];
     let mut seen = 0;
     while let Some(folder) = pending.pop() {
-        if repository(&folder) {
+        if folder != tree && repository(&folder) {
             return Err(Failure::new(
-                REFUSED,
-                "an untracked path holds another repository",
+                "git.nested_repository",
+                "another repository sits below the work tree",
             ));
         }
-        for entry in
-            std::fs::read_dir(&folder).map_err(|error| Failure::new(CODE, error.to_string()))?
-        {
-            let entry = entry.map_err(|error| Failure::new(CODE, error.to_string()))?;
+        for item in std::fs::read_dir(&folder).map_err(failed)? {
+            let item = item.map_err(failed)?;
             seen += 1;
             if seen > WALK_LIMIT {
                 return Err(Failure::new(
-                    REFUSED,
-                    "too many untracked entries to prove no repository is among them",
+                    "git.nested_repository",
+                    "the work tree is too large to prove it holds no other repository",
                 ));
             }
-            if entry
-                .file_type()
-                .map_err(|error| Failure::new(CODE, error.to_string()))?
-                .is_dir()
-            {
-                pending.push(entry.path());
+            if folder == tree && item.file_name() == ".git" {
+                continue;
+            }
+            if item.file_type().map_err(failed)?.is_dir() {
+                pending.push(item.path());
             }
         }
     }

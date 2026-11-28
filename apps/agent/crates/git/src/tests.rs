@@ -292,9 +292,20 @@ fn checkout_renames_switches_creates_resets_and_cleans_then_repeats_with_no_chan
     std::fs::create_dir(tree.join("dir"))
         .and_then(|()| std::fs::write(tree.join("dir/f"), "x"))
         .expect("untracked dir");
-    let destroy = json!({"worktree": tree, "branch": "task-1", "reset": first, "clean": true, "destructive": true});
-    let reset = order(destroy.clone()).expect("reset");
-    assert_eq!((reset.head.as_str(), reset.changes), (first.as_str(), 2));
+    let together = json!({"worktree": tree, "branch": "task-1", "reset": first, "clean": true, "destructive": true});
+    assert_eq!(
+        code(order(together)),
+        "git.input_invalid",
+        "clean is an order of its own"
+    );
+    let reset = json!({"worktree": tree, "branch": "task-1", "reset": first, "destructive": true});
+    let clean = json!({"worktree": tree, "branch": "task-1", "clean": true, "destructive": true});
+    assert_eq!(order(reset.clone()).expect("reset").changes, 1);
+    let cleaned = order(clean.clone()).expect("clean");
+    assert_eq!(
+        (cleaned.head.as_str(), cleaned.changes),
+        (first.as_str(), 1)
+    );
     assert_eq!(
         std::fs::read_to_string(tree.join("a.txt")).expect("a"),
         "one\n"
@@ -304,7 +315,12 @@ fn checkout_renames_switches_creates_resets_and_cleans_then_repeats_with_no_chan
         "clean removed untracked files"
     );
     assert_eq!(
-        order(destroy).expect("repeat").changes,
+        order(reset).expect("repeat").changes,
+        0,
+        "a repeat changes nothing"
+    );
+    assert_eq!(
+        order(clean).expect("repeat").changes,
         0,
         "a repeat changes nothing"
     );
@@ -765,7 +781,7 @@ fn checkout_never_overwrites_ignored_or_untracked_paths_nor_removes_a_nested_rep
             &s.system,
             &json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true})
         )),
-        "git.checkout_refused",
+        "git.nested_repository",
         "a clean with another repository among the untracked paths refuses"
     );
     assert!(nested.join("keep").exists(), "the nested repository stays");
@@ -946,7 +962,7 @@ fn a_reset_never_removes_a_folder_or_repository_that_replaced_a_tracked_file() {
     git(&nested, &["add", "work.txt"]);
     git(&nested, &["commit", "--quiet", "-m", "committed work"]);
     let order = json!({"worktree": tree, "branch": "main", "reset": first, "destructive": true});
-    assert_eq!(code(checkout(&s.system, &order)), "git.checkout_refused");
+    assert_eq!(code(checkout(&s.system, &order)), "git.nested_repository");
     assert!(
         nested.join("work.txt").exists() && nested.join(".git").exists(),
         "the nested repository stays"
@@ -973,7 +989,7 @@ fn a_clean_refuses_a_bare_repository_or_a_deeper_nested_one_before_removing_anyt
     let order = json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true});
     assert_eq!(
         code(checkout(&s.system, &order)),
-        "git.checkout_refused",
+        "git.nested_repository",
         "a bare repository"
     );
     assert!(
@@ -988,7 +1004,7 @@ fn a_clean_refuses_a_bare_repository_or_a_deeper_nested_one_before_removing_anyt
     std::fs::write(tree.join("outer/file"), "x").expect("file");
     assert_eq!(
         code(checkout(&s.system, &order)),
-        "git.checkout_refused",
+        "git.nested_repository",
         "a deeper nested repository"
     );
     assert!(
@@ -1158,16 +1174,155 @@ fn a_read_returns_every_branch_by_its_full_name_and_refuses_only_an_active_split
 fn a_read_returns_every_path_up_to_its_bound_and_says_when_it_truncates() {
     let s = scratch();
     let (tree, _, _) = work(&s);
-    for index in 0..5005 {
-        std::fs::write(tree.join(format!("f{index:05}")), "x").expect("file");
+    // 400 untracked files with 200-byte names, quotes included: about 90 KiB of names, over the bound.
+    for index in 0..400 {
+        std::fs::write(tree.join(format!("{index:03}-{}\"q", "x".repeat(195))), "x").expect("file");
     }
-    let read::Worktree::Present { untracked, .. } =
-        worktree_read(&s.system, &json!({"worktree": tree})).expect("read")
-    else {
+    let read = worktree_read(&s.system, &json!({"worktree": tree})).expect("read");
+    assert!(
+        read::embedded(&read) <= read::ANSWER_BYTES,
+        "the embedded answer fits: {}",
+        read::embedded(&read)
+    );
+    let read::Worktree::Present { untracked, .. } = read else {
         panic!("present")
     };
-    assert_eq!(
-        (untracked.count, untracked.paths.len(), untracked.truncated),
-        (5005, 5000, true)
+    assert_eq!((untracked.count, untracked.truncated), (400, true));
+    assert!(
+        !untracked.paths.is_empty() && untracked.paths.len() < 400,
+        "{}",
+        untracked.paths.len()
     );
+    assert!(
+        untracked.paths[0].starts_with("000-"),
+        "Git's order is kept"
+    );
+}
+
+#[test]
+fn checkout_refuses_any_repository_below_the_work_tree_before_any_change() {
+    for (what, make) in [
+        ("an ignored nested repository", "ignored/inner"),
+        ("a deep untracked one", "a/b/c/inner"),
+        ("a bare one", "bare.git"),
+        ("a .git file", "linked"),
+    ] {
+        let s = scratch();
+        let (tree, first, second) = work(&s);
+        let at = tree.join(make);
+        std::fs::create_dir_all(&at).expect("folder");
+        match what {
+            "a bare one" => {
+                git(
+                    &tree,
+                    &["init", "--quiet", "--bare", at.to_str().expect("path")],
+                );
+            }
+            "a .git file" => {
+                std::fs::write(at.join(".git"), "gitdir: /nonexistent\n").expect("gitfile");
+            }
+            _ => {
+                git(&at, &["init", "--quiet"]);
+            }
+        }
+        std::fs::write(tree.join(".git/info/exclude"), "ignored/\n").expect("exclude");
+        for order in [
+            json!({"worktree": tree, "branch": "main", "reset": first, "destructive": true}),
+            json!({"worktree": tree, "branch": "other", "start": first}),
+            json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true}),
+        ] {
+            assert_eq!(
+                code(checkout(&s.system, &order)),
+                "git.nested_repository",
+                "{what}: {order}"
+            );
+        }
+        assert_eq!(
+            git(&tree, &["rev-parse", "HEAD"]),
+            second,
+            "{what}: nothing moved"
+        );
+        assert!(std::fs::symlink_metadata(&at).is_ok(), "{what}: it stays");
+    }
+    // A link to a repository is not followed.
+    let s = scratch();
+    let (tree, _, _) = work(&s);
+    let outside = s.at("outside");
+    std::fs::create_dir(&outside).expect("outside");
+    git(&outside, &["init", "--quiet"]);
+    std::os::unix::fs::symlink(&outside, tree.join("link")).expect("link");
+    assert_eq!(
+        checkout(&s.system, &json!({"worktree": tree, "branch": "main"}))
+            .expect("no walk through a link")
+            .changes,
+        0
+    );
+}
+
+#[test]
+fn clean_runs_only_as_its_own_order_on_the_current_branch() {
+    let s = scratch();
+    let (tree, first, _) = work(&s);
+    for order in [
+        json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true, "reset": first}),
+        json!({"worktree": tree, "branch": "new", "clean": true, "destructive": true, "start": first}),
+        json!({"worktree": tree, "branch": "new", "clean": true, "destructive": true, "rename_from": "main"}),
+        json!({"worktree": tree, "branch": "other", "clean": true, "destructive": true}),
+    ] {
+        assert_eq!(
+            code(checkout(&s.system, &order)),
+            "git.input_invalid",
+            "{order}"
+        );
+    }
+}
+
+#[test]
+fn the_split_index_check_reads_the_index_header_and_writes_nothing() {
+    let s = scratch();
+    let (tree, _, _) = work(&s);
+    let index = |tree: &Path| std::fs::read(tree.join(".git/index")).expect("index");
+    assert_eq!(read::linked(&index(&tree), 20), Some(false));
+    for version in ["3", "4", "2"] {
+        git(&tree, &["update-index", "--index-version", version]);
+        assert_eq!(
+            read::linked(&index(&tree), 20),
+            Some(false),
+            "version {version}"
+        );
+    }
+    git(&tree, &["update-index", "--split-index"]);
+    assert_eq!(read::linked(&index(&tree), 20), Some(true));
+    let before = snapshot(&tree.join(".git"));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(
+        code(worktree_read(&s.system, &json!({"worktree": tree}))),
+        "git.repository_refused"
+    );
+    assert_eq!(
+        snapshot(&tree.join(".git")),
+        before,
+        "the refused read wrote nothing"
+    );
+    git(&tree, &["update-index", "--no-split-index"]);
+    let leftover = std::fs::read_dir(tree.join(".git"))
+        .expect("git")
+        .flatten()
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("sharedindex.")
+        });
+    assert!(leftover, "a leftover shared index file");
+    assert_eq!(read::linked(&index(&tree), 20), Some(false));
+    let before = snapshot(&tree.join(".git"));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert!(worktree_read(&s.system, &json!({"worktree": tree})).is_ok());
+    assert_eq!(
+        snapshot(&tree.join(".git")),
+        before,
+        "the read wrote nothing"
+    );
+    assert_eq!(read::linked(b"not an index", 20), None);
 }

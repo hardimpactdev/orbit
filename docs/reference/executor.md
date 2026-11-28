@@ -332,7 +332,7 @@ An existing repository is checked before that first call. A missing one is read 
 
 `git.checkout` puts `HEAD` on `branch`, which must exist as `refs/heads/<branch>`: a `HEAD` that names an unborn branch refuses `git.checkout_refused`. It reads the branch `HEAD` names itself, one level (`symbolic-ref --no-recurse`), so a `HEAD` on an alias refuses `git.ref_symbolic` and the alias's referent is never certified, reset or renamed. It renames `rename_from` when the work tree is on it and `branch` does not exist yet. Otherwise it switches to an existing `branch`, or makes it at `start`, an object id or a full ref.
 
-`reset`, an object id, resets hard, and `clean` removes untracked files that are not ignored. Each runs only when the work tree differs, and both need `destructive: true`, else `git.destructive_not_allowed`. A repeat answers 0 changes.
+`reset`, an object id, resets hard, and `clean` removes untracked files that are not ignored. Each runs only when the work tree differs, and both need `destructive: true`, else `git.destructive_not_allowed`. A clean is an order of its own, on the branch `HEAD` is already on: with `reset`, `start` or `rename_from`, or on another branch, it fails `git.input_invalid`. So the flow sends it after the switch or reset, and its candidates follow the tree's current ignore rules. A repeat answers 0 changes.
 
 `git.checkout` refuses every state it cannot prove safe with `git.checkout_refused`, before anything changes, and passes no `--force` or `--discard-changes`.
 
@@ -340,10 +340,12 @@ Before a switch or a reset it checks the target tree and the index against the d
 
 - a folder at a path the index or the target holds;
 - a file the index lacks at a path of the target;
-- an untracked file or another repository where the target needs a folder;
+- an untracked file where the target needs a folder;
 - a submodule in the target or the index.
 
-Paths that only share a folder are no collision. A clean refuses when any untracked path is or holds another repository, a bare one included, so a clean never removes one.
+Paths that only share a folder are no collision.
+
+Before any switch, reset or clean, `git.checkout` walks the whole work tree on disk, tracked, untracked and ignored paths alike. It refuses `git.nested_repository` when any folder below the root holds a `.git` entry of any type, or a plain `HEAD` with `objects` and `refs` folders, as a bare repository does. The walk never follows a link, skips only the root's own `.git`, and refuses a tree of more than 1,000,000 entries. So no step removes or overwrites another repository.
 
 A reset or clean also refuses a work tree with assume-unchanged or skip-worktree entries. The check before a reset, the reset and the read-back measure the same tracked state: `status --untracked-files=no --ignore-submodules=all`. A supported repeat answers 0 changes.
 
@@ -353,9 +355,9 @@ Otherwise `git.ref.ensure` runs `update-ref --no-deref <ref> <new> <old>` or `up
 
 No primitive acts through a symbolic ref. Each ref it reads is checked with `symbolic-ref --quiet` first: `into`, a branch, `HEAD`'s branch, `against`, every local branch and the ref of `git.ref.ensure`. A symbolic one refuses `git.ref_symbolic`, and its referent is never touched or certified.
 
-`git.worktree.read` answers `{"state": "present", "head", "branch", "staged", "unstaged", "unmerged", "modified", "untracked", "stashes", "heads"}`. `ahead` and `behind`, against the full ref `against`, are added when asked. `modified` and `untracked` each hold `count`, the first 5,000 `paths` exactly as Git names them, and `truncated`. `stashes` lists each stash entry newest first, with its `commit` and its reflog `label`. `heads` maps every ref under `refs/heads/` by its full name to its commit, so no two branches share a key. The Gateway compares these with its recorded baseline and decides whether the work is dirty or published.
+`git.worktree.read` answers `{"state": "present", "head", "branch", "staged", "unstaged", "unmerged", "modified", "untracked", "stashes", "heads"}`. `ahead` and `behind`, against the full ref `against`, are added when asked. `modified` and `untracked` each hold the full `count`, the `paths` exactly as Git names them in Git's order, and `truncated`. The paths stop where the answer, as the receipt embeds it in a JSON string, would pass 48 KiB, which leaves 16 KiB of the relay's 64 KiB. `stashes` lists each stash entry newest first, with its `commit` and its reflog `label`. `heads` maps every ref under `refs/heads/` by its full name to its commit, so no two branches share a key. The Gateway compares these with its recorded baseline and decides whether the work is dirty or published.
 
-The read parses Git's NUL-separated output as bytes. A path or a branch name that is not UTF-8 fails `git.read_failed` instead of being changed. Every call runs with `--no-optional-locks` and `core.untrackedCache=false`. A work tree whose index is split, as `rev-parse --shared-index-path` reports it, refuses, so the read writes no file under `.git`. A leftover `sharedindex.*` file or `core.splitIndex=false` alone does not refuse.
+The read parses Git's NUL-separated output as bytes. A path or a branch name that is not UTF-8 fails `git.read_failed` instead of being changed. Every call runs with `--no-optional-locks` and `core.untrackedCache=false`. A work tree whose index is split refuses. The read finds it in the index file itself, read in Rust: a `link` extension whose shared index id is not null. It runs no Git command for it, so the read writes no file under `.git`. A leftover `sharedindex.*` file or `core.splitIndex=false` alone does not refuse.
 
 Git always runs as `/usr/bin/git` with an argument list fixed in Rust, through `timeout`, never through a shell. The environment is cleared and then set to a fixed `PATH`, `HOME=/nonexistent`, `LC_ALL=C`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0` and `GIT_ASKPASS=/bin/false`. `GIT_CEILING_DIRECTORIES` is the named folder's parent, and the folder must be the repository's or work tree's own top, so a path inside another repository never resolves to it.
 
