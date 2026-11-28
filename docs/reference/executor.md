@@ -15,7 +15,7 @@ covers:
 
 ## Where it runs
 
-Node convergence installs the executor on any Linux Node whose roles enable at least one action family: `app-dev` enables `firewall`, `instance`, `power`, `proof`, and `route`; `vpn` enables `dns`; `gateway` enables `proof`.
+Node convergence installs the executor on any Linux Node whose roles enable at least one action family: `app-dev` enables `firewall`, `host`, `incus`, `instance`, `power`, `process`, `proof`, and `route`; `vpn` enables `dns` and `host`; `gateway` enables `proof`.
 
 | Path | Content |
 | --- | --- |
@@ -157,7 +157,7 @@ Three notes apply to every row.
 | Note | Rule |
 | --- | --- |
 | Where it acts | The input names the machine and the user: the Node, or one Incus instance on it. An Incus primitive can also address the Incus server inside an instance. |
-| Starting and removing an instance | `incus.instance.ensure` keeps the id-map shift of the root filesystem and the ZFS dataset repair. Each is part of starting or removing one instance. |
+| Starting and removing an instance | The id-map shift of the root filesystem and the ZFS dataset repair are part of starting or removing one instance, so they belong to `incus.instance.ensure`. The built primitive does not hold them yet. They join it in the `instance.clone` rewrite group, before any flow uses it. |
 | Programs with their own interface | ufw, Incus, Docker, Git and the Conn Server are programs on the host, so each has typed primitives. A record that only the Gateway holds has none. |
 
 A rewrite may refine a planned primitive's input. It may not weaken the five conditions.
@@ -340,7 +340,9 @@ It reads `GET /1.0/instances/<name>?project=<project>`; a 404 is a missing insta
 
 A repeat changes nothing and answers 0. Each background operation is awaited with `GET /1.0/operations/<uuid>/wait?timeout=<seconds left>`, and every socket read is bounded by the time left, all within `timeout_seconds`. An operation still running at the deadline fails `incus.operation_timeout` and is left to Incus. A failed or cancelled operation fails `incus.operation_failed`. An Incus error, an unreachable socket or an answer that is not an Incus envelope fails `incus.api_failed`. A final read that is not the ordered state fails `incus.readback_mismatch`.
 
-It does not yet hold the id-map shift of the root filesystem or the ZFS dataset repair that the [catalogue's notes](#the-catalogue) give it; they join before a flow starts or removes an instance with it.
+It does not hold the id-map shift of the root filesystem or the ZFS dataset repair yet. They join it in the `instance.clone` rewrite group, before any flow uses it ([the catalogue's notes](#the-catalogue)).
+
+Two limits stay for the flow that first sends it. An instance that today's `instance.clone` made has no `user.source_snapshot`, so an order with a `source` refuses it with `incus.source_conflict` and changes nothing. Profiles are set only when the instance is copied; an existing instance keeps the profiles it has.
 
 It meets the [five conditions](#what-a-primitive-may-be). It acts on one Incus instance. It holds no Orbit name or path, and its only fixed path is the Incus default socket. The order sends every project, instance, snapshot and profile name. It reads back the desired state and answers 0 changes on a repeat. Its input is typed and carries no command; the Rust code fixes every request.
 
