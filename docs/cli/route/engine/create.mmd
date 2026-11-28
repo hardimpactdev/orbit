@@ -36,10 +36,10 @@ sequenceDiagram
     %%> `site-node-url-k`: the last `APP_URL=` line of an existing `.env` that the account owns, replaced or appended; `site-node-link-k`: a release link owned by its account
     EN->>N: Write and test the pools<br/>config.apply · site-node-pools
     %%> Under `/etc/caddy/.orbit-publish.lock`: each pool rendered whole with the account's group and home, root:root 0644, from its rendered-from digest; `php-fpm` validators from the fixed list; a failed test restores the files
-    EN->>N: Enable and start each pool<br/>systemd.unit.ensure · site-node-unit-k
+    EN->>N: Start each pool<br/>systemd.unit.ensure
     EN->>N: Reload the pools<br/>config.apply · site-node-reload
     %%> The same files and validators, then each pool unit reloads on every run, as route.publish_site did
-    EN->>N: Install the leaf and copies<br/>file.ensure · site-node-cert-i …
+    EN->>N: Install leaf, copies<br/>file.ensure · cert-i …
     %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`, pending ORB-6360), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
     EN->>N: Trust the Orbit root<br/>ca.trust.ensure · site-node-trust
     %%> `orbit-managed-root-ca.crt`, root:root 0644; the plain `update-ca-certificates` runs after a change
