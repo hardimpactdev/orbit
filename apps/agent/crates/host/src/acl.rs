@@ -1,35 +1,56 @@
-//! `posix.acl.ensure`: one user entry of the access or default list of one path, or, with `scope: tree`, of one folder tree:
-//! the root and every folder and file below it, walked here without following a link. The tree scope is the one exception to
-//! "one resource" (Nick, 2026-11-28; docs/reference/executor.md#primitives). Lifted from the `setfacl` calls of
-//! `route.publish_site` (`access_argv`); the subject user, the path, the permissions and the scope come from input.
+//! `posix.acl.ensure`: one user or group entry of the access or default list of one path, or, with `scope: tree`, of one
+//! folder tree: the root and every folder and file below it. The tree scope is the one exception to "one resource" (Nick,
+//! 2026-11-28; docs/reference/executor.md#primitives). The subject, the path, the permissions and the scope come from input.
+//!
+//! Every path is opened without following a link, relative to its parent's descriptor from `/` down, and its list is read
+//! and written as the `system.posix_acl_*` attribute of that descriptor, so the path that was checked is the one that
+//! changes. No command runs, and names stay the bytes the folder holds.
 
-use std::collections::BTreeMap;
-use std::os::fd::{AsFd, OwnedFd};
-use std::os::unix::fs::MetadataExt as _;
+use std::ffi::{CString, OsStr};
+use std::fmt::Write as _;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt as _;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, CWD};
-use serde::Deserialize;
+use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, Stat};
+use serde::{Deserialize, Serialize};
 
-use crate::{absolute, invalid, parse, strings, Failure, System, NAME};
+use crate::{absolute, invalid, parse, Failure, System, NAME};
 
 static PERMS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[r-][w-][xX-]$").expect("a valid pattern"));
+
+/// The access list's attribute.
+pub(crate) const ACCESS: &str = "system.posix_acl_access";
+/// The default list's attribute, on folders only.
+pub(crate) const DEFAULT: &str = "system.posix_acl_default";
+
+const USER_OBJ: u16 = 0x01;
+const USER: u16 = 0x02;
+const GROUP_OBJ: u16 = 0x04;
+const GROUP: u16 = 0x08;
+const MASK: u16 = 0x10;
+const OTHER: u16 = 0x20;
+const UNDEFINED: u32 = u32::MAX;
+/// The only version of the kernel's `posix_acl_xattr` format.
+const VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Input {
     path: String,
-    /// The user the entry is for.
-    user: String,
-    /// `rwx` form; `X` grants search on folders only.
+    /// The user the entry is for; exactly one of `user` and `group`.
+    #[serde(default)]
+    user: Option<String>,
+    /// The group the entry is for; exactly one of `user` and `group`.
+    #[serde(default)]
+    group: Option<String>,
+    /// `rwx` form; `X` grants search on folders, and on files only when some execute bit is set.
     perms: String,
-    /// The default entry that new folders inherit, instead of the access entry.
+    /// The default entry that new folders and files inherit, instead of the access entry.
     #[serde(default)]
     default: bool,
-    /// The account that runs `setfacl`, so a path it cannot reach is never changed with root's rights.
-    #[serde(default)]
-    run_as: Option<String>,
     /// A missing path is left out and changes nothing, instead of failing.
     #[serde(default)]
     optional: bool,
@@ -42,284 +63,347 @@ struct Input {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Scope {
-    /// The path alone; nothing below it changes.
+    /// The path alone, a folder or a plain file; nothing below it changes.
     #[default]
     Path,
-    /// The path and every folder below it, and for an access entry every plain file below it. A link, and anything that is
-    /// neither a folder nor a plain file, is skipped and never followed.
+    /// The folder and every folder below it, and for an access entry every plain file below it, on the root's file system.
     Tree,
 }
 
-/// Sets the entry on each path where it differs and answers how many paths changed: `0` on a repeat. Each path is read first,
-/// never through a link; with the path scope nothing below it is touched. A path changes when its entry differs from the
-/// wanted permissions, `X` resolved as `setfacl` does, or when its mask cuts the entry. Every change is read back.
+/// What an order changed and what its walk left out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Acl {
+    /// Paths whose list changed; `0` on a repeat.
+    pub changes: u32,
+    /// Folders on another file system than the root, a mount point, that the walk did not enter.
+    pub skipped_mounts: u32,
+    /// Plain files with more than one name, which may be outside the tree, that the walk left as they were.
+    pub skipped_hard_links: u32,
+}
+
+/// One list: `(tag, id, perm)` entries, sorted by tag and id as the kernel requires.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct List(Vec<(u16, u32, u16)>);
+
+impl List {
+    /// The list a path's mode stands for when it has no access attribute.
+    fn from_mode(mode: u32) -> Self {
+        let bits = |shift: u32| u16::try_from((mode >> shift) & 7).unwrap_or(0);
+        Self(vec![(USER_OBJ, UNDEFINED, bits(6)), (GROUP_OBJ, UNDEFINED, bits(3)), (OTHER, UNDEFINED, bits(0))])
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, String> {
+        let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+        if bytes.len() < 4 || !(bytes.len() - 4).is_multiple_of(8) || word(0) != VERSION {
+            return Err("an access list in an unknown format".to_owned());
+        }
+        let mut entries = Vec::new();
+        for at in (4..bytes.len()).step_by(8) {
+            let tag = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+            let perm = u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]);
+            if ![USER_OBJ, USER, GROUP_OBJ, GROUP, MASK, OTHER].contains(&tag) || perm > 7 {
+                return Err("an access list entry in an unknown format".to_owned());
+            }
+            entries.push((tag, word(at + 4), perm));
+        }
+        let mut list = Self(entries);
+        list.0.sort_unstable();
+        Ok(list)
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = VERSION.to_le_bytes().to_vec();
+        for (tag, id, perm) in &self.0 {
+            bytes.extend(tag.to_le_bytes());
+            bytes.extend(perm.to_le_bytes());
+            bytes.extend(id.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn get(&self, tag: u16, id: u32) -> Option<u16> {
+        self.0.iter().find(|(held, at, _)| *held == tag && *at == id).map(|(_, _, perm)| *perm)
+    }
+
+    fn set(&mut self, tag: u16, id: u32, perm: u16) {
+        self.0.retain(|(held, at, _)| !(*held == tag && *at == id));
+        self.0.push((tag, id, perm));
+        self.0.sort_unstable();
+    }
+
+    fn mask(&self) -> Option<u16> {
+        self.get(MASK, UNDEFINED)
+    }
+
+    /// Whether `subject` holds exactly `want`, also after the mask.
+    fn holds(&self, subject: (u16, u32), want: u16) -> bool {
+        self.get(subject.0, subject.1).is_some_and(|perm| perm == want && self.mask().is_none_or(|mask| perm & mask == want))
+    }
+
+    /// Every group-class entry but the subject's, with its permissions.
+    fn others(&self, subject: (u16, u32)) -> Vec<(u16, u32, u16)> {
+        self.0.iter().copied().filter(|(tag, id, _)| [GROUP_OBJ, USER, GROUP].contains(tag) && (*tag, *id) != subject).collect()
+    }
+}
+
+/// The subject's tag and id, the wanted bits as given, and what the walk applies them to.
+struct Run<'a, S: System> {
+    system: &'a S,
+    subject: (u16, u32),
+    perms: &'a str,
+    default: bool,
+    tree: bool,
+    /// The root's file system; the walk never leaves it.
+    device: u64,
+    /// Each changed path, with what it held before, so a failed order puts every one back.
+    changed: Vec<Changed>,
+    acl: Acl,
+}
+
+/// A changed path: its descriptor, the attribute that changed, its bytes and the mode before.
+struct Changed {
+    fd: OwnedFd,
+    attribute: &'static str,
+    prior: Option<Vec<u8>>,
+    mode: u32,
+}
+
+/// Sets the entry on each path where it differs and answers how many paths changed: `0` on a repeat. Each path is read
+/// first; a path changes when its entry differs from the wanted permissions, `X` resolved as `setfacl` does, or when its mask
+/// cuts the entry. Every change is read back through the same descriptor. A failed write or read-back puts every changed path
+/// back to its prior bytes and mode, so a failed order leaves no write behind.
 ///
 /// # Errors
 ///
-/// `host.input_invalid` for an input outside the admitted shape, and `acl.ensure_failed` for a missing path or a failed
-/// read, walk, change or read-back anywhere in the tree.
-pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
+/// `host.input_invalid` for an input outside the admitted shape or a tree root that is `/`, a plain file or anything but a
+/// folder, and `acl.ensure_failed` for a missing path, a link among the ancestors, or a failed read, walk, change or
+/// read-back anywhere in the tree.
+pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<Acl, Failure> {
     let input: Input = parse(input)?;
-    if !absolute(&input.path) || !NAME.is_match(&input.user) || !PERMS.is_match(&input.perms) || input.run_as.as_ref().is_some_and(|user| !NAME.is_match(user)) {
+    let ((Some(name), None) | (None, Some(name))) = (&input.user, &input.group) else {
+        return Err(invalid("acl subject"));
+    };
+    if !absolute(&input.path) || !NAME.is_match(name) || !PERMS.is_match(&input.perms) {
         return Err(invalid("acl"));
     }
     let failed = |detail: String| Failure::new("acl.ensure_failed", detail);
-    let root = system.path(&input.path);
-    match std::fs::symlink_metadata(&root) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && input.optional => return Ok(0),
-        Err(error) => return Err(failed(error.to_string())),
-        Ok(_) => {}
-    }
-    // Every path as the order names it, with the permissions it must hold.
-    let mut paths: Vec<(String, String)> = Vec::new();
-    match input.scope {
-        Scope::Path => collect(&root, &input.path, &input, &mut paths),
-        Scope::Tree => tree(&root, &input.path, &input, &mut paths),
-    }
-    .map_err(|error| failed(error.to_string()))?;
-    let prefix = input.run_as.as_ref().map_or_else(Vec::new, |user| strings(&["/usr/sbin/runuser", "-u", user, "--", "/usr/bin/env", "-C", "/"]));
-    let read = |names: &[String]| -> Result<BTreeMap<String, Entry>, String> {
-        let mut held = BTreeMap::new();
-        for chunk in names.chunks(200) {
-            let mut argv = prefix.clone();
-            argv.extend(strings(&["/usr/bin/getfacl", "--physical", "--absolute-names", "--"]));
-            argv.extend(chunk.iter().cloned());
-            held.extend(listing(&system.run(60, &argv)?, &input));
-        }
-        Ok(held)
+    let subject = if input.user.is_some() { (USER, system.user(name).map_err(failed)?) } else { (GROUP, system.group(name).map_err(failed)?) };
+    let tree = input.scope == Scope::Tree;
+    let (fd, stat) = match open_root(system, &input.path).map_err(|error| failed(format!("{}: {error}", input.path)))? {
+        Root::Missing if input.optional => return Ok(Acl::default()),
+        Root::Missing => return Err(failed(format!("{}: not found", input.path))),
+        Root::Link => return Ok(Acl::default()),
+        Root::Found(fd, stat) => (fd, stat),
     };
-    let names: Vec<String> = paths.iter().map(|(name, _)| name.clone()).collect();
-    let before = read(&names).map_err(failed)?;
-    let changed: Vec<String> = paths.iter().filter(|(name, wanted)| before.get(name).is_none_or(|entry| !entry.holds(wanted))).map(|(name, _)| name.clone()).collect();
-    let wants: BTreeMap<&str, &str> = paths.iter().map(|(name, perms)| (name.as_str(), perms.as_str())).collect();
-    let wanted = |name: &String| wants.get(name.as_str()).map_or_else(String::new, |perms| (*perms).to_owned());
-    // The mask is shared by every group-class entry: it is given explicitly, so setfacl never recomputes it. It only widens by
-    // the bits this entry needs, and only where no other entry holds a bit the mask cut, so no other subject's effective
-    // permissions move.
-    let tag = if input.default { "d:" } else { "" };
-    // For each changed path: the entries to write, and what every other subject must still hold afterwards.
-    let mut plans = BTreeMap::new();
-    for name in &changed {
-        let entry = before.get(name).ok_or_else(|| failed(format!("{name} was not read")))?;
-        let want = wanted(name);
-        // The first default entry of a folder starts a default list: it is seeded from the access list (owner, group,
-        // other, and the group-class bits as the mask), so every other subject keeps what new files inherit.
-        let (mask, others, base, seed) = if input.default && !entry.has_default {
-            let access = |key: &str| entry.access.get(key).cloned().ok_or_else(|| failed(format!("{name} has no access {key} entry")));
-            let (owner, group, other) = (access("user")?, access("group")?, access("other")?);
-            let mask = entry.access.get("mask").cloned().unwrap_or_else(|| group.clone());
-            let seed = format!("d:u::{owner},d:g::{group},d:o::{other},");
-            (Some(mask), vec![("group:".to_owned(), group)], vec![("other:".to_owned(), other), ("user:".to_owned(), owner)], seed)
-        } else {
-            (entry.mask.clone(), entry.others.clone(), entry.base.clone(), String::new())
-        };
-        // The mask is shared by every group-class entry: it is given explicitly, so setfacl never recomputes it. It only
-        // widens by the bits this entry needs, and only where no other entry holds a bit the mask cut.
-        let current = mask.clone().unwrap_or_else(|| others.iter().fold("---".to_owned(), |held, (_, perms)| union(&held, perms)));
-        let widened = union(&current, &want);
-        if mask.is_some() && others.iter().any(|(_, perms)| cut(perms, &current) != cut(perms, &widened)) {
-            return Err(failed(format!("{name}: the mask would widen another entry's permissions")));
-        }
-        let expected = Entry { mask: Some(widened.clone()), others, base, ..Entry::default() };
-        plans.insert(name.clone(), (format!("{seed}{tag}u:{}:{want},{tag}m::{widened}", input.user), expected));
-    }
-    // Paths that need the same entries share one `setfacl` call, at most 200 at a time.
-    let mut batches: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-    for name in &changed {
-        batches.entry(plans[name].0.as_str()).or_default().push(name.clone());
-    }
-    for (entries, names) in &batches {
-        for chunk in names.chunks(200) {
-            let mut argv = prefix.clone();
-            argv.extend(strings(&["/usr/bin/setfacl", "-P", "-n", "-m", entries, "--"]));
-            argv.extend(chunk.iter().cloned());
-            system.run(120, &argv).map_err(failed)?;
-        }
-    }
-    // Every changed path holds the entry, and every other subject's effective permissions are what they were.
-    let after = if changed.is_empty() { BTreeMap::new() } else { read(&changed).map_err(failed)? };
-    for name in &changed {
-        let expected = &plans[name].1;
-        let kept = after.get(name).is_some_and(|entry| entry.holds(&wanted(name)) && entry.effective_others() == expected.effective_others() && sorted(&entry.base) == sorted(&expected.base));
-        if !kept {
-            return Err(failed(format!("{name} read-back")));
-        }
-    }
-    Ok(u32::try_from(changed.len()).unwrap_or(u32::MAX))
-}
-
-/// The bits set in either `rwx` string.
-fn union(left: &str, right: &str) -> String {
-    left.chars().zip(right.chars()).map(|(a, b)| if a == '-' { b } else { a }).collect()
-}
-
-/// `perms` as the mask lets them take effect.
-fn cut(perms: &str, mask: &str) -> String {
-    perms.chars().zip(mask.chars()).map(|(bit, allowed)| if allowed == '-' { '-' } else { bit }).collect()
-}
-
-/// The user's entry, the mask that bounds it, every other group-class entry the mask bounds too, and the owner and other
-/// entries, of the listed access or default list on one path; with the path's access list and whether it has a default list.
-#[derive(Debug, Default, Clone)]
-struct Entry {
-    perms: Option<String>,
-    mask: Option<String>,
-    others: Vec<(String, String)>,
-    base: Vec<(String, String)>,
-    access: BTreeMap<String, String>,
-    has_default: bool,
-}
-
-fn sorted(entries: &[(String, String)]) -> Vec<(String, String)> {
-    let mut entries = entries.to_vec();
-    entries.sort();
-    entries
-}
-
-impl Entry {
-    fn holds(&self, wanted: &str) -> bool {
-        let effective = |perms: &str| self.mask.as_deref().map_or_else(|| perms.to_owned(), |mask| cut(perms, mask));
-        self.perms.as_deref().is_some_and(|perms| perms == wanted && effective(perms) == wanted)
-    }
-
-    /// What each other group-class entry may do, after the mask.
-    fn effective_others(&self) -> Vec<(String, String)> {
-        self.others.iter().map(|(tag, perms)| (tag.clone(), self.mask.as_deref().map_or_else(|| perms.clone(), |mask| cut(perms, mask)))).collect()
-    }
-}
-
-/// getfacl's listing as each path's entry for the input's user, of the access or the default list.
-fn listing(text: &str, input: &Input) -> BTreeMap<String, Entry> {
-    let tag = if input.default { "default:" } else { "" };
-    let mut entries = BTreeMap::new();
-    let mut current: Option<String> = None;
-    for line in text.lines() {
-        if let Some(name) = line.strip_prefix("# file: ") {
-            current = Some(unescape(name));
-            entries.entry(current.clone().unwrap_or_default()).or_insert_with(Entry::default);
-            continue;
-        }
-        let Some(name) = &current else { continue };
-        let line = line.split('\t').next().unwrap_or_default().trim();
-        let entry = entries.entry(name.clone()).or_insert_with(Entry::default);
-        entry.has_default |= line.starts_with("default:");
-        for key in ["user", "group", "other", "mask"] {
-            if let Some(perms) = line.strip_prefix(&format!("{key}::")) {
-                entry.access.insert(key.to_owned(), perms.to_owned());
-            }
-        }
-        if let Some(rest) = line.strip_prefix(tag).filter(|rest| rest.starts_with("user::") || rest.starts_with("other::")) {
-            if let Some((subject, perms)) = rest.split_once("::") {
-                entry.base.push((format!("{subject}:"), perms.to_owned()));
-            }
-        }
-        if let Some(perms) = line.strip_prefix(&format!("{tag}user:{}:", input.user)) {
-            entry.perms = Some(perms.to_owned());
-        } else if let Some(perms) = line.strip_prefix(&format!("{tag}mask::")) {
-            entry.mask = Some(perms.to_owned());
-        } else if let Some(rest) = line.strip_prefix(tag).filter(|rest| (rest.starts_with("user:") && !rest.starts_with("user::")) || rest.starts_with("group:")) {
-            if let Some((subject, perms)) = rest.rsplit_once(':') {
-                entry.others.push((subject.to_owned(), perms.to_owned()));
-            }
-        }
-    }
-    entries
-}
-
-/// A getfacl file name with its `\ooo` escapes resolved.
-fn unescape(name: &str) -> String {
-    let bytes = name.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'\\' && index + 4 <= bytes.len() && bytes[index + 1..index + 4].iter().all(|digit| (b'0'..=b'7').contains(digit)) {
-            out.push(u8::from_str_radix(std::str::from_utf8(&bytes[index + 1..index + 4]).unwrap_or("0"), 8).unwrap_or(0));
-            index += 4;
-        } else {
-            out.push(bytes[index]);
-            index += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// The one path (named `name`), never through a link, with the permissions it must hold: `X` is search on a folder, and
-/// on a file only when some execute bit is set.
-fn collect(path: &std::path::Path, name: &str, input: &Input, paths: &mut Vec<(String, String)>) -> std::io::Result<()> {
-    let meta = std::fs::symlink_metadata(path)?;
-    let folder = meta.file_type().is_dir();
-    if meta.file_type().is_symlink() || (input.default && !folder) {
-        return Ok(());
-    }
-    paths.push((name.to_owned(), wanted(&input.perms, meta.mode())));
-    Ok(())
-}
-
-/// The tree at `path` (named `name`): the root and everything below it that the entry applies to, in walk order, with the
-/// permissions each must hold. The walk opens every folder relative to its parent's descriptor with `O_NOFOLLOW` and reads
-/// each entry with `AT_SYMLINK_NOFOLLOW`, so a link is skipped and never followed, also when it points out of the tree. A
-/// root that is a link is skipped too. Any failed read fails the walk; a path that vanishes is not counted as absent.
-fn tree(path: &std::path::Path, name: &str, input: &Input, paths: &mut Vec<(String, String)>) -> std::io::Result<()> {
-    let stat = rustix::fs::statat(CWD, path, AtFlags::SYMLINK_NOFOLLOW)?;
     let kind = FileType::from_raw_mode(stat.st_mode);
-    if kind.is_dir() {
-        let folder = open(CWD, path, &stat)?;
-        walk(folder, name, input, paths)?;
-    } else if kind.is_file() {
-        visit(name, kind, stat.st_mode, input, paths);
-    }
-    Ok(())
-}
-
-/// The folder `folder` (named `name`) and, below it, every folder and plain file, depth first.
-fn walk(folder: OwnedFd, name: &str, input: &Input, paths: &mut Vec<(String, String)>) -> std::io::Result<()> {
-    paths.push((name.to_owned(), wanted(&input.perms, 0o040_000)));
-    let mut children = Vec::new();
-    let mut entries = Dir::new(folder)?;
-    while let Some(entry) = entries.read() {
-        let entry = entry?;
-        let child = entry.file_name().to_bytes();
-        if child != b"." && child != b".." {
-            children.push(entry.file_name().to_owned());
+    if tree {
+        let top = rustix::fs::stat(system.root()).map_err(|error| failed(error.to_string()))?;
+        if !kind.is_dir() || (top.st_dev, top.st_ino) == (stat.st_dev, stat.st_ino) {
+            return Err(invalid("acl tree root"));
         }
+    } else if !kind.is_dir() && !kind.is_file() {
+        return Err(failed(format!("{}: neither a folder nor a plain file", input.path)));
     }
-    children.sort();
-    let at = entries.fd()?;
-    for child in children {
-        let text = child.to_str().map_err(|_| std::io::Error::other(format!("{name}: a name below it is not UTF-8")))?;
-        let named = format!("{name}/{text}");
-        let stat = rustix::fs::statat(at, child.as_c_str(), AtFlags::SYMLINK_NOFOLLOW).map_err(|error| std::io::Error::other(format!("{named}: {error}")))?;
-        let kind = FileType::from_raw_mode(stat.st_mode);
-        if kind.is_dir() {
-            let below = open(at, child.as_c_str(), &stat).map_err(|error| std::io::Error::other(format!("{named}: {error}")))?;
-            walk(below, &named, input, paths)?;
-        } else {
-            visit(&named, kind, stat.st_mode, input, paths);
+    let mut run = Run { system, subject, perms: &input.perms, default: input.default, tree, device: stat.st_dev, changed: Vec::new(), acl: Acl::default() };
+    let root = PathBuf::from(&input.path);
+    let result = if kind.is_dir() { run.folder(&fd, &stat, &root) } else { run.path(&fd, &stat, &root) };
+    match result {
+        Ok(()) => {
+            run.acl.changes = u32::try_from(run.changed.len()).unwrap_or(u32::MAX);
+            Ok(run.acl)
         }
-    }
-    Ok(())
-}
-
-/// Opens the folder `path` relative to `at`, never through a link, and only when it is still the folder `stat` read.
-fn open<P: rustix::path::Arg>(at: impl AsFd, path: P, stat: &rustix::fs::Stat) -> std::io::Result<OwnedFd> {
-    let folder = rustix::fs::openat(at, path, OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())?;
-    let held = rustix::fs::fstat(&folder)?;
-    if held.st_dev != stat.st_dev || held.st_ino != stat.st_ino {
-        return Err(std::io::Error::other("a folder changed while it was read"));
-    }
-    Ok(folder)
-}
-
-/// A plain file below the root: it holds the access entry, never a default entry. Links and every other type are skipped.
-fn visit(name: &str, kind: FileType, mode: u32, input: &Input, paths: &mut Vec<(String, String)>) {
-    if kind.is_file() && !input.default {
-        paths.push((name.to_owned(), wanted(&input.perms, mode)));
+        Err(detail) => Err(failed(run.restore(detail))),
     }
 }
 
-/// `perms` with `X` resolved for a path of `mode` (`st_mode`): search on a folder, and on a file only when some execute bit
-/// is set.
-fn wanted(perms: &str, mode: u32) -> String {
+/// The root as the walk from `/` found it.
+enum Root {
+    Missing,
+    Link,
+    Found(OwnedFd, Stat),
+}
+
+/// Opens every ancestor from the system's root with `O_NOFOLLOW`, then the path itself: a link among the ancestors fails, a
+/// link at the path answers [`Root::Link`].
+fn open_root(system: &impl System, path: &str) -> std::io::Result<Root> {
+    let mut at = rustix::fs::open(system.root(), OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty())?;
+    let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    let (last, ancestors) = parts.split_last().ok_or_else(|| std::io::Error::other("no path"))?;
+    for part in ancestors {
+        at = match rustix::fs::openat(&at, *part, OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty()) {
+            Ok(next) => next,
+            Err(rustix::io::Errno::NOENT) => return Ok(Root::Missing),
+            Err(rustix::io::Errno::LOOP) => return Err(std::io::Error::other(format!("{part} is a link among the ancestors"))),
+            Err(error) => return Err(error.into()),
+        };
+    }
+    let stat = match rustix::fs::statat(&at, *last, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(rustix::io::Errno::NOENT) => return Ok(Root::Missing),
+        Err(error) => return Err(error.into()),
+    };
+    let kind = FileType::from_raw_mode(stat.st_mode);
+    if kind == FileType::Symlink {
+        return Ok(Root::Link);
+    }
+    if !kind.is_dir() && !kind.is_file() {
+        return Ok(Root::Found(at, stat));
+    }
+    Ok(Root::Found(open(&at, OsStr::new(last), &stat)?, stat))
+}
+
+/// Opens the folder or plain file `name` relative to `at`, never through a link, and only when it is still what `stat` read.
+fn open(at: impl AsFd, name: &OsStr, stat: &Stat) -> std::io::Result<OwnedFd> {
+    let folder = FileType::from_raw_mode(stat.st_mode).is_dir();
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | if folder { OFlags::DIRECTORY } else { OFlags::NONBLOCK | OFlags::NOCTTY };
+    let fd = rustix::fs::openat(at, name, flags, Mode::empty())?;
+    let held = rustix::fs::fstat(&fd)?;
+    if (held.st_dev, held.st_ino) != (stat.st_dev, stat.st_ino) {
+        return Err(std::io::Error::other("it changed while it was read"));
+    }
+    Ok(fd)
+}
+
+impl<S: System> Run<'_, S> {
+    /// The folder `fd` at `name`, then, with the tree scope, every folder and plain file below it, depth first, in name order.
+    fn folder(&mut self, fd: &OwnedFd, stat: &Stat, name: &std::path::Path) -> Result<(), String> {
+        self.path(fd, stat, name)?;
+        if !self.tree {
+            return Ok(());
+        }
+        let shown = |error: &dyn std::fmt::Display| format!("{}: {error}", name.display());
+        let mut children: Vec<CString> = Vec::new();
+        let mut entries = Dir::read_from(fd).map_err(|error| shown(&error))?;
+        while let Some(entry) = entries.read() {
+            let entry = entry.map_err(|error| shown(&error))?;
+            let child = entry.file_name();
+            if child.to_bytes() != b"." && child.to_bytes() != b".." {
+                children.push(child.to_owned());
+            }
+        }
+        children.sort();
+        for child in children {
+            let named = name.join(OsStr::from_bytes(child.to_bytes()));
+            let shown = |error: &dyn std::fmt::Display| format!("{}: {error}", named.display());
+            let stat = rustix::fs::statat(fd, child.as_c_str(), AtFlags::SYMLINK_NOFOLLOW).map_err(|error| shown(&error))?;
+            let kind = FileType::from_raw_mode(stat.st_mode);
+            if kind.is_dir() {
+                if stat.st_dev != self.device {
+                    self.acl.skipped_mounts += 1;
+                    continue;
+                }
+                let below = open(fd, OsStr::from_bytes(child.to_bytes()), &stat).map_err(|error| shown(&error))?;
+                self.folder(&below, &stat, &named)?;
+            } else if kind.is_file() && !self.default {
+                if stat.st_nlink > 1 {
+                    self.acl.skipped_hard_links += 1;
+                    continue;
+                }
+                let file = open(fd, OsStr::from_bytes(child.to_bytes()), &stat).map_err(|error| shown(&error))?;
+                self.path(&file, &stat, &named)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// One path: read its list, and where the entry differs, write it and read it back through the same descriptor.
+    fn path(&mut self, fd: &OwnedFd, stat: &Stat, name: &std::path::Path) -> Result<(), String> {
+        let shown = |error: &dyn std::fmt::Display| format!("{}: {error}", name.display());
+        let folder = FileType::from_raw_mode(stat.st_mode).is_dir();
+        if self.default && !folder {
+            return Ok(());
+        }
+        let mode = stat.st_mode;
+        let want = bits(self.perms, mode);
+        let attribute = if self.default { DEFAULT } else { ACCESS };
+        let access = self.system.xattr(fd.as_fd(), ACCESS).map_err(|error| shown(&error))?;
+        let access_list = access.as_deref().map_or_else(|| Ok(List::from_mode(mode)), List::decode).map_err(|error| shown(&error))?;
+        let prior = if self.default { self.system.xattr(fd.as_fd(), DEFAULT).map_err(|error| shown(&error))? } else { access };
+        let list = match (&prior, self.default) {
+            (Some(bytes), _) => List::decode(bytes).map_err(|error| shown(&error))?,
+            (None, false) => access_list,
+            // The first default entry of a folder starts a default list: it is seeded from the access list (owner, group,
+            // other, and the group-class bits as the mask), so every other subject keeps what new files inherit.
+            (None, true) => {
+                let base = |tag: u16| access_list.get(tag, UNDEFINED).ok_or_else(|| shown(&"no owner, group or other entry"));
+                let group = base(GROUP_OBJ)?;
+                List(vec![(USER_OBJ, UNDEFINED, base(USER_OBJ)?), (GROUP_OBJ, UNDEFINED, group), (MASK, UNDEFINED, access_list.mask().unwrap_or(group)), (OTHER, UNDEFINED, base(OTHER)?)])
+            }
+        };
+        if list.holds(self.subject, want) {
+            return Ok(());
+        }
+        // The mask is shared by every group-class entry and is written explicitly. It only widens, by the bits this entry
+        // needs. For one path it widens only where no other entry holds a bit the mask cut; a tree grant may widen it so the
+        // entry takes effect, as `setfacl -R -m` does. Owner and other entries never change.
+        let others = list.others(self.subject);
+        let current = list.mask().unwrap_or_else(|| others.iter().fold(0, |held, (_, _, perm)| held | perm));
+        let widened = current | want;
+        if !self.tree && list.mask().is_some() && others.iter().any(|(_, _, perm)| perm & current != perm & widened) {
+            return Err(shown(&"the mask would widen another entry's permissions"));
+        }
+        let mut wanted = list;
+        wanted.set(self.subject.0, self.subject.1, want);
+        wanted.set(MASK, UNDEFINED, widened);
+        let fd = fd.try_clone().map_err(|error| shown(&error))?;
+        self.changed.push(Changed { fd, attribute, prior, mode });
+        let fd = &self.changed.last().expect("just pushed").fd;
+        self.system.set_xattr(fd.as_fd(), attribute, Some(&wanted.encode())).map_err(|error| shown(&error))?;
+        // Read back: the list is the one written, and the owner and other bits of the mode are as they were.
+        let held = self.system.xattr(fd.as_fd(), attribute).map_err(|error| shown(&error))?;
+        let after = rustix::fs::fstat(fd).map_err(|error| shown(&error))?;
+        if held.as_deref().map(List::decode) != Some(Ok(wanted)) || after.st_mode & 0o7707 != mode & 0o7707 {
+            return Err(shown(&"read-back"));
+        }
+        Ok(())
+    }
+
+    /// Puts every changed path back to its prior bytes and mode, last first, and answers the failure's detail.
+    fn restore(&mut self, detail: String) -> String {
+        let mut detail = detail;
+        for changed in self.changed.drain(..).rev() {
+            let back = self.system.set_xattr(changed.fd.as_fd(), changed.attribute, changed.prior.as_deref()).and_then(|()| {
+                if changed.attribute == ACCESS {
+                    rustix::fs::fchmod(&changed.fd, Mode::from_raw_mode(changed.mode & 0o7777)).map_err(std::io::Error::from)
+                } else {
+                    Ok(())
+                }
+            });
+            if let Err(error) = back {
+                let _ = write!(detail, "; a path could not be put back: {error}");
+            }
+        }
+        detail
+    }
+}
+
+/// `perms` as `r=4, w=2, x=1` for a path of `mode` (`st_mode`): `X` is search on a folder, and on a file only when some
+/// execute bit is set.
+fn bits(perms: &str, mode: u32) -> u16 {
     let search = mode & 0o170_000 == 0o040_000 || mode & 0o111 != 0;
-    perms.replace('X', if search { "x" } else { "-" })
+    perms.chars().zip([4, 2, 1]).map(|(bit, value)| if bit == 'r' || bit == 'w' || bit == 'x' || (bit == 'X' && search) { value } else { 0 }).sum()
+}
+
+/// A descriptor's attribute, `None` when it has none.
+pub(crate) fn read_xattr(fd: BorrowedFd<'_>, name: &str) -> std::io::Result<Option<Vec<u8>>> {
+    let mut buffer = vec![0_u8; 65_536];
+    match rustix::fs::fgetxattr(fd, name, &mut buffer[..]) {
+        Ok(length) => {
+            buffer.truncate(length);
+            Ok(Some(buffer))
+        }
+        Err(rustix::io::Errno::NODATA) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Sets a descriptor's attribute to `value`, or removes it for `None`.
+pub(crate) fn write_xattr(fd: BorrowedFd<'_>, name: &str, value: Option<&[u8]>) -> std::io::Result<()> {
+    match value {
+        Some(bytes) => rustix::fs::fsetxattr(fd, name, bytes, rustix::fs::XattrFlags::empty()).map_err(std::io::Error::from),
+        None => match rustix::fs::fremovexattr(fd, name) {
+            Ok(()) | Err(rustix::io::Errno::NODATA) => Ok(()),
+            Err(error) => Err(error.into()),
+        },
+    }
 }

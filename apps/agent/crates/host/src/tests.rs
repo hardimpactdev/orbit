@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
+use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::Path;
 
@@ -16,8 +17,12 @@ struct Fake {
     fail: RefCell<Vec<&'static str>>,
     answers: RefCell<Vec<(&'static str, String)>>,
     ran: RefCell<Vec<Vec<String>>>,
-    /// Each path's ACL lines, as getfacl lists them and setfacl changes them.
-    acls: RefCell<BTreeMap<String, Vec<String>>>,
+    /// The `set_xattr` call that fails, counted from 1.
+    fail_set: std::cell::Cell<Option<usize>>,
+    /// The `set_xattr` call after which the next attribute read fails, counted from 1.
+    fail_read_after: std::cell::Cell<Option<usize>>,
+    sets: std::cell::Cell<usize>,
+    fail_next_read: std::cell::Cell<bool>,
     /// The test unit: enabled, running; `None` when systemd cannot be read.
     unit: RefCell<Option<(bool, bool)>>,
     /// An `ActiveState` systemd reports instead, such as a unit stuck `activating`.
@@ -33,7 +38,7 @@ struct Fake {
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default(), relink: RefCell::default() }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), fail_set: std::cell::Cell::default(), fail_read_after: std::cell::Cell::default(), sets: std::cell::Cell::default(), fail_next_read: std::cell::Cell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default(), relink: RefCell::default() }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -88,41 +93,7 @@ impl System for Fake {
             return Ok(out.clone());
         }
         let words: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let tail = words.iter().position(|arg| *arg == "--").map_or(&words[..0], |at| &words[at + 1..]);
-        match words.iter().find(|arg| arg.starts_with('/') && (arg.ends_with("getfacl") || arg.ends_with("setfacl") || arg.ends_with("systemctl") || arg.ends_with("update-ca-certificates") || arg.ends_with("openssl"))) {
-            Some(&"/usr/bin/getfacl") => Ok(tail.iter().fold(String::new(), |mut listing, path| {
-                use std::fmt::Write as _;
-                let _ = write!(listing, "# file: {}\n{}\n", path.replace(' ', "\\040"), self.acls.borrow().get(*path).cloned().unwrap_or_default().join("\n"));
-                listing
-            })),
-            Some(&"/usr/bin/setfacl") => {
-                // Each `-m` entry in turn; without an explicit mask (or `-n`), setfacl recomputes the access mask as the union of
-                // every group-class entry, as the real one does.
-                let entries = words[words.iter().position(|arg| *arg == "-m").expect("-m") + 1];
-                let explicit = words.contains(&"-n") || entries.split(',').any(|entry| entry.trim_start_matches("d:").starts_with("m::"));
-                for path in tail {
-                    let mut acls = self.acls.borrow_mut();
-                    let lines = acls.entry((*path).to_owned()).or_default();
-                    for entry in entries.split(',') {
-                        let (tag, rest) = entry.strip_prefix("d:").map_or(("", entry), |rest| ("default:", rest));
-                        let (kind, rest) = rest.split_once(':').expect("a tag");
-                        let (qualifier, perms) = rest.split_once(':').expect("perms");
-                        let kind = match kind { "u" => "user", "g" => "group", "o" => "other", _ => "mask" };
-                        lines.retain(|held| !held.starts_with(&format!("{tag}{kind}:{qualifier}:")));
-                        lines.push(format!("{tag}{kind}:{qualifier}:{perms}"));
-                    }
-                    if !explicit {
-                        let group_class = lines.iter().filter(|line| (line.starts_with("user:") && !line.starts_with("user::")) || line.starts_with("group:"));
-                        let mask = group_class.fold("---".to_owned(), |held, line| {
-                            let perms = line.rsplit(':').next().unwrap_or("---");
-                            held.chars().zip(perms.chars()).map(|(a, b)| if a == '-' { b } else { a }).collect()
-                        });
-                        lines.retain(|held| !held.starts_with("mask::"));
-                        lines.push(format!("mask::{mask}"));
-                    }
-                }
-                Ok(String::new())
-            }
+        match words.iter().find(|arg| arg.starts_with('/') && (arg.ends_with("systemctl") || arg.ends_with("update-ca-certificates") || arg.ends_with("openssl"))) {
             Some(&"/usr/bin/systemctl") => {
                 let mut unit = self.unit.borrow_mut();
                 let Some((enabled, running)) = unit.as_mut() else { return Err("Failed to connect to bus".to_owned()) };
@@ -184,16 +155,39 @@ impl System for Fake {
         }
     }
 
-    fn user(&self, _name: &str) -> Result<u32, String> {
+    fn user(&self, name: &str) -> Result<u32, String> {
         if let Some((dest, source)) = self.relink.borrow_mut().take() {
             fs::remove_file(&dest).expect("remove the destination");
             fs::hard_link(source, dest).expect("relink");
         }
-        Ok(me().0)
+        Ok(match name {
+            "web" => WEB,
+            "other" => OTHER_USER,
+            _ => me().0,
+        })
     }
 
-    fn group(&self, _name: &str) -> Result<u32, String> {
-        Ok(me().1)
+    fn group(&self, name: &str) -> Result<u32, String> {
+        Ok(if name == "team" { TEAM } else { me().1 })
+    }
+
+    fn xattr(&self, fd: std::os::fd::BorrowedFd<'_>, name: &str) -> std::io::Result<Option<Vec<u8>>> {
+        if self.fail_next_read.replace(false) {
+            return Err(std::io::Error::other("scripted read failure"));
+        }
+        acl::read_xattr(fd, name)
+    }
+
+    fn set_xattr(&self, fd: std::os::fd::BorrowedFd<'_>, name: &str, value: Option<&[u8]>) -> std::io::Result<()> {
+        self.sets.set(self.sets.get() + 1);
+        if self.fail_set.get() == Some(self.sets.get()) {
+            return Err(std::io::Error::other("scripted write failure"));
+        }
+        acl::write_xattr(fd, name, value)?;
+        if self.fail_read_after.get() == Some(self.sets.get()) {
+            self.fail_next_read.set(true);
+        }
+        Ok(())
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -497,53 +491,6 @@ fn dotenv_ensure_sets_the_last_key_and_appends_a_missing_one() {
 }
 
 #[test]
-fn acl_ensure_reads_first_and_sets_only_a_differing_entry() {
-    let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/site")).expect("folder");
-    let input = json!({"path": "/srv/site", "user": "web", "perms": "r-x", "run_as": "app"});
-    assert_eq!(acl_ensure(&fake, &input), Ok(1));
-    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/", "/usr/bin/setfacl", "-P", "-n", "-m", "u:web:r-x,m::r-x", "--", "/srv/site"])));
-    assert_eq!(acl_ensure(&fake, &input), Ok(0));
-    assert_eq!(fake.ran("/usr/bin/setfacl"), 1);
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/missing", "user": "web", "perms": "r-x", "optional": true})), Ok(0));
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/site", "user": "web", "perms": "rwxa"})).expect_err("perms").code, "host.input_invalid");
-}
-
-#[test]
-fn acl_ensure_compares_exact_effective_permissions_on_its_path() {
-    let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/tree/sub")).expect("folders");
-    fs::write(fake.path("/srv/tree/sub/file"), "x").expect("file");
-    // `--x` is not `---` (review counterexample: desired `---` reported Ok(0)).
-    fake.acls.borrow_mut().insert("/srv/tree".to_owned(), vec!["user:web:--x".to_owned()]);
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/tree", "user": "web", "perms": "---"})), Ok(1));
-    // A mask that cuts the entry is a difference too.
-    fake.acls.borrow_mut().insert("/srv/tree".to_owned(), vec!["user:web:r-x".to_owned(), "mask::r--".to_owned()]);
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/tree", "user": "web", "perms": "r-x"})), Ok(1));
-    // `X` is search on a folder and nothing on a plain file; a repeat writes nothing.
-    let folder = json!({"path": "/srv/tree/sub", "user": "web", "perms": "r-X"});
-    assert_eq!(acl_ensure(&fake, &folder), Ok(1));
-    assert_eq!(fake.acls.borrow().get("/srv/tree/sub").cloned(), Some(vec!["user:web:r-x".to_owned(), "mask::r-x".to_owned()]), "the mask is written explicitly");
-    let file = json!({"path": "/srv/tree/sub/file", "user": "web", "perms": "r-X"});
-    assert_eq!(acl_ensure(&fake, &file), Ok(1));
-    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]));
-    let writes = fake.ran("/usr/bin/setfacl");
-    assert_eq!(acl_ensure(&fake, &folder), Ok(0));
-    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
-}
-
-#[test]
-fn acl_ensure_acts_on_one_path_and_leaves_its_children_untouched() {
-    let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/top/child")).expect("folders");
-    fs::write(fake.path("/srv/top/child/file"), "x").expect("file");
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/top", "user": "web", "perms": "r-x"})), Ok(1));
-    assert!(fake.acls.borrow().get("/srv/top/child").is_none() && fake.acls.borrow().get("/srv/top/child/file").is_none(), "nothing below the path changes");
-    assert!(fake.ran.borrow().iter().all(|argv| !argv.iter().any(|arg| arg.starts_with(&fake.path("/srv/top/child").to_string_lossy().into_owned()) || arg.starts_with("/srv/top/child"))), "no command names a child");
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/top", "user": "web", "perms": "r-x", "recursive": true})).expect_err("no recursive input").code, "host.input_invalid");
-}
-
-#[test]
 fn unit_ensure_changes_only_what_differs() {
     let fake = Fake::new();
     let input = json!({"unit": "web.service", "enabled": true, "state": "running", "budget_ms": 1000});
@@ -814,24 +761,6 @@ fn scratch_work_never_touches_a_file_the_executor_did_not_create() {
 }
 
 #[test]
-fn acl_ensure_keeps_every_other_entry_effective_permissions() {
-    let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/shared")).expect("folder");
-    let start = vec!["group::r--".to_owned(), "user:other:rw-".to_owned(), "mask::r--".to_owned()];
-    fake.acls.borrow_mut().insert("/srv/shared".to_owned(), start.clone());
-    // Review counterexample: granting one user read recomputed the mask and let another's masked write take effect.
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/shared", "user": "web", "perms": "r--"})), Ok(1));
-    let held = fake.acls.borrow().get("/srv/shared").cloned().expect("acl");
-    assert!(held.contains(&"mask::r--".to_owned()), "the mask stays: {held:?}");
-    // An entry the mask could only grant by widening another's effective permissions refuses, before any change.
-    fake.acls.borrow_mut().insert("/srv/shared".to_owned(), start.clone());
-    let writes = fake.ran("/usr/bin/setfacl");
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/shared", "user": "web", "perms": "rw-"})).expect_err("would widen").code, "acl.ensure_failed");
-    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
-    assert_eq!(fake.acls.borrow().get("/srv/shared").cloned(), Some(start));
-}
-
-#[test]
 fn trust_ensure_reads_back_the_bundle_and_hash_links_after_rotation_and_removal() {
     let mut fake = Fake::new();
     fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
@@ -881,21 +810,6 @@ fn unit_ensure_never_counts_a_transitional_state_as_the_one_asked_for() {
     *fake.transition.borrow_mut() = Some("deactivating");
     assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped", "budget_ms": 1000})).expect_err("still deactivating").code, "unit.ensure_failed");
     assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped"})).expect_err("no budget").code, "host.input_invalid");
-}
-
-#[test]
-fn acl_ensure_seeds_a_first_default_list_from_the_access_list() {
-    let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/team")).expect("folder");
-    // Review counterexample: a 0770 folder with no default list; denying one user set the default mask to `---`.
-    fake.acls.borrow_mut().insert("/srv/team".to_owned(), vec!["user::rwx".to_owned(), "group::rwx".to_owned(), "other::---".to_owned()]);
-    let deny = json!({"path": "/srv/team", "user": "web", "perms": "---", "default": true});
-    assert_eq!(acl_ensure(&fake, &deny), Ok(1));
-    let held = fake.acls.borrow().get("/srv/team").cloned().expect("acl");
-    for line in ["default:user::rwx", "default:group::rwx", "default:other::---", "default:mask::rwx", "default:user:web:---"] {
-        assert!(held.contains(&line.to_owned()), "{line} in {held:?}");
-    }
-    assert_eq!(acl_ensure(&fake, &deny), Ok(0));
 }
 
 #[test]
@@ -1123,150 +1037,243 @@ fn file_read_leaves_the_access_time_as_it_was() {
     assert_eq!((after.mtime(), after.mtime_nsec()), (before.mtime(), before.mtime_nsec()));
 }
 
-/// The tree scope's argv names only paths of the tree, never a link or what it points to.
-fn tree_named_only(fake: &Fake, keep: &[&str]) -> bool {
-    fake.ran.borrow().iter().flatten().filter(|arg| arg.starts_with('/') && !arg.starts_with("/usr/")).all(|arg| keep.iter().any(|prefix| arg == prefix || arg.starts_with(&format!("{prefix}/"))))
+const WEB: u32 = 40_001;
+const OTHER_USER: u32 = 40_002;
+const TEAM: u32 = 40_003;
+const NONE: u32 = u32::MAX;
+
+/// A path's list as `(tag, id, perm)`, read straight from its attribute: `None` when it has none.
+fn listed(fake: &Fake, path: &str, attribute: &str) -> Option<Vec<(u16, u32, u16)>> {
+    let file = fs::File::open(fake.path(path)).expect("open");
+    let bytes = acl::read_xattr(std::os::fd::AsFd::as_fd(&file), attribute).expect("read")?;
+    assert_eq!(bytes[..4], [2, 0, 0, 0], "version 2");
+    Some(bytes[4..].chunks(8).map(|entry| (u16::from_le_bytes([entry[0], entry[1]]), u32::from_le_bytes([entry[4], entry[5], entry[6], entry[7]]), u16::from_le_bytes([entry[2], entry[3]]))).collect())
+}
+
+/// Writes a path's list from `(tag, id, perm)` entries, encoded here by hand.
+fn put(fake: &Fake, path: &str, attribute: &str, entries: &[(u16, u32, u16)]) {
+    let mut bytes = vec![2, 0, 0, 0];
+    for (tag, id, perm) in entries {
+        bytes.extend(tag.to_le_bytes());
+        bytes.extend(perm.to_le_bytes());
+        bytes.extend(id.to_le_bytes());
+    }
+    let file = fs::File::open(fake.path(path)).expect("open");
+    acl::write_xattr(std::os::fd::AsFd::as_fd(&file), attribute, Some(&bytes)).expect("write");
+}
+
+/// What each path of `paths` holds: both lists and the mode.
+type Entries = Option<Vec<(u16, u32, u16)>>;
+
+fn snapshot(fake: &Fake, paths: &[&str]) -> Vec<(Entries, Entries, u32)> {
+    paths.iter().map(|path| (listed(fake, path, acl::ACCESS), fs::metadata(fake.path(path)).expect("meta").is_dir().then(|| listed(fake, path, acl::DEFAULT)).flatten(), mode_of(fake, path))).collect()
+}
+
+fn changes(acl: Result<Acl, Failure>) -> u32 {
+    acl.expect("applied").changes
+}
+
+/// A folder tree: `/srv/app` with `a/b`, a plain file, an executable and a file in the deepest folder, all 0755 or 0644.
+fn app_tree(fake: &Fake) -> Vec<&'static str> {
+    fs::create_dir_all(fake.path("/srv/app/a/b")).expect("folders");
+    for (path, mode) in [("/srv/app/top.txt", 0o644), ("/srv/app/a/run.sh", 0o755), ("/srv/app/a/b/file", 0o644)] {
+        fs::write(fake.path(path), "x").expect("file");
+        fs::set_permissions(fake.path(path), fs::Permissions::from_mode(mode)).expect("mode");
+    }
+    for folder in ["/srv/app", "/srv/app/a", "/srv/app/a/b"] {
+        fs::set_permissions(fake.path(folder), fs::Permissions::from_mode(0o755)).expect("mode");
+    }
+    vec!["/srv/app", "/srv/app/a", "/srv/app/a/b", "/srv/app/top.txt", "/srv/app/a/run.sh", "/srv/app/a/b/file"]
+}
+
+#[test]
+fn acl_ensure_path_scope_sets_one_entry_on_one_path_and_repeats_with_zero() {
+    let fake = Fake::new();
+    let paths = app_tree(&fake);
+    let input = json!({"path": "/srv/app", "user": "web", "perms": "r-x"});
+    assert_eq!(acl_ensure(&fake, &input), Ok(Acl { changes: 1, skipped_mounts: 0, skipped_hard_links: 0 }));
+    assert_eq!(listed(&fake, "/srv/app", acl::ACCESS), Some(vec![(1, NONE, 7), (2, WEB, 5), (4, NONE, 5), (0x10, NONE, 5), (0x20, NONE, 5)]));
+    assert!(paths[1..].iter().all(|path| listed(&fake, path, acl::ACCESS).is_none()), "nothing below the path changes");
+    assert_eq!(changes(acl_ensure(&fake, &input)), 0);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/missing", "user": "web", "perms": "r-x", "optional": true}))), 0);
+    for bad in [json!({"path": "/srv/app", "user": "web", "perms": "rwxa"}), json!({"path": "/srv/app", "user": "web", "group": "team", "perms": "r-x"}), json!({"path": "/srv/app", "perms": "r-x"}), json!({"path": "/srv/app", "user": "web", "perms": "r-x", "run_as": "app"}), json!({"path": "/srv/app", "user": "web", "perms": "r-x", "scope": "recursive"})] {
+        assert_eq!(acl_ensure(&fake, &bad).expect_err("invalid").code, "host.input_invalid", "{bad}");
+    }
+}
+
+#[test]
+fn acl_ensure_compares_exact_effective_permissions() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    // `--x` is not `---`, and a mask that cuts the entry is a difference too.
+    put(&fake, "/srv/app/top.txt", acl::ACCESS, &[(1, NONE, 6), (2, WEB, 1), (4, NONE, 4), (0x10, NONE, 1), (0x20, NONE, 4)]);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app/top.txt", "user": "web", "perms": "---"}))), 1);
+    put(&fake, "/srv/app/a", acl::ACCESS, &[(1, NONE, 7), (2, WEB, 5), (4, NONE, 4), (0x10, NONE, 4), (0x20, NONE, 5)]);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app/a", "user": "web", "perms": "r-x"}))), 1);
+    assert_eq!(listed(&fake, "/srv/app/a", acl::ACCESS), Some(vec![(1, NONE, 7), (2, WEB, 5), (4, NONE, 4), (0x10, NONE, 5), (0x20, NONE, 5)]));
+    // `X` is search on a folder and an executable, nothing on a plain file.
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app/a/b/file", "user": "web", "perms": "r-X"}))), 1);
+    assert_eq!(listed(&fake, "/srv/app/a/b/file", acl::ACCESS).expect("acl")[1], (2, WEB, 4));
+}
+
+#[test]
+fn acl_ensure_path_scope_refuses_a_mask_that_widens_another_entry() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    let start = [(1, NONE, 7), (2, OTHER_USER, 6), (4, NONE, 4), (0x10, NONE, 4), (0x20, NONE, 5)];
+    put(&fake, "/srv/app", acl::ACCESS, &start);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "r--"}))), 1);
+    assert_eq!(listed(&fake, "/srv/app", acl::ACCESS).expect("acl")[4], (0x10, NONE, 4), "the mask stays");
+    put(&fake, "/srv/app", acl::ACCESS, &start);
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "rw-"})).expect_err("would widen").code, "acl.ensure_failed");
+    assert_eq!(listed(&fake, "/srv/app", acl::ACCESS), Some(start.to_vec()));
 }
 
 #[test]
 fn acl_ensure_tree_converges_one_entry_on_every_folder_and_file() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/app/a/b")).expect("folders");
-    fake.write("/srv/app/top.txt", b"x");
-    fake.write("/srv/app/a/b/file", b"x");
-    fake.write("/srv/app/a/run.sh", b"x");
-    fs::set_permissions(fake.path("/srv/app/a/run.sh"), fs::Permissions::from_mode(0o750)).expect("mode");
-    let input = json!({"path": "/srv/app", "user": "web", "perms": "r-X", "scope": "tree", "run_as": "app"});
-    assert_eq!(acl_ensure(&fake, &input), Ok(6), "three folders and three files");
-    let held = |path: &str| fake.acls.borrow().get(path).cloned().unwrap_or_default();
-    for folder in ["/srv/app", "/srv/app/a", "/srv/app/a/b"] {
-        assert_eq!(held(folder), vec!["user:web:r-x".to_owned(), "mask::r-x".to_owned()], "{folder}");
+    let paths = app_tree(&fake);
+    let input = json!({"path": "/srv/app", "user": "web", "perms": "r-X", "scope": "tree"});
+    assert_eq!(acl_ensure(&fake, &input), Ok(Acl { changes: 6, skipped_mounts: 0, skipped_hard_links: 0 }));
+    for path in &paths {
+        let search = !["/srv/app/top.txt", "/srv/app/a/b/file"].contains(path);
+        assert_eq!(listed(&fake, path, acl::ACCESS).expect("acl")[1], (2, WEB, if search { 5 } else { 4 }), "{path}");
     }
-    assert_eq!(held("/srv/app/a/run.sh"), vec!["user:web:r-x".to_owned(), "mask::r-x".to_owned()]);
-    assert_eq!(held("/srv/app/top.txt"), vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]);
-    assert_eq!(held("/srv/app/a/b/file"), vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]);
-    // Paths that need the same entries share one fixed setfacl call: r-x for four, r-- for two.
-    assert_eq!(fake.ran("/usr/bin/setfacl"), 2);
-    assert!(fake.ran.borrow().iter().all(|argv| argv[..7] == strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/"])), "every command runs as the order's account");
-    // A repeat reads every path and writes nothing.
-    assert_eq!(acl_ensure(&fake, &input), Ok(0));
-    assert_eq!(fake.ran("/usr/bin/setfacl"), 2);
-    // One path drifts: only it changes.
-    fake.acls.borrow_mut().insert("/srv/app/a/b".to_owned(), vec!["user:web:rwx".to_owned(), "mask::rwx".to_owned()]);
-    assert_eq!(acl_ensure(&fake, &input), Ok(1));
-    assert_eq!(fake.ran.borrow().last().map(|argv| argv[argv.len() - 1].clone()), Some("/srv/app/a/b".to_owned()));
-    // The path scope stays the default and touches nothing below the root.
-    fake.acls.borrow_mut().clear();
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "r-X", "scope": "path"})), Ok(1));
-    assert_eq!(fake.acls.borrow().keys().cloned().collect::<Vec<_>>(), vec!["/srv/app".to_owned()]);
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "r-X", "scope": "recursive"})).expect_err("scope").code, "host.input_invalid");
+    assert_eq!(changes(acl_ensure(&fake, &input)), 0, "a repeat changes nothing");
+    put(&fake, "/srv/app/a/b", acl::ACCESS, &[(1, NONE, 7), (2, WEB, 7), (4, NONE, 5), (0x10, NONE, 7), (0x20, NONE, 5)]);
+    assert_eq!(changes(acl_ensure(&fake, &input)), 1, "only the drifted path changes");
+}
+
+#[test]
+fn acl_ensure_tree_takes_a_group_subject_for_access_and_default_entries() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "group": "team", "perms": "r-X", "scope": "tree"}))), 6);
+    assert_eq!(listed(&fake, "/srv/app/top.txt", acl::ACCESS), Some(vec![(1, NONE, 6), (4, NONE, 4), (8, TEAM, 4), (0x10, NONE, 4), (0x20, NONE, 4)]));
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "group": "team", "perms": "r-x", "default": true, "scope": "tree"}))), 3);
+    assert_eq!(listed(&fake, "/srv/app/a", acl::DEFAULT), Some(vec![(1, NONE, 7), (4, NONE, 5), (8, TEAM, 5), (0x10, NONE, 5), (0x20, NONE, 5)]));
 }
 
 #[test]
 fn acl_ensure_tree_skips_links_and_never_follows_them() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/app/sub")).expect("folders");
+    app_tree(&fake);
     fs::create_dir_all(fake.path("/outside/deep")).expect("outside");
-    fake.write("/outside/secret", b"x");
-    fake.write("/srv/app/sub/file", b"x");
-    std::os::unix::fs::symlink(fake.path("/outside"), fake.path("/srv/app/to-folder")).expect("folder link");
-    std::os::unix::fs::symlink(fake.path("/outside/secret"), fake.path("/srv/app/sub/to-file")).expect("file link");
-    std::os::unix::fs::symlink("../../outside", fake.path("/srv/app/sub/relative")).expect("relative link");
-    std::os::unix::fs::symlink("/", fake.path("/srv/app/to-root")).expect("root link");
-    let input = json!({"path": "/srv/app", "user": "web", "perms": "rwX", "scope": "tree"});
-    assert_eq!(acl_ensure(&fake, &input), Ok(3), "two folders and one file; four links skipped");
-    assert!(fake.acls.borrow().keys().all(|path| ["/srv/app", "/srv/app/sub", "/srv/app/sub/file"].contains(&path.as_str())), "{:?}", fake.acls.borrow().keys());
-    assert!(tree_named_only(&fake, &["/srv/app", "/srv/app/sub", "/srv/app/sub/file"]), "no command names a link or its target: {:?}", fake.ran.borrow());
-    // A root that is itself a link is skipped, not followed.
-    std::os::unix::fs::symlink(fake.path("/outside"), fake.path("/srv/alias")).expect("root alias");
-    let runs = fake.ran.borrow().len();
-    let writes = fake.ran("/usr/bin/setfacl");
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/alias", "user": "web", "perms": "rwX", "scope": "tree"})), Ok(0));
-    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
-    assert!(fake.ran.borrow()[runs..].iter().flatten().all(|arg| !arg.starts_with("/outside")));
+    fs::write(fake.path("/outside/secret"), "s").expect("secret");
+    std::os::unix::fs::symlink(fake.path("/outside"), fake.path("/srv/app/to-folder")).expect("link");
+    std::os::unix::fs::symlink(fake.path("/outside/secret"), fake.path("/srv/app/a/to-file")).expect("link");
+    std::os::unix::fs::symlink("../../outside", fake.path("/srv/app/a/relative")).expect("link");
+    std::os::unix::fs::symlink("/", fake.path("/srv/app/to-root")).expect("link");
+    let outside = snapshot(&fake, &["/outside", "/outside/deep", "/outside/secret"]);
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "rwX", "scope": "tree"}))), 6, "four links skipped");
+    assert_eq!(snapshot(&fake, &["/outside", "/outside/deep", "/outside/secret"]), outside, "nothing a link points to changes");
+    // A root that is a link is skipped; a link among the root's ancestors refuses.
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app/to-folder", "user": "web", "perms": "rwX", "scope": "tree"}))), 0);
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app/to-folder/deep", "user": "web", "perms": "rwX", "scope": "tree"})).expect_err("ancestor link").code, "acl.ensure_failed");
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app/to-folder/deep", "user": "web", "perms": "rwX"})).expect_err("ancestor link").code, "acl.ensure_failed");
+    assert_eq!(snapshot(&fake, &["/outside", "/outside/deep", "/outside/secret"]), outside);
 }
 
 #[test]
-fn acl_ensure_tree_refuses_the_root_and_its_aliases() {
+fn acl_ensure_tree_refuses_the_root_its_aliases_and_a_plain_file() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv")).expect("folder");
+    app_tree(&fake);
     for root in ["/", "//", "/.", "/..", "/./", "/srv/..", "/srv/../", "/srv/./..", "srv", ""] {
-        let input = json!({"path": root, "user": "web", "perms": "r-x", "scope": "tree"});
-        assert_eq!(acl_ensure(&fake, &input).expect_err(root).code, "host.input_invalid", "{root}");
+        assert_eq!(acl_ensure(&fake, &json!({"path": root, "user": "web", "perms": "r-x", "scope": "tree"})).expect_err(root).code, "host.input_invalid", "{root}");
     }
-    assert!(fake.ran.borrow().is_empty(), "nothing runs for a refused root");
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app/top.txt", "user": "web", "perms": "r-x", "scope": "tree"})).expect_err("file").code, "host.input_invalid");
+    assert!(listed(&fake, "/srv/app/top.txt", acl::ACCESS).is_none());
 }
 
 #[test]
-fn acl_ensure_tree_keeps_other_subjects_effective_permissions() {
+fn acl_ensure_tree_grant_may_widen_the_mask_but_never_owner_or_other_bits() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/app/sub")).expect("folders");
-    fake.write("/srv/app/sub/file", b"x");
-    let shared = vec!["group::r--".to_owned(), "user:other:rw-".to_owned(), "group:team:r-x".to_owned(), "mask::r--".to_owned()];
-    for path in ["/srv/app", "/srv/app/sub", "/srv/app/sub/file"] {
-        fake.acls.borrow_mut().insert(path.to_owned(), shared.clone());
+    let paths = app_tree(&fake);
+    for path in &paths {
+        put(&fake, path, acl::ACCESS, &[(1, NONE, 7), (2, OTHER_USER, 6), (4, NONE, 4), (8, TEAM, 5), (0x10, NONE, 4), (0x20, NONE, 1)]);
     }
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "r--", "scope": "tree"})), Ok(3));
-    for path in ["/srv/app", "/srv/app/sub", "/srv/app/sub/file"] {
-        let held = fake.acls.borrow().get(path).cloned().expect("acl");
-        assert!(held.contains(&"mask::r--".to_owned()) && held.contains(&"user:other:rw-".to_owned()) && held.contains(&"group:team:r-x".to_owned()), "{path}: {held:?}");
+    let before: Vec<u32> = paths.iter().map(|path| mode_of(&fake, path)).collect();
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "rw-", "scope": "tree"}))), 6);
+    for (path, mode) in paths.iter().zip(before) {
+        let held = listed(&fake, path, acl::ACCESS).expect("acl");
+        // As `setfacl -R -m` does, the mask widens so the entry takes effect; every other entry keeps its own bits.
+        assert_eq!(held, vec![(1, NONE, 7), (2, WEB, 6), (2, OTHER_USER, 6), (4, NONE, 4), (8, TEAM, 5), (0x10, NONE, 6), (0x20, NONE, 1)], "{path}");
+        assert_eq!(mode_of(&fake, path) & 0o7707, mode & 0o7707, "{path}: owner and other bits");
     }
-    // A wider entry would widen the mask and let `other` write: the whole order refuses before any change.
-    fake.acls.borrow_mut().insert("/srv/app/sub/file".to_owned(), shared);
-    let before = fake.acls.borrow().clone();
-    let writes = fake.ran("/usr/bin/setfacl");
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "rw-", "scope": "tree"})).expect_err("would widen").code, "acl.ensure_failed");
-    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
-    assert_eq!(*fake.acls.borrow(), before);
 }
 
 #[test]
 fn acl_ensure_tree_sets_a_default_entry_on_folders_only() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/app/a/b")).expect("folders");
-    fake.write("/srv/app/a/file", b"x");
-    for path in ["/srv/app", "/srv/app/a", "/srv/app/a/b"] {
-        fake.acls.borrow_mut().insert(path.to_owned(), vec!["user::rwx".to_owned(), "group::r-x".to_owned(), "other::---".to_owned()]);
-    }
-    let input = json!({"path": "/srv/app", "user": "caddy", "perms": "---", "default": true, "scope": "tree"});
-    assert_eq!(acl_ensure(&fake, &input), Ok(3), "three folders, no file");
-    for path in ["/srv/app", "/srv/app/a", "/srv/app/a/b"] {
-        let held = fake.acls.borrow().get(path).cloned().expect("acl");
+    let paths = app_tree(&fake);
+    let input = json!({"path": "/srv/app", "user": "web", "perms": "---", "default": true, "scope": "tree"});
+    assert_eq!(changes(acl_ensure(&fake, &input)), 3, "three folders, no file");
+    for folder in &paths[..3] {
         // The first default entry seeds the default list from the access list.
-        for line in ["default:user::rwx", "default:group::r-x", "default:other::---", "default:user:caddy:---", "default:mask::r-x"] {
-            assert!(held.contains(&line.to_owned()), "{path}: {line} in {held:?}");
-        }
-        assert!(!held.iter().any(|line| line.starts_with("user:caddy:")), "{path}: no access entry");
+        assert_eq!(listed(&fake, folder, acl::DEFAULT), Some(vec![(1, NONE, 7), (2, WEB, 0), (4, NONE, 5), (0x10, NONE, 5), (0x20, NONE, 5)]), "{folder}");
+        assert!(listed(&fake, folder, acl::ACCESS).is_none(), "{folder}: no access entry");
     }
-    assert!(fake.acls.borrow().get("/srv/app/a/file").is_none(), "a file holds no default list");
-    assert_eq!(acl_ensure(&fake, &input), Ok(0));
-    // The access entry of the same tree reaches the file as well, and leaves the default entries as they are.
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "caddy", "perms": "---", "scope": "tree"})), Ok(4));
-    assert_eq!(fake.acls.borrow().get("/srv/app/a/file").cloned(), Some(vec!["user:caddy:---".to_owned(), "mask::---".to_owned()]));
-    assert!(fake.acls.borrow().get("/srv/app/a").expect("acl").contains(&"default:user:caddy:---".to_owned()));
+    assert!(paths[3..].iter().all(|file| listed(&fake, file, acl::ACCESS).is_none()));
+    assert_eq!(changes(acl_ensure(&fake, &input)), 0);
+    // The access entry of the same tree reaches the files too and leaves the default lists as they are.
+    assert_eq!(changes(acl_ensure(&fake, &json!({"path": "/srv/app", "user": "web", "perms": "---", "scope": "tree"}))), 6);
+    assert_eq!(listed(&fake, "/srv/app/a", acl::DEFAULT).expect("default")[1], (2, WEB, 0));
 }
 
 #[test]
-fn acl_ensure_tree_fails_the_order_on_any_read_error() {
+fn acl_ensure_tree_rolls_every_change_back_when_a_read_fails() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.path("/srv/app/closed/inner")).expect("folders");
-    fake.write("/srv/app/file", b"x");
-    // A folder the walk cannot read fails the whole order; it never counts as absent, and nothing changes.
-    fs::set_permissions(fake.path("/srv/app/closed"), fs::Permissions::from_mode(0o000)).expect("close");
+    let paths = app_tree(&fake);
+    fs::create_dir_all(fake.path("/srv/app/z-closed/inner")).expect("closed");
+    let before = snapshot(&fake, &paths);
+    fs::set_permissions(fake.path("/srv/app/z-closed"), fs::Permissions::from_mode(0o000)).expect("close");
     let input = json!({"path": "/srv/app", "user": "web", "perms": "r-x", "scope": "tree", "optional": true});
     let failure = acl_ensure(&fake, &input).expect_err("unreadable folder");
-    fs::set_permissions(fake.path("/srv/app/closed"), fs::Permissions::from_mode(0o755)).expect("open");
+    fs::set_permissions(fake.path("/srv/app/z-closed"), fs::Permissions::from_mode(0o755)).expect("open");
     assert_eq!(failure.code, "acl.ensure_failed");
-    assert!(failure.detail.contains("/srv/app/closed"), "{}", failure.detail);
-    assert!(fake.ran.borrow().is_empty(), "nothing is read or changed: {:?}", fake.ran.borrow());
-    // A failed getfacl fails it too.
-    fake.fail.borrow_mut().push("/usr/bin/getfacl");
-    assert_eq!(acl_ensure(&fake, &input).expect_err("getfacl").code, "acl.ensure_failed");
-    assert_eq!(fake.ran("/usr/bin/setfacl"), 0);
-    fake.fail.borrow_mut().clear();
-    // A missing root with `optional` changes nothing; without it, it fails.
-    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/none", "user": "web", "perms": "r-x", "scope": "tree", "optional": true})), Ok(0));
+    assert!(failure.detail.contains("/srv/app/z-closed"), "{}", failure.detail);
+    assert_eq!(snapshot(&fake, &paths), before, "the paths written before the failure are put back");
     assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/none", "user": "web", "perms": "r-x", "scope": "tree"})).expect_err("missing").code, "acl.ensure_failed");
+}
+
+#[test]
+fn acl_ensure_tree_rolls_back_a_failed_write_and_a_failed_read_back() {
+    let fake = Fake::new();
+    let paths = app_tree(&fake);
+    put(&fake, "/srv/app/a", acl::ACCESS, &[(1, NONE, 7), (2, OTHER_USER, 4), (4, NONE, 5), (0x10, NONE, 5), (0x20, NONE, 5)]);
+    let before = snapshot(&fake, &paths);
+    let input = json!({"path": "/srv/app", "user": "web", "perms": "r-X", "scope": "tree"});
+    fake.fail_set.set(Some(4));
+    assert_eq!(acl_ensure(&fake, &input).expect_err("write").code, "acl.ensure_failed");
+    assert_eq!(snapshot(&fake, &paths), before, "a failed write leaves no write behind");
+    fake.fail_set.set(None);
+    fake.sets.set(0);
+    fake.fail_read_after.set(Some(5));
+    let failure = acl_ensure(&fake, &input).expect_err("read-back");
+    assert_eq!(failure.code, "acl.ensure_failed");
+    assert!(failure.detail.contains("scripted read failure"), "{}", failure.detail);
+    assert_eq!(snapshot(&fake, &paths), before, "a failed read-back leaves no write behind");
+    fake.fail_read_after.set(None);
+    assert_eq!(changes(acl_ensure(&fake, &input)), 6);
+}
+
+#[test]
+fn acl_ensure_tree_leaves_hard_linked_files_and_keeps_raw_names() {
+    let fake = Fake::new();
+    app_tree(&fake);
+    fs::create_dir_all(fake.path("/outside")).expect("outside");
+    fs::write(fake.path("/outside/shared"), "s").expect("shared");
+    fs::hard_link(fake.path("/outside/shared"), fake.path("/srv/app/shared")).expect("hard link");
+    let raw = fake.path("/srv/app").join(std::ffi::OsStr::from_bytes(b"caf\xe9"));
+    fs::write(&raw, "x").expect("non-UTF-8 name");
+    fs::write(fake.path("/srv/app/back\\slash"), "x").expect("backslash name");
+    let input = json!({"path": "/srv/app", "user": "web", "perms": "r--", "scope": "tree"});
+    assert_eq!(acl_ensure(&fake, &input), Ok(Acl { changes: 8, skipped_mounts: 0, skipped_hard_links: 1 }));
+    assert!(listed(&fake, "/outside/shared", acl::ACCESS).is_none(), "a file with a name outside the tree is left as it is");
+    let file = fs::File::open(&raw).expect("open");
+    assert!(acl::read_xattr(std::os::fd::AsFd::as_fd(&file), acl::ACCESS).expect("read").is_some());
+    assert!(listed(&fake, "/srv/app/back\\slash", acl::ACCESS).is_some());
+    assert_eq!(acl_ensure(&fake, &input), Ok(Acl { changes: 0, skipped_mounts: 0, skipped_hard_links: 1 }));
 }
 
 #[test]
@@ -1280,9 +1287,7 @@ fn acl_ensure_tree_walks_a_large_tree_in_bounded_time() {
     }
     let input = json!({"path": "/srv/big", "user": "web", "perms": "r-X", "scope": "tree"});
     let start = std::time::Instant::now();
-    assert_eq!(acl_ensure(&fake, &input), Ok(1 + 80 + 2000));
-    assert_eq!(acl_ensure(&fake, &input), Ok(0));
+    assert_eq!(changes(acl_ensure(&fake, &input)), 1 + 80 + 2000);
+    assert_eq!(changes(acl_ensure(&fake, &input)), 0);
     assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
-    // 81 folders and 2000 files: one call per 200 paths that share their entries, not one per path.
-    assert_eq!(fake.ran("/usr/bin/setfacl"), 1 + 10);
 }

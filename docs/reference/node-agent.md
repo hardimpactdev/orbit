@@ -29,7 +29,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
-Agent `0.37.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
+Agent `0.37.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature. `posix.acl.ensure` now reads and writes each list through the path's own descriptor, takes a `user` or a `group`, and answers its changes and skipped paths as output ([the host family](/reference/executor#the-host-family)).
 
 The observer listens on no network port. To build and test the agent workspace, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
