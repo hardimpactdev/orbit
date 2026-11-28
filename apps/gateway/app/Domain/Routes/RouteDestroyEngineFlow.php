@@ -7,9 +7,14 @@ namespace App\Domain\Routes;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
+use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\EngineWait;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\RouteWriteNodes;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
@@ -19,20 +24,32 @@ use LogicException;
 use RuntimeException;
 
 /**
- * `route:destroy` on the state machine (ADR 0271; docs/cli/route/engine/destroy.mmd). It reads the withdrawal plan the
- * Gateway admitted (`route_lifecycle.plan`, NativeRouteRemovalSteps) and the digests of the files it was rendered from:
+ * `route:destroy` on the state machine (ADR 0271; docs/cli/route/engine/destroy.mmd), composed of host primitives. It reads the
+ * withdrawal plan the Gateway admitted (`route_lifecycle.plan`, NativeRouteRemovalSteps) and the digests of the files it was
+ * rendered from (`route_guards`):
  *
- * - `dns-<i>`: `dns.publish_records` on each VPN Node, guarded by the digests of the records and catalog it rendered from;
+ * - `dnsread-<i>-records`, `dnsread-<i>-catalog`: `file.read` of each VPN Node's dnsmasq records and private DNS catalog;
+ * - `dnsunlink-<i>-records`, `dnsunlink-<i>-catalog`: `file.ensure` absent of a link a read found in a file's place, only then;
+ * - `dns-<i>`: `config.apply` of both files under the DNS lock, guarded by the digests the Gateway rendered from at admission;
+ *   dnsmasq tests them and both DNS services restart;
  * - `grace`: the Gateway waits 31 s from the last DNS receipt, so resolvers that honour the TTL stop asking first ([EngineWait]);
- * - `withdraw-<node>`: `route.withdraw_site` on each Node that served the Route, guarded by its Caddyfile's digest;
+ * - `caddyread-<node>`: `file.read` of the Caddyfile on each Node that served the Route;
+ * - `guard-<node>`: the Gateway refuses a Caddyfile that holds neither the render it captured at admission nor the desired one;
+ * - `caddyunlink-<node>`: `file.ensure` absent of a link in the Caddyfile's place, only then;
+ * - `withdraw-<node>`: `config.apply` of the Caddyfile under the Node's publication lock, validated and reloaded;
+ * - `poll-<node>`: `http.probe` of Caddy's admin API until no withdrawn name is in its live configuration;
  * - `sibling-<node>`: a TLS handshake with another Route on that Node, so Caddy still serves the rest.
  *
- * `--offline`, a replacement, LAN rules, the Ingress edge and any URL write start on Swamp ([EngineUnsupported]). Step
- * labels map onto the Swamp chart's, so a failure records the same `failed_step` and error code.
+ * Each read's receipt is the step's output, so a retry sends the same guard. `--offline`,
+ * a replacement, LAN rules, the Ingress edge, any URL write, a production placement, access rows, and leaf folders or pools (the
+ * account's home and group come from `account.read`, agent 0.37.0) start on Swamp ([EngineUnsupported]). Each step maps onto the
+ * Swamp chart step it is part of, so the projection records the same `failed_step` and that step's error code.
  */
-final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineWait
+final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineSkip, EngineWait
 {
-    /** The input a VPN Node must take: per-file digests of what the Gateway rendered from. */
+    public const string Kind = 'route.destroy';
+
+    /** The input a VPN Node must take for instance.destroy's Route steps: per-file digests of what the Gateway rendered from. */
     public const string GuardedDns = 'dns.guarded_records';
 
     /** The executor's code for a pool that failed its test or reload, which the Swamp chart's pool step reports. */
@@ -41,9 +58,35 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     /** The DNS grace: the records' TTL of 30 s and one more second. */
     public const int GraceMs = 31_000;
 
-    /** Each step prefix's Swamp chart label (NativeRouteRemovalProjection::StepCodes). */
-    private const array Labels = ['dns' => 'Remove private DNS', 'grace' => 'Wait the DNS grace', 'withdraw' => 'Withdraw site, remove cert',
-        'sibling' => 'Check nothing is left'];
+    /** The files, locks and services of a Node's publication: they arrive in every order, never in the executor. */
+    public const string Caddyfile = '/etc/caddy/Caddyfile';
+
+    public const string CaddyLock = '/etc/caddy/.orbit-publish.lock';
+
+    public const string Certificates = '/etc/caddy/orbit-certificates';
+
+    public const string Records = '/etc/dnsmasq.d/orbit-records.conf';
+
+    public const string Catalog = '/var/lib/orbit/private-dns/catalog.json';
+
+    public const string DnsLock = '/run/lock/orbit-dnsmasq.lock';
+
+    /** The executor's recovery records: one stable folder per Operation and step, outside every managed path. */
+    public const string Recovery = '/var/lib/orbit/executor/recovery';
+
+    /** Caddy's admin endpoint on the Node, read back after the reload, for about 5 s at most (ORB-6335). */
+    public const string Admin = 'http://127.0.0.1:2019/config/';
+
+    public const int AdminBudgetMs = 5_000;
+
+    /** Each step prefix's Swamp chart label (NativeRouteRemovalProjection::StepCodes): a read and a check belong to their write. */
+    private const array Labels = ['dns' => 'Remove private DNS', 'dnsread' => 'Remove private DNS', 'dnsunlink' => 'Remove private DNS',
+        'grace' => 'Wait the DNS grace', 'caddyread' => 'Withdraw site, remove cert', 'guard' => 'Withdraw site, remove cert',
+        'caddyunlink' => 'Withdraw site, remove cert', 'withdraw' => 'Withdraw site, remove cert', 'account' => 'Withdraw site, remove cert',
+        'identity' => 'Withdraw site, remove cert', 'caddyback' => 'Converge PHP-FPM pools',
+        'poolread' => 'Withdraw site, remove cert', 'leaf' => 'Withdraw site, remove cert', 'leafhome' => 'Withdraw site, remove cert',
+        'pools' => 'Converge PHP-FPM pools',
+        'poll' => 'Withdraw site, remove cert', 'sibling' => 'Check nothing is left'];
 
     public function __construct(private NativeRouteRemovalProjection $projection, private RouteEngineFlow $create,
         private DevelopmentSiteRepository $sites) {}
@@ -59,6 +102,14 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
         if (($operation->input['offline'] ?? false) !== false || ($plan['offline'] ?? false) !== false) {
             throw new EngineUnsupported('route.destroy --offline runs on Swamp.');
         }
+        if (isset($operation->input['production_control'])) {
+            throw new EngineUnsupported('A production release runs on Swamp.');
+        }
+        foreach (RouteExecutionProof::objects(ValidatedData::object($operation->input['route_removal'] ?? [])['nodes'] ?? []) as $member) {
+            if (($member['production_instance_ids'] ?? []) !== []) {
+                throw new EngineUnsupported('A Route of a production Instance runs on Swamp.');
+            }
+        }
         foreach (['lan_remove', 'ingress_close', 'lan_absent'] as $list) {
             if (($plan[$list] ?? []) !== []) {
                 throw new EngineUnsupported("route.destroy with {$list} runs on Swamp.");
@@ -70,44 +121,132 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
                 throw new EngineUnsupported("route.destroy with {$list} runs on Swamp.");
             }
         }
-        // A Node can appear twice: once for its sites, once for its leaves.
-        $nodes = array_values(array_unique(ValidatedData::integerList($plan['retire_nodes'])));
         $pools = ValidatedData::object($plan['pools']);
-        if (array_diff(ValidatedData::integerList($pools['site_nodes']), $nodes) !== [] || $nodes === []) {
+        if (array_diff(ValidatedData::integerList($pools['site_nodes'] ?? []), ValidatedData::integerList($plan['retire_nodes'])) !== []) {
             throw new EngineUnsupported('A pool change on a Node the Route does not leave runs on Swamp.');
         }
-        $steps = $dns = [];
-        foreach (array_keys(RouteExecutionProof::objects($plan['dns'])) as $index) {
-            $vpn = ValidatedData::integer(RouteExecutionProof::objects($plan['dns'])[$index]['node_id']);
-            RouteEngineFlow::fits(self::dnsInput($operation, $index));
-            $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, budgetMs: 120_000, resendMs: 20_000, features: [self::GuardedDns]);
+        // A Node can appear twice: once for its sites, once for its leaves.
+        $nodes = array_values(array_unique(ValidatedData::integerList($plan['retire_nodes'])));
+        if ($nodes === []) {
+            throw new EngineUnsupported('A removal without a serving Node runs on Swamp.');
         }
-        $after = [];
+        $vpns = array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns']));
+        self::development($nodes, $vpns);
+        // The hold the bind takes (holdNodes) covers every Node the flow reads or writes, the DNS-only VPN Nodes too.
+        if (array_diff([...$nodes, ...$vpns], RouteWriteNodes::of($operation->input ?? [])) !== []) {
+            throw new EngineUnsupported('A Node outside the Route write\'s Nodes runs on Swamp.');
+        }
+        $steps = $dns = $identities = [];
+        // The accounts are read, and an absent or unreadable one refuses, before any step changes a file.
+        foreach ($nodes as $node) {
+            if (self::pools($operation, $node) !== [] || self::leaves($operation, $node) !== []) {
+                $steps[] = new StepSpec("account-{$node}", $node, 'account.read', (string) $node, budgetMs: 60_000, resendMs: 10_000);
+                $steps[] = new StepSpec($identities[] = "identity-{$node}", 0, 'route.guard', 'gateway', ["account-{$node}"], budgetMs: 30_000);
+            }
+        }
+        foreach ($vpns as $index => $vpn) {
+            self::digest(self::guard($operation, $vpn), 'records');
+            self::digest(self::guard($operation, $vpn), 'catalog_file');
+            $unlinks = [];
+            foreach (['records', 'catalog'] as $file) {
+                $steps[] = new StepSpec("dnsread-{$index}-{$file}", $vpn, 'file.read', (string) $vpn, budgetMs: 60_000, resendMs: 10_000);
+                $steps[] = new StepSpec($unlinks[] = "dnsunlink-{$index}-{$file}", $vpn, 'file.ensure', (string) $vpn, ["dnsread-{$index}-{$file}", ...$identities], budgetMs: 60_000, resendMs: 10_000);
+            }
+            RouteEngineFlow::fits(self::dnsInput($operation, $index, null));
+            $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $unlinks, budgetMs: 120_000, resendMs: 20_000);
+        }
+        $after = $identities;
         if ($dns !== []) {
             $steps[] = new StepSpec('grace', 0, 'route.dns_grace', 'gateway', array_map(static fn (StepSpec $step): string => $step->name, $dns), budgetMs: 60_000);
             $after = ['grace'];
         }
         foreach ($nodes as $node) {
-            $input = $this->withdrawInput($operation, $node);
-            // Every order must sign within the limit before anything starts.
-            RouteEngineFlow::fits($input);
             self::poolsKept($operation, $node);
-            $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, $after, budgetMs: 600_000, resendMs: 30_000);
-            $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
+            self::digest(self::guard($operation, $node), 'caddy');
+            // Every order must sign within the limit before anything starts.
+            RouteEngineFlow::fits(self::withdrawInput($operation, $node, null));
+            $pools = self::pools($operation, $node);
+            $leaves = self::leaves($operation, $node);
+            $reads = ["caddyread-{$node}"];
+            $steps[] = new StepSpec("caddyread-{$node}", $node, 'file.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
+            if (in_array("identity-{$node}", $identities, true)) {
+                $reads[] = "identity-{$node}";
+            }
+            foreach (array_keys($pools) as $index) {
+                $steps[] = new StepSpec($reads[] = "poolread-{$node}-{$index}", $node, 'file.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
+            }
+            $steps[] = new StepSpec("guard-{$node}", 0, 'route.guard', 'gateway', $reads, budgetMs: 30_000);
+            $steps[] = new StepSpec("caddyunlink-{$node}", $node, 'file.ensure', (string) $node, ["guard-{$node}"], budgetMs: 60_000, resendMs: 10_000);
+            $steps[] = new StepSpec("withdraw-{$node}", $node, 'config.apply', (string) $node, ["caddyunlink-{$node}"], budgetMs: 600_000, resendMs: 30_000);
+            $steps[] = new StepSpec($last = "poll-{$node}", $node, 'http.probe', (string) $node, ["withdraw-{$node}"], budgetMs: 60_000, resendMs: 10_000);
+            // The pools converge once Caddy no longer routes to the scope, as the Swamp chart's pool step follows its withdrawal. A
+            // pool that fails its write, test or reload is put back by config.apply, and the Caddyfile the Gateway captured at
+            // admission goes back too, so the Route keeps serving as on main (`caddyback`, only after that failure).
+            if ($pools !== []) {
+                self::poolForms($operation, $node);
+                $steps[] = new StepSpec("pools-{$node}", $node, 'config.apply', (string) $node, [$last], budgetMs: 600_000, resendMs: 30_000);
+                $last = "pools-{$node}";
+                $steps[] = new StepSpec("caddyback-{$node}", $node, 'config.apply', (string) $node, ["withdraw-{$node}"], budgetMs: 600_000, resendMs: 30_000, onFailure: true);
+            }
+            // The leaves go only once the Caddy that served them no longer names them.
+            $done = [];
+            foreach (array_keys($leaves) as $index) {
+                foreach (['leaf', 'leafhome'] as $copy) {
+                    $steps[] = new StepSpec($done[] = "{$copy}-{$node}-{$index}", $node, 'file.ensure', (string) $node, [$last], budgetMs: 60_000, resendMs: 10_000);
+                }
+            }
+            $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', $done === [] ? [$last] : $done, budgetMs: 60_000);
         }
 
         return $steps;
     }
 
+    /**
+     * Refuses the start, in its bind transaction, while another open Route write on either engine writes or holds a Node this
+     * removal reads or writes (RouteWriteNodes): the serving Nodes and the VPN Nodes. The engine rewrites their whole files.
+     */
+    public static function holdNodes(Operation $operation): void
+    {
+        if ($operation->kind === self::Kind) {
+            RouteWriteNodes::refuseEngineBeside($operation, RouteWriteNodes::of($operation->input ?? []));
+        }
+    }
+
     public function input(Operation $operation, string $step, EngineRun $run): array
     {
-        [$kind, $index] = explode('-', $step, 2);
+        $parts = explode('-', $step);
+        $index = (int) ($parts[1] ?? 0);
 
-        return match ($kind) {
-            'dns' => self::dnsInput($operation, (int) $index),
-            'withdraw' => $this->withdrawInput($operation, (int) $index),
+        return match ($parts[0]) {
+            'dnsread' => ['path' => $parts[2] === 'records' ? self::Records : self::Catalog],
+            'dns' => self::dnsInput($operation, $index, $run),
+            'caddyread' => ['path' => self::Caddyfile],
+            'dnsunlink', 'caddyunlink' => self::unlink($step, $run),
+            'account' => ['user' => self::account($operation, $index)],
+            'poolread' => ['path' => self::pools($operation, $index)[(int) $parts[2]]['path']],
+            'pools' => self::poolsInput($operation, $index, $run),
+            'caddyback' => self::caddyBack($operation, $index),
+            'leaf', 'leafhome' => self::leafInput($operation, $index, (int) $parts[2], $parts[0] === 'leafhome', $run),
+            'withdraw' => self::withdrawInput($operation, $index, $run),
+            'poll' => ['url' => self::Admin, 'budget_ms' => self::AdminBudgetMs,
+                'lacks' => array_map(static fn (string $domain): string => '"'.$domain.'"', self::domains($operation))],
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
+    }
+
+    /** A removal of a link runs only when the read found a link in the file's place (or another kind, which its input refuses). */
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
+    {
+        $kind = explode('-', $step, 2)[0];
+
+        if ($kind === 'caddyback') {
+            return ($run->steps['pools-'.explode('-', $step)[1]] ?? null)?->status === 'failed';
+        }
+        if ($kind === 'pools') {
+            return self::poolsInput($operation, (int) explode('-', $step)[1], $run)['files'] !== [];
+        }
+
+        return ! in_array($kind, ['dnsunlink', 'caddyunlink'], true) || ! in_array(self::read($run, self::readOf($step))['kind'], ['absent', 'file'], true);
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string
@@ -116,6 +255,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
 
         return match ($kind) {
             'grace' => self::grace($run),
+            'guard' => self::caddyGuard($operation, (int) explode('-', $step, 2)[1], $run),
+            'identity' => 'the account resolves: home '.self::identity($run, (int) explode('-', $step, 2)[1])['home'],
             'sibling' => $this->sibling($operation, (int) explode('-', $step, 2)[1]),
             default => throw new LogicException("Step [{$step}] runs on a Node."),
         };
@@ -156,7 +297,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     public static function chartStep(string $name): string
     {
         [$kind] = explode('-', $name, 2);
-        $index = str_contains($name, '-') ? explode('-', $name, 2)[1] : '0';
+        $index = explode('-', $name)[1] ?? '0';
 
         return (self::Labels[$kind] ?? throw new LogicException("Step [{$name}] has no chart label.")).'-'.$index;
     }
@@ -224,58 +365,372 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     }
 
     /**
-     * A VPN Node's records and catalog without the Route, each with the digest of the bytes the Gateway rendered from.
-     *
-     * @return array{records: array<string, mixed>, catalog: array<string, mixed>}
+     * Refuses, before any write, a Caddyfile that holds neither the render the Gateway captured at admission nor the desired one:
+     * a change outside this Route (`owned_revision_conflict`). A link in its place passes: `caddyunlink` removes it. A missing
+     * Caddyfile or any other kind refuses, as main's withdrawal failed to read it.
      */
-    private static function dnsInput(Operation $operation, int $index): array
+    private static function caddyGuard(Operation $operation, int $node, EngineRun $run): string
     {
-        $row = RouteExecutionProof::objects(self::plan($operation)['dns'])[$index] ?? throw new LogicException("No DNS row {$index}.");
-        $guard = self::guard($operation, ValidatedData::integer($row['node_id']));
+        if (isset($run->steps["account-{$node}"])) {
+            self::identity($run, $node);
+            self::poolsInput($operation, $node, $run);
+        }
+        $read = self::read($run, "caddyread-{$node}");
+        if ($read['kind'] === 'link') {
+            return 'a link in the Caddyfile\'s place, removed before the write';
+        }
+        if ($read['kind'] !== 'file' || ! in_array($read['sha256'], [self::digest(self::guard($operation, $node), 'caddy'), hash('sha256', self::caddy($operation, $node))], true)) {
+            throw new EngineStepRefusal('owned_revision_conflict', "The Caddyfile on Node {$node} changed outside this Route.");
+        }
 
-        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])], 'from_sha256' => self::digest($guard, 'records')],
-            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])], 'from_sha256' => self::digest($guard, 'catalog')]];
+        return 'the Caddyfile holds the render it was captured from';
     }
 
     /**
-     * One Node's `route.withdraw_site` input: the Caddyfile and pools without the Route, the Route's leaf scopes there, and
-     * the digest of the Caddyfile the Gateway rendered from.
+     * A VPN Node's records and catalog without the Route. Each must still hold the bytes the Gateway rendered from at admission,
+     * unless its read already found the desired bytes; the catalog may hold that state as Swamp's withdrawal or the canonical form
+     * writes it; a link that `dnsunlink` removed is written without a guard. Before the
+     * reads, a null run renders the order only to measure it.
      *
      * @return array<string, mixed>
      */
-    private function withdrawInput(Operation $operation, int $node): array
+    private static function dnsInput(Operation $operation, int $index, ?EngineRun $run): array
     {
-        $plan = self::plan($operation);
-        $mine = static fn (array $phase, string $list): array => array_values(array_filter(RouteExecutionProof::objects($phase[$list] ?? []),
-            static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
-        $nodes = is_array($plan['nodes'] ?? null) ? $plan['nodes'] : [];
+        $row = RouteExecutionProof::objects(self::plan($operation)['dns'])[$index] ?? throw new LogicException("No DNS row {$index}.");
+        $guard = self::guard($operation, ValidatedData::integer($row['node_id']));
+        $file = static function (string $path, string $content, string $file, string $admitted) use ($run, $index, $guard): array {
+            $read = $run === null ? null : self::read($run, "dnsread-{$index}-{$file}");
+            $from = match (true) {
+                $read === null => self::digest($guard, $admitted),
+                $read['kind'] === 'link' => null,
+                $read['kind'] === 'file' && $read['sha256'] === hash('sha256', $content) => $read['sha256'],
+                // The admitted catalog in another writer's bytes: Swamp's withdrawal, or the canonical form.
+                $read['kind'] === 'file' && $file === 'catalog' && in_array($read['sha256'], array_filter([$guard['catalog_swamp'] ?? null, $guard['catalog'] ?? null]), true) => $read['sha256'],
+                default => self::digest($guard, $admitted),
+            };
+
+            return ['path' => $path, 'content' => ['blob' => ['content' => $content]], 'from_sha256' => $from, 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
+        };
+
+        return ['lock' => self::DnsLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/dns-{$index}",
+            'files' => [$file(self::Records, ValidatedData::string($row['records']), 'records', 'records'),
+                $file(self::Catalog, ValidatedData::string($row['catalog']), 'catalog', 'catalog_file')],
+            'validators' => [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => ['.dpkg-dist', '.dpkg-old', '.dpkg-new']]],
+            'units' => [['unit' => 'dnsmasq.service', 'load' => 'restart'], ['unit' => 'orbit-private-dns.service', 'load' => 'restart']]];
+    }
+
+    /**
+     * One Node's Caddyfile without the Route, guarded by the digest its read answered (the guard step checked it against the
+     * admission render), or unguarded after a link in its place went; validated by Caddy and reloaded on every run, so a
+     * repeat after a crash still makes the withdrawal live.
+     *
+     * @return array<string, mixed>
+     */
+    private static function withdrawInput(Operation $operation, int $node, ?EngineRun $run): array
+    {
+        $read = $run === null ? null : self::read($run, "caddyread-{$node}");
+
+        return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/withdraw-{$node}",
+            'files' => [['path' => self::Caddyfile, 'content' => ['blob' => ['content' => self::caddy($operation, $node)]],
+                'from_sha256' => $read['sha256'] ?? null, 'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
+            'validators' => [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']],
+            'units' => [['unit' => 'caddy.service', 'load' => 'reload']]];
+    }
+
+    /**
+     * The removal of the link a read found in a file's place, never following it. Any other kind but a plain file refuses.
+     *
+     * @return array<string, mixed>
+     */
+    private static function unlink(string $step, EngineRun $run): array
+    {
+        $read = self::read($run, self::readOf($step));
+        if ($read['kind'] !== 'link') {
+            throw new EngineStepRefusal('owned_revision_conflict', "Step [{$step}] found a {$read['kind']} in the file's place.");
+        }
+        $parts = explode('-', $step);
+
+        return ['state' => 'absent', 'path' => $parts[0] === 'caddyunlink' ? self::Caddyfile : ($parts[2] === 'records' ? self::Records : self::Catalog)];
+    }
+
+    /**
+     * The account the Node serves the Route's sites as, in the executor's shape.
+     */
+    private static function account(Operation $operation, int $node): string
+    {
+        $nodes = is_array(self::plan($operation)['nodes'] ?? null) ? self::plan($operation)['nodes'] : [];
         $account = ValidatedData::object($nodes[$node] ?? [])['account'] ?? null;
-        if (! is_string($account) || preg_match(RouteEngineFlow::Name, $account) !== 1) {
-            throw new EngineUnsupported("Node {$node} has no account in the executor's shape.");
+
+        return is_string($account) && preg_match(RouteEngineFlow::Name, $account) === 1 ? $account : throw new EngineUnsupported("Node {$node} has no account in the executor's shape.");
+    }
+
+    /**
+     * What `account.read` answered for the Node's account. An absent account refuses: nothing is written or removed for it.
+     *
+     * @return array{gid: int, group: string, home: string}
+     */
+    private static function identity(EngineRun $run, int $node): array
+    {
+        $read = json_decode((string) $run->output("account-{$node}"), true);
+        if (! is_array($read) || ($read['state'] ?? null) !== 'present') {
+            throw new EngineStepRefusal('account.absent', "Node {$node} does not resolve the Route's account.");
         }
-        $caddy = $mine(ValidatedData::object($plan['retire']), 'caddy');
+        $home = $read['home'] ?? null;
+        if (! is_int($read['gid'] ?? null) || ! is_string($read['group'] ?? null) || ! is_string($home) || ! str_starts_with($home, '/') || str_contains($home, '..')) {
+            throw new LogicException("Step [account-{$node}] answered no account in the expected shape.");
+        }
+
+        return ['gid' => $read['gid'], 'group' => $read['group'], 'home' => rtrim($home, '/')];
+    }
+
+    /**
+     * The Node's PHP-FPM pools without the Route, as the Gateway rendered them, each with the shared pool's render at admission
+     * (`php:<version>`) when it has one.
+     *
+     * @return list<array{version: string, user: ?string, path: string, content: string, from: ?string}>
+     */
+    private static function pools(Operation $operation, int $node): array
+    {
+        $plan = ValidatedData::object(self::plan($operation)['pools']);
+        $mine = static fn (string $list): array => array_values(array_filter(RouteExecutionProof::objects($plan[$list] ?? []),
+            static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
         $guard = self::guard($operation, $node);
-        $from = self::digest($guard, 'caddy');
-        if ($caddy === []) {
-            throw new EngineUnsupported("Node {$node} has no rendered Caddyfile to withdraw from.");
+
+        return array_map(static function (array $pool) use ($guard): array {
+            $version = ValidatedData::string($pool['version']);
+            $user = is_string($pool['user']) ? $pool['user'] : null;
+            $from = $user === null && is_string($guard['php:'.$version] ?? null) ? $guard['php:'.$version] : null;
+
+            return ['version' => $version, 'user' => $user, 'path' => $user === null ? "/etc/php/{$version}/fpm/pool.d/orbit-scopes.conf" : "/etc/orbit/php-fpm/{$user}/generated/pool.conf",
+                'content' => ValidatedData::string(ValidatedData::object(ValidatedData::object($pool['content'])['blob'])['content']), 'from' => $from];
+        }, RouteEngineFlow::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')));
+    }
+
+    /**
+     * The pools rendered whole for this Node (what withdraw.rs `merge_pool` did on the Node): the account's group as its gid and
+     * its home in place. A shared pool must still hold its render at admission or the desired one, its group as the gid or the
+     * group's name, else `owned_revision_conflict`; a guarded pool that is absent stays absent. Each file is guarded by its read.
+     *
+     * @return array<string, mixed>
+     */
+    private static function poolsInput(Operation $operation, int $node, ?EngineRun $run): array
+    {
+        $identity = $run === null ? ['gid' => 0, 'group' => 'root', 'home' => '/root'] : self::identity($run, $node);
+        $render = static fn (string $text, string $group): string => str_replace([SharedPhpPoolInput::Group, SharedPhpPoolInput::Home],
+            [$group, $identity['home']], $text);
+        $files = $validators = $units = [];
+        foreach (self::pools($operation, $node) as $index => $pool) {
+            $read = $run === null ? ['kind' => 'absent', 'sha256' => null] : self::read($run, "poolread-{$node}-{$index}");
+            if ($read['kind'] !== 'absent' && $read['kind'] !== 'file') {
+                throw new EngineStepRefusal('owned_revision_conflict', "A {$read['kind']} is in the place of {$pool['path']}.");
+            }
+            if ($pool['from'] !== null) {
+                if ($read['kind'] === 'absent') {
+                    continue;
+                }
+                $known = [];
+                foreach ([$pool['from'], $pool['content']] as $text) {
+                    foreach (self::forms(str_replace(SharedPhpPoolInput::Home, $identity['home'], $text), [(string) $identity['gid'], $identity['group']]) as $form) {
+                        $known[hash('sha256', $form)] = true;
+                    }
+                }
+                if (! isset($known[(string) $read['sha256']])) {
+                    throw new EngineStepRefusal('owned_revision_conflict', "{$pool['path']} changed outside this Route.");
+                }
+            }
+            $files[] = ['path' => $pool['path'], 'content' => ['blob' => ['content' => $render($pool['content'], (string) $identity['gid'])]],
+                'from_sha256' => $read['sha256'], 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
+            $validators[] = $pool['user'] === null ? ['kind' => 'php-fpm', 'version' => $pool['version']]
+                : ['kind' => 'php-fpm', 'version' => $pool['version'], 'fpm_config' => "/etc/orbit/php-fpm/{$pool['user']}/generated/php-fpm.conf",
+                    'ini_scan_dir' => ["/etc/php/{$pool['version']}/fpm/conf.d", "/etc/orbit/php-fpm/{$pool['user']}/generated"]];
+            $units[] = ['unit' => $pool['user'] === null ? "php{$pool['version']}-fpm.service" : "orbit-{$pool['user']}-php{$pool['version']}-fpm.service", 'load' => 'reload'];
         }
+
+        return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/pools-{$node}",
+            'files' => $files, 'validators' => $validators, 'units' => $units];
+    }
+
+    /** The most scopes a shared pool may hold on the engine: each scope's group has two forms, so the guard renders 2^n files. */
+    public const int PoolFormScopes = 8;
+
+    /** A shared pool with more scopes than the guard renders the forms of runs on Swamp. */
+    private static function poolForms(Operation $operation, int $node): void
+    {
+        foreach (self::pools($operation, $node) as $pool) {
+            foreach (array_filter([$pool['from'], $pool['content']]) as $text) {
+                if (count(self::sections($text)[1]) > self::PoolFormScopes) {
+                    throw new EngineUnsupported('A shared pool with more scopes than the guard renders runs on Swamp.');
+                }
+            }
+        }
+    }
+
+    /**
+     * Every file the pool writers produce from one render: each scope's group as the gid or the group's name, independently (Swamp's
+     * merge keeps an unchanged scope's live bytes, so a pool can mix both), and the render with or without the blank line that
+     * separated its last scope from a scope a merge removed since.
+     *
+     * @param  list<string>  $groups
+     * @return list<string>
+     */
+    public static function forms(string $text, array $groups): array
+    {
+        [$prefix, $scopes] = self::sections($text);
+        $files = [$prefix];
+        foreach ($scopes as $scope) {
+            $next = [];
+            foreach ($files as $file) {
+                foreach (array_unique($groups) as $group) {
+                    $next[] = $file.str_replace(SharedPhpPoolInput::Group, $group, $scope);
+                }
+            }
+            $files = $next;
+        }
+        $forms = [];
+        foreach ($files as $file) {
+            $bare = rtrim($file, "\n")."\n";
+            array_push($forms, $file, $bare, $bare."\n");
+        }
+
+        return array_values(array_unique($forms));
+    }
+
+    /**
+     * A pool file as its text before the first scope and each `[scope]` section with its lines, as the writers split it.
+     *
+     * @return array{string, list<string>}
+     */
+    private static function sections(string $text): array
+    {
+        $prefix = '';
+        $scopes = [];
+        foreach (preg_split('/(?<=\n)/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $line) {
+            if (str_starts_with(trim($line), '[')) {
+                $scopes[] = $line;
+            } elseif ($scopes === []) {
+                $prefix .= $line;
+            } else {
+                $scopes[array_key_last($scopes)] .= $line;
+            }
+        }
+
+        return [$prefix, $scopes];
+    }
+
+    /**
+     * The Caddyfile the Gateway captured at admission, put back after a pool failed, guarded by the withdrawal just written.
+     *
+     * @return array<string, mixed>
+     */
+    private static function caddyBack(Operation $operation, int $node): array
+    {
+        $captured = self::guard($operation, $node)['caddy_content'] ?? null;
+        if (! is_string($captured) || hash('sha256', $captured) !== self::digest(self::guard($operation, $node), 'caddy')) {
+            throw new LogicException("Node {$node} has no captured Caddyfile.");
+        }
+
+        return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/caddyback-{$node}",
+            'files' => [['path' => self::Caddyfile, 'content' => ['blob' => ['content' => $captured]], 'from_sha256' => hash('sha256', self::caddy($operation, $node)),
+                'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
+            'validators' => [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']],
+            'units' => [['unit' => 'caddy.service', 'load' => 'reload']]];
+    }
+
+    /**
+     * The Route's leaf scopes on this Node.
+     *
+     * @return list<string>
+     */
+    private static function leaves(Operation $operation, int $node): array
+    {
+        $account = null;
         $leaves = [];
-        foreach (RouteExecutionProof::objects($plan['cleanup']) as $row) {
-            $leaf = ValidatedData::object($row['leaf']);
+        foreach (RouteExecutionProof::objects(self::plan($operation)['cleanup']) as $row) {
             if (ValidatedData::integer($row['node_id']) !== $node) {
                 continue;
             }
-            if (ValidatedData::string($leaf['user']) !== $account || preg_match(RouteEngineFlow::Scope, ValidatedData::string($leaf['scope'])) !== 1) {
+            $leaf = ValidatedData::object($row['leaf']);
+            $account ??= self::account($operation, $node);
+            $scope = ValidatedData::string($leaf['scope']);
+            if (ValidatedData::string($leaf['user']) !== $account || preg_match(RouteEngineFlow::Scope, $scope) !== 1 || str_contains($scope, '..')) {
                 throw new EngineUnsupported('A leaf outside the account or scope shape runs on Swamp.');
             }
-            $leaves[] = ValidatedData::string($leaf['scope']);
+            $leaves[] = $scope;
         }
-        $pools = ValidatedData::object($plan['pools']);
-        $php = RouteEngineFlow::pools($mine($pools, 'php_files'), $mine($pools, 'php_tests'), $mine($pools, 'php_reloads'));
 
-        return ['account' => $account, 'domains' => self::domains($operation), 'leaves' => array_values(array_unique($leaves)),
-            'php' => array_map(static fn (array $pool): array => $pool['user'] === null && is_string($guard['php:'.$pool['version']] ?? null)
-                ? [...$pool, 'from' => ['blob' => ['content' => $guard['php:'.$pool['version']]]]] : $pool, $php), 'caddy' => ['from_sha256' => $from, 'content' => ['blob' => ['content' => ValidatedData::string(end($caddy)['content'])]]]];
+        return array_values(array_unique($leaves));
+    }
+
+    /**
+     * One leaf folder gone with its content: the Caddy copy, or the account's copy in its home as the Node resolves it.
+     *
+     * @return array<string, mixed>
+     */
+    private static function leafInput(Operation $operation, int $node, int $index, bool $home, EngineRun $run): array
+    {
+        $scope = self::leaves($operation, $node)[$index] ?? throw new LogicException("No leaf {$index} on Node {$node}.");
+
+        return ['state' => 'absent', 'recursive' => true, 'path' => $home ? self::identity($run, $node)['home']."/.orbit/certificates/{$scope}" : self::Certificates."/{$scope}"];
+    }
+
+    /** The read step an unlink step follows: `dnsunlink-0-records` → `dnsread-0-records`, `caddyunlink-3` → `caddyread-3`. */
+    private static function readOf(string $step): string
+    {
+        return str_replace(['dnsunlink-', 'caddyunlink-'], ['dnsread-', 'caddyread-'], $step);
+    }
+
+    /** The Caddyfile the Node serves once the Route is gone, as the Gateway rendered it. */
+    private static function caddy(Operation $operation, int $node): string
+    {
+        $caddy = array_values(array_filter(RouteExecutionProof::objects(ValidatedData::object(self::plan($operation)['retire'])['caddy'] ?? []),
+            static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
+
+        return $caddy === [] ? throw new EngineUnsupported("Node {$node} has no rendered Caddyfile to withdraw from.") : ValidatedData::string(end($caddy)['content']);
+    }
+
+    /**
+     * What a `file.read` step found: `absent`, a plain `file` with its digest, a `link`, or another kind by its type.
+     *
+     * @return array{kind: string, sha256: ?string}
+     */
+    private static function read(EngineRun $run, string $step): array
+    {
+        $read = json_decode((string) $run->output($step), true);
+        if (! is_array($read) || ! in_array($read['state'] ?? null, ['absent', 'present'], true)) {
+            throw new LogicException("Step [{$step}] has no read.");
+        }
+        if ($read['state'] === 'absent') {
+            return ['kind' => 'absent', 'sha256' => null];
+        }
+        $type = is_string($read['type'] ?? null) ? $read['type'] : 'unknown';
+        if ($type === 'file' && ! is_string($read['sha256'] ?? null)) {
+            throw new LogicException("Step [{$step}] read a file without its digest.");
+        }
+
+        return ['kind' => $type === 'symlink' ? 'link' : $type, 'sha256' => $type === 'file' ? $read['sha256'] : null];
+    }
+
+    /**
+     * Each Node with work is a development Node: an app-dev Node serves the Route, a VPN Node answers its names. Anything else
+     * runs on Swamp (ORB-6337).
+     *
+     * @param  list<int>  $serving
+     * @param  list<int>  $vpns
+     */
+    private static function development(array $serving, array $vpns): void
+    {
+        $has = static fn (int $node, RoleName $role): bool => Node::query()->whereKey($node)
+            ->whereHas('roles', static fn ($query) => $query->where('role', $role)->where('status', LifecycleStatus::Active))->exists();
+        foreach ($serving as $node) {
+            if (! $has($node, RoleName::AppDev)) {
+                throw new EngineUnsupported("Node {$node} is no development Node.");
+            }
+        }
+        foreach ($vpns as $node) {
+            if (! $has($node, RoleName::Vpn)) {
+                throw new EngineUnsupported("Node {$node} is no VPN Node.");
+            }
+        }
     }
 
     /**

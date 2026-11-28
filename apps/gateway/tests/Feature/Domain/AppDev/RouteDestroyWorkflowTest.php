@@ -20,6 +20,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 use App\Models\Process as ManagedProcess;
 use App\Models\Project;
 use App\Models\Route;
@@ -245,13 +246,49 @@ it('records the whole-file digests the engine guards with, and builds its steps 
     [$operation] = destroyAdmission($route);
 
     expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
-        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog'])]);
+        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog']),
+        'catalog_file' => hash('sha256', $before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
     $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
-    expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
-        ->and($flow->input($operation, "withdraw-{$node->id}", new EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
-        ->toBe(hash('sha256', $before['caddy']['content']));
+    $read = (new OperationEngineStep)->forceFill(['name' => "caddyread-{$node->id}", 'status' => 'done',
+        'output' => json_encode(['state' => 'present', 'type' => 'file', 'sha256' => hash('sha256', $before['caddy']['content']), 'uid' => 0, 'gid' => 997, 'mode' => '0640'])]);
+    $account = (new OperationEngineStep)->forceFill(['name' => "account-{$node->id}", 'status' => 'done',
+        'output' => json_encode(['state' => 'present', 'user' => 'orbit', 'uid' => 1000, 'gid' => 1000, 'group' => 'orbit', 'home' => '/home/orbit'])]);
+    $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read, "account-{$node->id}" => $account], 0, null);
+    // The real capture removes the Route's leaf, so the Node's account is read first (account.read).
+    expect($steps)->toBe(["account-{$node->id}", "identity-{$node->id}", 'dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace',
+        "caddyread-{$node->id}", "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "leaf-{$node->id}-0", "leafhome-{$node->id}-0", "leaf-{$node->id}-1", "leafhome-{$node->id}-1", "sibling-{$node->id}"])
+        ->and($flow->local($operation, "guard-{$node->id}", $run))->toBeString()
+        ->and($flow->input($operation, "withdraw-{$node->id}", $run)['files'][0]['from_sha256'])->toBe(hash('sha256', $before['caddy']['content']));
 });
+
+it('persists main\'s error code and failed step through the real projection when a primitive fails', function (string $step, string $code, string $main, string $chart): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    [$operation] = destroyAdmission(destroyFixture($node, 'gone', 'gone'));
+    $operation->update(['state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
+    $name = str_replace('{node}', (string) $node->id, $step);
+    $failed = (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'failed', 'error_code' => $code, 'on_failure' => false, 'optional' => false]);
+
+    app(RouteDestroyEngineFlow::class)->finish($operation, new EngineRun($operation->id, [$name => $failed], 0, 1));
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe($main)
+        ->and($operation->failed_step)->toBe(str_replace('{node}', (string) $node->id, $chart));
+})->with([
+    // Parity with main, where the DNS write was one dns.publish_records step and the read, guard, write, reload and poll of the
+    // Caddyfile one route.withdraw_site step: each failure inside that step persists the step's code.
+    'the DNS records read' => ['dnsread-0-records', 'file.read_failed', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'a DNS guard' => ['dns-0', 'owned_revision_conflict', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'a dnsmasq test' => ['dns-0', 'config.validate_failed', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'the grace' => ['grace', 'route.dns_grace_failed', 'route.dns_grace_failed', 'Wait the DNS grace-0'],
+    'the Caddyfile read' => ['caddyread-{node}', 'file.read_failed', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddyfile changed outside the Route' => ['guard-{node}', 'owned_revision_conflict', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddyfile guard at the write' => ['withdraw-{node}', 'owned_revision_conflict', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddy reload' => ['withdraw-{node}', 'config.load_failed', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'the reload poll' => ['poll-{node}', 'http.probe_unmet', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'the sibling probe' => ['sibling-{node}', 'engine.sibling_failed', 'route.removal_check_failed', 'Check nothing is left-{node}'],
+]);
 
 it('records no engine digests while route.destroy is not an engine kind', function (): void {
     config(['orbit.engine.kinds' => []]);
