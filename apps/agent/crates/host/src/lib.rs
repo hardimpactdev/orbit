@@ -82,13 +82,13 @@ pub trait System {
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
 
-    /// Runs a command with a time limit and returns its exit code, `None` when a signal ended it, and its standard output,
-    /// whatever the code.
+    /// Runs a command with a time limit and returns its exit code, `None` when a signal ended it, and its standard output as
+    /// the exact bytes, whatever the code.
     ///
     /// # Errors
     ///
     /// A message when the command cannot start.
-    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String>;
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
 
     /// A user's id by name.
     ///
@@ -169,9 +169,9 @@ impl System for NodeSystem {
         }
     }
 
-    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String> {
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
         let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
-        Ok((output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned()))
+        Ok((output.status.code(), output.stdout))
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

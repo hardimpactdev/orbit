@@ -8,6 +8,9 @@ use serde_json::json;
 
 use super::*;
 
+/// What a command answers: its exit code, `None` for a signal, and its output bytes.
+type Answer = (Option<i32>, Vec<u8>);
+
 /// A scratch root: every user and group is the test's own, blobs live in a map, and commands are recorded and answered
 /// by the first rule whose program they run.
 struct Fake {
@@ -29,9 +32,9 @@ struct Fake {
     /// A destination and a file that it becomes a hard link to on the next user lookup, which a primitive makes between
     /// reading its input and changing the destination.
     relink: RefCell<Option<(std::path::PathBuf, std::path::PathBuf)>>,
-    /// What `getent <database> -- <key>` answers, by `<database> <key>`: its exit code and output. A key it does not hold
+    /// What `getent -- <database> <key>` answers, by `<database> <key>`: its exit code and output bytes. A key it does not hold
     /// exits 2.
-    getent: RefCell<BTreeMap<String, (Option<i32>, String)>>,
+    getent: RefCell<BTreeMap<String, Answer>>,
 }
 
 impl Fake {
@@ -199,13 +202,13 @@ impl System for Fake {
         Ok(me().1)
     }
 
-    fn status(&self, _seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String> {
+    fn status(&self, _seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
         self.ran.borrow_mut().push(argv.to_vec());
-        let [program, database, dashes, key] = argv else { return Err("not a getent call".to_owned()) };
+        let [program, dashes, database, key] = argv else { return Err("not a getent call".to_owned()) };
         if (program.as_str(), dashes.as_str()) != ("/usr/bin/getent", "--") {
             return Err("not a fixed getent argv".to_owned());
         }
-        Ok(self.getent.borrow().get(&format!("{database} {key}")).cloned().unwrap_or((Some(2), String::new())))
+        Ok(self.getent.borrow().get(&format!("{database} {key}")).cloned().unwrap_or((Some(2), Vec::new())))
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -745,7 +748,7 @@ impl System for Late {
         self.fake.run(seconds, argv)
     }
 
-    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String> {
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
         self.fake.status(seconds, argv)
     }
 
@@ -1148,14 +1151,14 @@ fn accounts() -> Fake {
         ("group", "1000", "alice:x:1000:"),
         ("group", "33", "www-data:x:33:caddy"),
     ] {
-        fake.answer(database, key, Some(0), &format!("{line}\n"));
+        fake.answer(database, key, Some(0), format!("{line}\n").as_bytes());
     }
     fake
 }
 
 impl Fake {
-    fn answer(&self, database: &str, key: &str, code: Option<i32>, out: &str) {
-        self.getent.borrow_mut().insert(format!("{database} {key}"), (code, out.to_owned()));
+    fn answer(&self, database: &str, key: &str, code: Option<i32>, out: &[u8]) {
+        self.getent.borrow_mut().insert(format!("{database} {key}"), (code, out.to_vec()));
     }
 }
 
@@ -1163,17 +1166,17 @@ impl Fake {
 fn account_read_answers_an_existing_users_ids_primary_group_and_home() {
     let fake = accounts();
     let read = account_read(&fake, &json!({"user": "alice"})).expect("read");
-    assert_eq!(read, Account::Present { uid: 1000, gid: 1000, group: "alice".to_owned(), home: "/home/alice".to_owned() });
+    assert_eq!(read, Account::Present { user: "alice".to_owned(), uid: 1000, gid: 1000, group: "alice".to_owned(), home: "/home/alice".to_owned() });
     // The answer holds the ids, the group's name and the home, and nothing else: no password and no shadow data.
-    assert_eq!(serde_json::to_value(&read).expect("json"), json!({"state": "present", "uid": 1000, "gid": 1000, "group": "alice", "home": "/home/alice"}));
-    // Two fixed getent calls; only the checked name and the gid it read are arguments.
-    assert_eq!(*fake.ran.borrow(), [strings(&["/usr/bin/getent", "passwd", "--", "alice"]), strings(&["/usr/bin/getent", "group", "--", "1000"])]);
+    assert_eq!(serde_json::to_value(&read).expect("json"), json!({"state": "present", "user": "alice", "uid": 1000, "gid": 1000, "group": "alice", "home": "/home/alice"}));
+    // Two fixed getent calls with `--` first; only the checked name and the gid it read are arguments.
+    assert_eq!(*fake.ran.borrow(), [strings(&["/usr/bin/getent", "--", "passwd", "alice"]), strings(&["/usr/bin/getent", "--", "group", "1000"])]);
 }
 
 #[test]
 fn account_read_answers_the_home_nss_holds() {
     let fake = accounts();
-    assert_eq!(account_read(&fake, &json!({"user": "www-data"})).expect("read"), Account::Present { uid: 33, gid: 33, group: "www-data".to_owned(), home: "/var/www".to_owned() });
+    assert_eq!(account_read(&fake, &json!({"user": "www-data"})).expect("read"), Account::Present { user: "www-data".to_owned(), uid: 33, gid: 33, group: "www-data".to_owned(), home: "/var/www".to_owned() });
 }
 
 #[test]
@@ -1182,7 +1185,7 @@ fn account_read_answers_absent_only_when_getent_passwd_has_no_such_user() {
     let read = account_read(&fake, &json!({"user": "nobody-here"})).expect("absent");
     assert_eq!(read, Account::Absent);
     assert_eq!(serde_json::to_value(read).expect("json"), json!({"state": "absent"}));
-    assert_eq!(*fake.ran.borrow(), [strings(&["/usr/bin/getent", "passwd", "--", "nobody-here"])]);
+    assert_eq!(*fake.ran.borrow(), [strings(&["/usr/bin/getent", "--", "passwd", "nobody-here"])]);
 }
 
 #[test]
@@ -1200,7 +1203,7 @@ fn account_read_takes_only_a_user_object() {
 #[test]
 fn account_read_fails_a_primary_group_nss_cannot_resolve() {
     let fake = accounts();
-    fake.answer("group", "1000", Some(2), "");
+    fake.answer("group", "1000", Some(2), b"");
     assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("no primary group").code, "account.read_failed");
 }
 
@@ -1209,10 +1212,10 @@ fn account_read_fails_every_other_getent_answer_and_never_answers_absent() {
     // 1: a bad argument; 3: enumeration unsupported; 124: the time limit; 127: no getent; None: killed by a signal.
     for code in [Some(1), Some(3), Some(124), Some(127), None] {
         let fake = accounts();
-        fake.answer("passwd", "alice", code, "");
+        fake.answer("passwd", "alice", code, b"");
         assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("passwd").code, "account.read_failed", "{code:?}");
         let fake = accounts();
-        fake.answer("group", "1000", code, "");
+        fake.answer("group", "1000", code, b"");
         assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("group").code, "account.read_failed", "{code:?}");
     }
 }
@@ -1220,16 +1223,61 @@ fn account_read_fails_every_other_getent_answer_and_never_answers_absent() {
 #[test]
 fn account_read_fails_a_line_it_cannot_parse() {
     for line in ["", "garbage\n", "alice:x:1000:1000:Alice:/home/alice\n", "alice:x:1000:1000:A:/home/alice:/bin/sh:extra\n", "alice:x:-1:1000::/home/alice:/bin/sh\n",
-        "alice:x:1000:abc::/home/alice:/bin/sh\n", "bob:x:1000:1000::/home/bob:/bin/sh\n", "alice:x:1000:1000::/home/alice:/bin/sh\nalice:x:1001:1001::/home/a:/bin/sh\n"] {
+        "alice:x:1000:abc::/home/alice:/bin/sh\n", ":x:1000:1000::/home/alice:/bin/sh\n", "alice:x:1000:1000::/home/alice:/bin/sh\nalice:x:1001:1001::/home/a:/bin/sh\n"] {
         let fake = accounts();
-        fake.answer("passwd", "alice", Some(0), line);
+        fake.answer("passwd", "alice", Some(0), line.as_bytes());
         assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err(line).code, "account.read_failed", "{line}");
     }
     for line in ["", "alice\n", "alice:x:1001:\n", ":x:1000:\n", "alice:x:1000\n"] {
         let fake = accounts();
-        fake.answer("group", "1000", Some(0), line);
+        fake.answer("group", "1000", Some(0), line.as_bytes());
         assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err(line).code, "account.read_failed", "{line}");
     }
+}
+
+#[test]
+fn account_read_answers_the_canonical_name_nss_resolves() {
+    // A source such as sss or LDAP may resolve an alias or a case-folded name to its canonical account.
+    let fake = accounts();
+    fake.answer("passwd", "alice-ad", Some(0), b"alice:x:1000:1000:Alice:/home/alice:/bin/bash\n");
+    let read = account_read(&fake, &json!({"user": "alice-ad"})).expect("read");
+    assert_eq!(read, Account::Present { user: "alice".to_owned(), uid: 1000, gid: 1000, group: "alice".to_owned(), home: "/home/alice".to_owned() });
+}
+
+#[test]
+fn account_read_fails_bytes_that_are_not_utf8_and_never_changes_them() {
+    let fake = accounts();
+    fake.answer("passwd", "alice", Some(0), b"alice:x:1000:1000::/home/al\xffice:/bin/sh\n");
+    assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("home").code, "account.read_failed");
+    let fake = accounts();
+    fake.answer("group", "1000", Some(0), b"al\xe9ice:x:1000:\n");
+    assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("group").code, "account.read_failed");
+    // Valid UTF-8 beyond ASCII passes unchanged.
+    let fake = accounts();
+    fake.answer("passwd", "alice", Some(0), "alice:x:1000:1000::/home/ali\u{e7}e:/bin/sh\n".as_bytes());
+    assert!(matches!(account_read(&fake, &json!({"user": "alice"})).expect("read"), Account::Present { home, .. } if home == "/home/ali\u{e7}e"));
+}
+
+#[test]
+fn the_getent_argv_queries_one_key_also_under_posixly_correct() {
+    // The host's real getent, with and without POSIXLY_CORRECT, which stops option parsing at the first operand.
+    let run = |argv: &[String], posix: bool| {
+        let mut command = std::process::Command::new(&argv[0]);
+        command.args(&argv[1..]).env_remove("POSIXLY_CORRECT");
+        if posix {
+            command.env("POSIXLY_CORRECT", "1");
+        }
+        let output = command.output().expect("getent runs");
+        (output.status.code(), String::from_utf8(output.stdout).expect("utf-8"))
+    };
+    for posix in [false, true] {
+        let (code, out) = run(&account::getent_argv("passwd", "root"), posix);
+        assert_eq!(code, Some(0), "posix {posix}");
+        assert_eq!(out.lines().collect::<Vec<_>>().len(), 1, "posix {posix}: {out}");
+        assert!(out.starts_with("root:"), "posix {posix}: {out}");
+    }
+    // The argv with `--` after the database reads `--` as a second key under POSIXLY_CORRECT, and exits 2.
+    assert_eq!(run(&strings(&["/usr/bin/getent", "passwd", "--", "root"]), true).0, Some(2));
 }
 
 #[test]
@@ -1245,6 +1293,6 @@ fn account_read_repeated_answers_the_same() {
 fn account_read_reads_the_hosts_own_account_database() {
     // The Node's system, through the real getent: root's home is /root, not /home/root.
     let system = NodeSystem::new("/nonexistent");
-    assert_eq!(account_read(&system, &json!({"user": "root"})).expect("root"), Account::Present { uid: 0, gid: 0, group: "root".to_owned(), home: "/root".to_owned() });
+    assert_eq!(account_read(&system, &json!({"user": "root"})).expect("root"), Account::Present { user: "root".to_owned(), uid: 0, gid: 0, group: "root".to_owned(), home: "/root".to_owned() });
     assert_eq!(account_read(&system, &json!({"user": "no-such-user-here"})).expect("absent"), Account::Absent);
 }
