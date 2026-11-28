@@ -258,9 +258,7 @@ A failed write, read-back or validation puts every file back to its recorded pri
 
 An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `key`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends `<directory>/key.pem`, root, `caddy`, `0750`, `0640` and `/CN=Orbit`.
 
-It replaces an existing key file only when it is decisively not a key: empty, or holding no PEM block of any kind and failing `openssl pkey -inform DER`. A file with any PEM block that `openssl pkey` cannot read, an encrypted key included, fails `tls.key_unreadable` and stays. A timeout or a command that cannot start fails the order and keeps the key.
-
-On main, the action never replaced an existing file: an empty or unreadable one failed the request with `app-dev.certificate_request_failed`. It puts an existing key's owner and mode right without touching its bytes, and writes a new key through a file it creates, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
+It never replaces an existing key file. It keeps one that `openssl pkey` reads as PEM or DER, and puts its owner and mode right. A key file openssl cannot read (encrypted, a certificate only, empty or garbage), or an inspection that times out, fails the request with `app-dev.certificate_request_failed` and keeps the file. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
 
 ### The instance family
 
