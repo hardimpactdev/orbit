@@ -112,6 +112,9 @@ pub trait System {
     /// A message when the blob is not in the local cache.
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String>;
 
+    /// The executor's own folder for `config.apply`'s recovery records: never a managed path.
+    fn recovery(&self) -> PathBuf;
+
     /// The monotonic time a probe's budget is measured on.
     fn now(&self) -> Instant {
         Instant::now()
@@ -132,12 +135,13 @@ pub trait System {
 #[derive(Debug, Clone)]
 pub struct NodeSystem {
     blobs: PathBuf,
+    recovery: PathBuf,
 }
 
 impl NodeSystem {
-    /// A system that reads blobs from `blobs`, the executor's content cache.
-    pub fn new(blobs: impl Into<PathBuf>) -> Self {
-        Self { blobs: blobs.into() }
+    /// A system that reads blobs from `blobs`, the executor's content cache, and keeps recovery records in `recovery`.
+    pub fn new(blobs: impl Into<PathBuf>, recovery: impl Into<PathBuf>) -> Self {
+        Self { blobs: blobs.into(), recovery: recovery.into() }
     }
 }
 
@@ -157,6 +161,10 @@ impl System for NodeSystem {
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
         std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
+    }
+
+    fn recovery(&self) -> PathBuf {
+        self.recovery.clone()
     }
 }
 

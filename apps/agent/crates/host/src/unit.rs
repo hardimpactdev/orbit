@@ -25,6 +25,9 @@ struct Input {
 /// The longest settle budget an order may give.
 const MAX_BUDGET_MS: u64 = 300_000;
 
+/// The shortest: each `systemctl` call is bounded in whole seconds, so a budget under one second cannot be kept.
+const MIN_BUDGET_MS: u64 = 1_000;
+
 /// How often a settling unit is read again.
 const INTERVAL: Duration = Duration::from_millis(250);
 
@@ -44,12 +47,18 @@ enum State {
 /// a unit still in transition when its budget ends, or a read-back that differs.
 pub fn unit_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: Input = parse(input)?;
-    if !UNIT.is_match(&input.unit) || input.unit.starts_with('-') || input.budget_ms == 0 || input.budget_ms > MAX_BUDGET_MS {
+    if !UNIT.is_match(&input.unit) || input.unit.starts_with('-') || input.budget_ms < MIN_BUDGET_MS || input.budget_ms > MAX_BUDGET_MS {
         return Err(invalid("unit"));
     }
     let failed = |detail: String| Failure::new("unit.ensure_failed", detail);
-    let systemctl = |args: &[&str]| system.run(30, &[strings(&["/usr/bin/systemctl"]), strings(args), vec![input.unit.clone()]].concat());
+    // The budget bounds the whole action: every call gets at most the time left, and a start or stop does not wait on the
+    // unit (`--no-block`); the action polls the unit itself.
     let deadline = system.now() + Duration::from_millis(input.budget_ms);
+    let systemctl = |args: &[&str]| {
+        let left = deadline.saturating_duration_since(system.now());
+        let seconds = u32::try_from(left.as_secs() + u64::from(left.subsec_nanos() > 0)).unwrap_or(u32::MAX).max(1);
+        system.run(seconds, &[strings(&["/usr/bin/systemctl"]), strings(args), vec![input.unit.clone()]].concat())
+    };
     let settled = || -> Result<(bool, bool), String> {
         loop {
             let (enabled, active) = observe(&systemctl)?;
@@ -69,7 +78,7 @@ pub fn unit_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
         changes += 1;
     }
     if running != want_running {
-        systemctl(&[if want_running { "start" } else { "stop" }]).map_err(failed)?;
+        systemctl(&[if want_running { "start" } else { "stop" }, "--no-block"]).map_err(failed)?;
         changes += 1;
     }
     if settled().map_err(failed)? != (input.enabled, want_running) {

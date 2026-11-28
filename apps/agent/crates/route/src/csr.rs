@@ -1,7 +1,7 @@
 //! `tls.ensure_csr`: the leaf key of one certificate version, and a request for it.
 
 use std::fs::{self, File};
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::os::unix::fs::{fchown, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -67,22 +67,23 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     let gid = system.group(&input.group).map_err(failed)?;
     let mode = u32::from_str_radix(&input.key_mode, 8).map_err(|_| failed("key mode".to_owned()))?;
     let key = system.path(&input.key);
-    // Only a definite answer rotates the key: a missing file, or one that holds no PEM private key block at all (empty, cut
-    // short, or other content), matches no signed certificate. A key block openssl cannot read now, a timeout included,
-    // is inconclusive: the order fails and the key stays.
+    // A readable key is kept: openssl reads it as PEM (other blocks around it included) or as DER. Only a missing file, or
+    // one that openssl definitely fails to parse in every form, matches no signed certificate and is made new. A timeout or
+    // a command that cannot start is inconclusive: the order fails and the key stays.
     let usable = match fs::symlink_metadata(&key) {
         Ok(meta) if meta.file_type().is_file() => {
-            let text = File::options().read(true).custom_flags(NOFOLLOW).open(&key).and_then(|mut file| {
-                let mut text = Vec::new();
-                file.read_to_end(&mut text).map(|_| text)
-            });
-            let text = text.map_err(|error| failed(error.to_string()))?;
-            if key_block(&text) {
-                system.run(30, &strings(&["/usr/bin/openssl", "pkey", "-noout", "-in", &input.key])).map_err(|detail| failed(format!("{} inspection: {detail}", input.key)))?;
-                true
-            } else {
-                false
+            let mut usable = false;
+            for form in ["PEM", "DER"] {
+                match system.run(30, &strings(&["/usr/bin/openssl", "pkey", "-inform", form, "-noout", "-in", &input.key])) {
+                    Ok(_) => usable = true,
+                    Err(detail) if unparsed(&detail) => {}
+                    Err(detail) => return Err(failed(format!("{} inspection: {detail}", input.key))),
+                }
+                if usable {
+                    break;
+                }
             }
+            usable
         }
         Ok(_) => return Err(failed(format!("{} is not a plain file", input.key))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -101,10 +102,10 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     Ok(answer)
 }
 
-/// Whether `text` holds a complete PEM private key block.
-fn key_block(text: &[u8]) -> bool {
-    let text = String::from_utf8_lossy(text);
-    text.find("-----BEGIN ").is_some_and(|begin| text[begin..].lines().next().is_some_and(|line| line.ends_with("PRIVATE KEY-----")) && text[begin..].contains("-----END "))
+/// Whether openssl's error says it read the file and found no key in it: its own decoding message, not a timeout (which
+/// prints nothing) or a failure to start.
+fn unparsed(detail: &str) -> bool {
+    detail.contains("Could not read key") || detail.contains("unable to load key") || detail.contains("Could not find private key")
 }
 
 /// Puts the key's owner and mode right through a descriptor that does not follow a link, leaving its bytes alone.

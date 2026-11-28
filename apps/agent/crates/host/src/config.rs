@@ -5,16 +5,20 @@
 //! validators and the units come from the input too. Under the lock each live file must hold that digest or already the
 //! desired bytes; anything else refuses before any write. The changed files are written, every validator runs, and every
 //! unit reloads or restarts on every run, so a repeat after a crash still loads the files. A failed validation or load
-//! puts every file back to its exact prior bytes, owner and mode, and a failed load loads the old files again.
+//! puts every file back to its exact prior bytes, owner and mode, or removes it when it did not exist, and a failed load
+//! loads the old files again. The prior state is recorded in the executor's recovery folder before the first write, so a run
+//! that stopped is undone by the next run under the same lock.
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Deserialize;
+use std::os::unix::fs::PermissionsExt as _;
+
+use serde::{Deserialize, Serialize};
 
 use crate::fs::{self, Previous};
-use crate::{absolute, invalid, lock, parse, sha256, strings, BlobRef, Failure, Owner, System, DIGEST, NAME};
+use crate::{absolute, invalid, lock, parse, sha256, strings, BlobRef, Failure, Ids, Owner, System, DIGEST, NAME};
 
 static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]\.[0-9]{1,2}$").expect("a valid pattern"));
 static SUFFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\.[A-Za-z0-9_-]{1,32}$").expect("a valid pattern"));
@@ -137,70 +141,51 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
     for file in &input.files {
         desired.push((file, file.content.bytes(system)?, file.owner.ids(system, "config.write_failed")?));
     }
-    // The same check through links: a folder reached by two names holds the same files. A kept copy's name counts too, so
-    // scratch work never lands on a declared file or on the lock.
-    let kept = |file: &File| file.from_sha256.as_ref().map(|from| fs::kept(&system.path(&file.path), from));
-    let mut places: Vec<PathBuf> = input.files.iter().map(|file| system.path(&file.path)).chain(input.files.iter().filter_map(kept)).chain([system.path(&input.lock)]).map(|path| resolved(&path)).collect();
+    // The same check through links: a folder reached by two names holds the same files.
+    let mut places: Vec<PathBuf> = input.files.iter().map(|file| system.path(&file.path)).chain([system.path(&input.lock)]).map(|path| resolved(&path)).collect();
     let named = places.len();
     places.sort_unstable();
     places.dedup();
     if places.len() != named {
-        return Err(invalid("two names of one file, a kept copy's name, or the lock"));
+        return Err(invalid("two names of one file, or of the lock"));
     }
     let _lock = lock::exclusive(system, &input.lock, lock::WAIT)?;
 
-    // Every guard holds before the first write. Each file's restore point is the last usable state: what it held before this
-    // run, or, when a stopped run already moved the unvalidated candidate in place, the rendered-from bytes kept beside it. A
-    // file that existed is never restored to absence. Only a live file that holds neither digest refuses.
+    // A run under this lock that stopped before its end left its record: its files go back to the state it found first.
+    let record = Record::at(system, &input.lock);
+    record.recover(system)?;
+
+    // Every guard holds before the first write. Each file's restore point is what it held before this run: absent, or its
+    // bytes with owner and mode. Only a live file that holds neither digest refuses.
     let mut replaced: Vec<(PathBuf, Previous)> = Vec::new();
-    let mut keep: Vec<Option<PathBuf>> = Vec::new();
     let mut changes = 0;
     for (file, content, _) in &desired {
         let dest = system.path(&file.path);
-        let read = |path: &std::path::Path| fs::read(path).map_err(|error| Failure::new("config.write_failed", format!("{}: {error}", path.display())));
-        let live = read(&dest)?;
+        let live = fs::read(&dest).map_err(|error| Failure::new("config.write_failed", format!("{}: {error}", file.path)))?;
         let current = live.as_ref().map(|(bytes, _)| bytes.as_slice());
-        let copy = kept(file);
-        // A kept copy is this render's only when it holds the rendered-from bytes; any other file under that name is not ours.
-        let held = match (&copy, &file.from_sha256) {
-            (Some(copy), Some(from)) => match read(copy)? {
-                Some(bytes) if sha256(&bytes.0) == *from => Some(bytes),
-                Some(_) => return Err(Failure::new("config.write_failed", format!("{} is taken", copy.display()))),
-                None => None,
-            },
-            _ => None,
+        let guarded = match (&file.from_sha256, current) {
+            (None, None) => true,
+            (_, Some(bytes)) if bytes == content.as_slice() => true,
+            (Some(from), Some(bytes)) => sha256(bytes) == *from,
+            (Some(_) | None, _) => false,
         };
-        let previous = match (&file.from_sha256, current) {
-            (None, None) => None,
-            (None, Some(bytes)) if bytes == content.as_slice() => live.clone(),
-            (Some(from), Some(bytes)) if sha256(bytes) == *from => live.clone(),
-            (Some(_), Some(bytes)) if bytes == content.as_slice() => held.or_else(|| live.clone()),
-            _ => return Err(Failure::new("owned_revision_conflict", format!("{} changed outside this render", file.path))),
-        };
-        replaced.push((dest, Previous { content: previous }));
-        keep.push(copy);
-    }
-    let drop_kept = |keep: &[Option<PathBuf>]| {
-        for copy in keep.iter().flatten() {
-            let _ = std::fs::remove_file(copy);
+        if !guarded {
+            return Err(Failure::new("owned_revision_conflict", format!("{} changed outside this render", file.path)));
         }
-    };
+        replaced.push((dest, Previous { content: live }));
+    }
+    // The prior state is on record before the first write, so a replay after a stop restores it, absence and metadata too.
+    let paths: Vec<&str> = input.files.iter().map(|file| file.path.as_str()).collect();
+    record.write(&paths, &replaced).map_err(|error| Failure::new("config.write_failed", format!("recovery record: {error}")))?;
     let undo = |code: &'static str, detail: String, replaced: &[(PathBuf, Previous)]| match fs::restore(replaced) {
         Ok(()) => {
-            drop_kept(&keep);
+            record.drop();
             Failure::new(code, detail)
         }
+        // The record stays, so the next run under this lock restores again.
         Err(restore) => Failure::new("config.restore_failed", format!("{detail}; restore: {restore}")),
     };
-    for (((dest, previous), (file, content, ids)), copy) in replaced.iter().zip(&desired).zip(&keep) {
-        // The rendered-from bytes are kept beside the file before it changes, so a replay after a stop still knows them.
-        if let (Some((bytes, held)), Some(copy)) = (&previous.content, copy) {
-            if bytes != content && fs::read(copy).ok().flatten().is_none() {
-                if let Err(error) = fs::replace(copy, bytes, *held) {
-                    return Err(undo("config.write_failed", format!("{}: {error}", file.path), &replaced));
-                }
-            }
-        }
+    for ((dest, _), (file, content, ids)) in replaced.iter().zip(&desired) {
         match fs::ensure(dest, content, *ids) {
             Ok(written) => changes += u32::from(written),
             Err(error) => return Err(undo("config.write_failed", format!("{}: {error}", file.path), &replaced)),
@@ -229,9 +214,80 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
             return Err(failure);
         }
     }
-    // The set is live: the kept copies are no longer the last usable bytes.
-    drop_kept(&keep);
+    // The set is live: its prior state is no longer the one to restore.
+    record.drop();
     Ok(changes)
+}
+
+/// The prior state of one run's files, kept in the executor's own recovery folder, one record per lock. Every file in it was
+/// written by this executor; nothing beside a managed file is.
+struct Record {
+    folder: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Prior {
+    path: String,
+    /// `None` when the file did not exist; else its bytes are in the record folder under `index`.
+    held: Option<(u32, u32, u32)>,
+    index: usize,
+}
+
+impl Record {
+    fn at(system: &impl System, lock: &str) -> Self {
+        Self { folder: system.recovery().join(sha256(lock.as_bytes())) }
+    }
+
+    /// Restores every file of a stopped run's record to its prior state, then drops the record.
+    fn recover(&self, system: &impl System) -> Result<(), Failure> {
+        let failed = |detail: String| Failure::new("config.restore_failed", detail);
+        let listing = match std::fs::read(self.folder.join("record.json")) {
+            Ok(listing) => listing,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.drop();
+                return Ok(());
+            }
+            Err(error) => return Err(failed(error.to_string())),
+        };
+        let priors: Vec<Prior> = serde_json::from_slice(&listing).map_err(|error| failed(error.to_string()))?;
+        let mut replaced = Vec::new();
+        for prior in priors {
+            let content = match prior.held {
+                Some((uid, gid, mode)) => Some((std::fs::read(self.folder.join(prior.index.to_string())).map_err(|error| failed(error.to_string()))?, Ids { uid, gid, mode })),
+                None => None,
+            };
+            replaced.push((system.path(&prior.path), Previous { content }));
+        }
+        fs::restore(&replaced).map_err(failed)?;
+        self.drop();
+        Ok(())
+    }
+
+    /// Writes the prior state: each file's bytes first, then the listing that makes the record count.
+    fn write(&self, paths: &[&str], replaced: &[(PathBuf, Previous)]) -> std::io::Result<()> {
+        self.drop();
+        std::fs::create_dir_all(&self.folder)?;
+        std::fs::set_permissions(&self.folder, std::fs::Permissions::from_mode(0o700))?;
+        let own = Ids { uid: 0, gid: 0, mode: 0o600 };
+        let mut priors = Vec::new();
+        for (index, (path, (_, previous))) in paths.iter().zip(replaced).enumerate() {
+            let held = match &previous.content {
+                Some((bytes, ids)) => {
+                    fs::write_new(&self.folder.join(index.to_string()), bytes, own)?;
+                    Some((ids.uid, ids.gid, ids.mode))
+                }
+                None => None,
+            };
+            priors.push(Prior { path: (*path).to_owned(), held, index });
+        }
+        let listing = serde_json::to_vec(&priors).map_err(std::io::Error::other)?;
+        fs::write_new(&self.folder.join("record.json"), &listing, own)
+    }
+
+    fn drop(&self) {
+        let _ = std::fs::remove_dir_all(&self.folder);
+    }
 }
 
 /// A path with its folder's links resolved, where the folder exists.

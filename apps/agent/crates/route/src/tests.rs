@@ -79,7 +79,12 @@ impl System for Fake {
         }
         match argv.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
             [_, "genpkey", ..] => Ok("-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n".to_owned()),
-            [_, "pkey", "-noout", "-in", key] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
+            // openssl reads a key in PEM, among other blocks, or a DER key (here: bytes that start a DER sequence).
+            [_, "pkey", "-inform", form, "-noout", "-in", key] => {
+                let held = fs::read(self.path(key)).unwrap_or_default();
+                let readable = if *form == "PEM" { String::from_utf8_lossy(&held).contains("-----BEGIN PRIVATE KEY-----") } else { held.first() == Some(&0x30) };
+                if readable { Ok(String::new()) } else { Err(format!("Could not find private key of key from {key}")) }
+            }
             ["/usr/bin/install", "-D", .., "-t", folder, _, _] => {
                 fs::create_dir_all(self.path(folder)).expect("account copy folder");
                 Ok(String::new())
@@ -650,9 +655,24 @@ fn a_csr_keeps_its_key_when_the_inspection_is_inconclusive() {
     let mut fake = Fake::new();
     fake.write(&format!("{DIRECTORY}/key.pem"), HEALTHY);
     // Review counterexample: one inspection timeout replaced a healthy key.
-    fake.failing_argv.push(vec!["/usr/bin/openssl", "pkey", "-noout", "-in", "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem"]);
+    fake.failing_argv.push(vec!["/usr/bin/openssl", "pkey", "-inform", "PEM", "-noout", "-in", "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem"]);
     let failure = ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("an inconclusive inspection");
     assert_eq!(failure.code, "app-dev.certificate_request_failed");
     assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY);
+    assert_eq!(fake.ran("genpkey"), 0);
+}
+
+#[test]
+fn a_csr_keeps_any_key_openssl_reads() {
+    let fake = Fake::new();
+    let key = fake.path(&format!("{DIRECTORY}/key.pem"));
+    fs::create_dir_all(key.parent().expect("folder")).expect("folder");
+    // Review counterexamples: a PEM with a certificate first and then the key, and a DER key; openssl signs with both.
+    let mixed = format!("-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n{HEALTHY}");
+    for held in [mixed.into_bytes(), vec![0x30, 0x82, 0x04, 0xbd, 0x02, 0x01, 0x00]] {
+        fs::write(&key, &held).expect("key");
+        ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect("a request for the key in place");
+        assert_eq!(fs::read(&key).expect("key"), held);
+    }
     assert_eq!(fake.ran("genpkey"), 0);
 }

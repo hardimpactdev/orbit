@@ -21,6 +21,8 @@ use sha2::{Digest as _, Sha256};
 pub const CONFIG_PATH: &str = "/etc/orbit/executor/nats.json";
 /// Content read from the `CONTENT` bucket, by SHA-256. Root only: content may hold a secret, such as an env file.
 pub const BLOBS_PATH: &str = "/var/lib/orbit/executor/blobs";
+/// Where `config.apply` keeps the prior state of a run until it ends.
+pub const RECOVERY_PATH: &str = "/var/lib/orbit/executor/config-apply";
 const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 const CONSUMER_WAIT: Duration = Duration::from_secs(5);

@@ -79,27 +79,42 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32
     // the bits this entry needs, and only where no other entry holds a bit the mask cut, so no other subject's effective
     // permissions move.
     let tag = if input.default { "d:" } else { "" };
-    let mut masks = std::collections::BTreeMap::new();
+    // For each changed path: the entries to write, and what every other subject must still hold afterwards.
+    let mut plans = std::collections::BTreeMap::new();
     for name in &changed {
         let entry = before.get(name).ok_or_else(|| failed(format!("{name} was not read")))?;
         let want = wanted(name);
-        let mask = entry.mask.clone().unwrap_or_else(|| entry.others.iter().fold("---".to_owned(), |held, (_, perms)| union(&held, perms)));
-        let widened = union(&mask, &want);
-        if entry.mask.is_some() && entry.others.iter().any(|(_, perms)| cut(perms, &mask) != cut(perms, &widened)) {
+        // The first default entry of a folder starts a default list: it is seeded from the access list (owner, group,
+        // other, and the group-class bits as the mask), so every other subject keeps what new files inherit.
+        let (mask, others, base, seed) = if input.default && !entry.has_default {
+            let access = |key: &str| entry.access.get(key).cloned().ok_or_else(|| failed(format!("{name} has no access {key} entry")));
+            let (owner, group, other) = (access("user")?, access("group")?, access("other")?);
+            let mask = entry.access.get("mask").cloned().unwrap_or_else(|| group.clone());
+            let seed = format!("d:u::{owner},d:g::{group},d:o::{other},");
+            (Some(mask), vec![("group:".to_owned(), group)], vec![("other:".to_owned(), other), ("user:".to_owned(), owner)], seed)
+        } else {
+            (entry.mask.clone(), entry.others.clone(), entry.base.clone(), String::new())
+        };
+        // The mask is shared by every group-class entry: it is given explicitly, so setfacl never recomputes it. It only
+        // widens by the bits this entry needs, and only where no other entry holds a bit the mask cut.
+        let current = mask.clone().unwrap_or_else(|| others.iter().fold("---".to_owned(), |held, (_, perms)| union(&held, perms)));
+        let widened = union(&current, &want);
+        if mask.is_some() && others.iter().any(|(_, perms)| cut(perms, &current) != cut(perms, &widened)) {
             return Err(failed(format!("{name}: the mask would widen another entry's permissions")));
         }
-        masks.insert(name.clone(), widened);
+        let expected = Entry { mask: Some(widened.clone()), others, base, ..Entry::default() };
+        plans.insert(name.clone(), (format!("{seed}{tag}u:{}:{want},{tag}m::{widened}", input.user), expected));
     }
     for name in &changed {
         let mut argv = prefix.clone();
-        let entries = format!("{tag}u:{}:{},{tag}m::{}", input.user, wanted(name), masks[name]);
-        argv.extend(strings(&["/usr/bin/setfacl", "-P", "-n", "-m", &entries, "--", name]));
+        argv.extend(strings(&["/usr/bin/setfacl", "-P", "-n", "-m", &plans[name].0, "--", name]));
         system.run(120, &argv).map_err(failed)?;
     }
+    // Every changed path holds the entry, and every other subject's effective permissions are what they were.
     let after = if changed.is_empty() { std::collections::BTreeMap::new() } else { read(&changed).map_err(failed)? };
     for name in &changed {
-        let held = after.get(name).filter(|entry| entry.holds(&wanted(name)));
-        let kept = held.is_some_and(|entry| before.get(name).is_some_and(|was| was.effective_others() == entry.effective_others()));
+        let expected = &plans[name].1;
+        let kept = after.get(name).is_some_and(|entry| entry.holds(&wanted(name)) && entry.effective_others() == expected.effective_others() && sorted(&entry.base) == sorted(&expected.base));
         if !kept {
             return Err(failed(format!("{name} read-back")));
         }
@@ -117,12 +132,22 @@ fn cut(perms: &str, mask: &str) -> String {
     perms.chars().zip(mask.chars()).map(|(bit, allowed)| if allowed == '-' { '-' } else { bit }).collect()
 }
 
-/// The user's entry, the mask that bounds it, and every other group-class entry the mask bounds too, on one path.
-#[derive(Debug, Default)]
+/// The user's entry, the mask that bounds it, every other group-class entry the mask bounds too, and the owner and other
+/// entries, of the listed access or default list on one path; with the path's access list and whether it has a default list.
+#[derive(Debug, Default, Clone)]
 struct Entry {
     perms: Option<String>,
     mask: Option<String>,
     others: Vec<(String, String)>,
+    base: Vec<(String, String)>,
+    access: std::collections::BTreeMap<String, String>,
+    has_default: bool,
+}
+
+fn sorted(entries: &[(String, String)]) -> Vec<(String, String)> {
+    let mut entries = entries.to_vec();
+    entries.sort();
+    entries
 }
 
 impl Entry {
@@ -151,6 +176,17 @@ fn listing(text: &str, input: &Input) -> std::collections::BTreeMap<String, Entr
         let Some(name) = &current else { continue };
         let line = line.split('\t').next().unwrap_or_default().trim();
         let entry = entries.entry(name.clone()).or_insert_with(Entry::default);
+        entry.has_default |= line.starts_with("default:");
+        for key in ["user", "group", "other", "mask"] {
+            if let Some(perms) = line.strip_prefix(&format!("{key}::")) {
+                entry.access.insert(key.to_owned(), perms.to_owned());
+            }
+        }
+        if let Some(rest) = line.strip_prefix(tag).filter(|rest| rest.starts_with("user::") || rest.starts_with("other::")) {
+            if let Some((subject, perms)) = rest.split_once("::") {
+                entry.base.push((format!("{subject}:"), perms.to_owned()));
+            }
+        }
         if let Some(perms) = line.strip_prefix(&format!("{tag}user:{}:", input.user)) {
             entry.perms = Some(perms.to_owned());
         } else if let Some(perms) = line.strip_prefix(&format!("{tag}mask::")) {

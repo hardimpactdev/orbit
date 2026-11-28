@@ -112,9 +112,12 @@ pub(crate) fn restore(replaced: &[(PathBuf, Previous)]) -> Result<(), String> {
     if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
 }
 
-/// The copy of a guarded file's rendered-from bytes, kept beside it from before its replacement until its set loads. Its
-/// name carries the digest of those bytes, so a copy kept for another render never stands for this one.
-pub(crate) fn kept(dest: &Path, from: &str) -> PathBuf {
-    let name = dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    dest.with_file_name(format!(".{name}.previous-{from}"))
+/// Writes a file of the executor's own (owner unchanged), through a temporary file moved in place.
+pub(crate) fn write_new(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<()> {
+    let (temporary, mut stream) = scratch(dest, "partial", |path| File::options().write(true).create_new(true).custom_flags(NOFOLLOW).mode(ids.mode).open(path))?;
+    let result = stream.write_all(content).and_then(|()| stream.sync_all()).and_then(|()| fs::rename(&temporary, dest));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
