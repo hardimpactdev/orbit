@@ -25,9 +25,13 @@ from clone_lifecycle import (
 )
 
 VPN_NODE = 1
+# Node actions that change nothing and keep no journal entry.
+READS = ('file.read', 'http.probe', 'account.read')
 GRACE_MS = 31_000
 RECORDS = '/etc/dnsmasq.d/orbit-records.conf'
 CADDYFILE = '/etc/caddy/Caddyfile'
+PUBLISH_LOCK = '/etc/caddy/.orbit-publish.lock'
+HOLD_UNIT = 'orbit-proof-publish-hold'
 LEAVES = '/etc/caddy/orbit-certificates'
 # Names no Route withdrawal may change: the Gateway's `.orbit` services and a name under each Instance suffix the VPN Node answers.
 UNAFFECTED_NAMES = ('gateway.orbit', 'reverb.orbit', 'swamp.orbit', 'review-check.nested-prod', 'review-check.nested-dev')
@@ -59,7 +63,8 @@ def traced(method):
 
 class RouteLane(CloneLane):
     KINDS = ('instance.create', 'instance.destroy', 'route.destroy')
-    FAMILIES = 'route\npower\nproof\n'
+    # `host` holds the primitives engine route.destroy composes; `route` keeps route.withdraw_site for a clone's Route steps.
+    FAMILIES = 'route\nhost\npower\nproof\n'
     # A Route serves a relative web root; laravel/prompts has `src`.
     ROOT = 'src'
 
@@ -96,19 +101,24 @@ class RouteLane(CloneLane):
             self.run.evidence_text(f'helper-{args[0]}.err', f'exit {result.returncode}\nstderr: {result.stderr[-1500:]}\nstdout: {result.stdout[-300:]}\n')
             raise ProofInfrastructure(f'the guest helper {args[0]} answered no JSON (exit {result.returncode})') from None
 
-    def set_dns(self, enabled):
-        if self.dns is not enabled:
-            self.put('gateway', '/etc/orbit/executor/enabled', ('dns\n' if enabled else '') + 'proof\n')
+    def set_dns(self, enabled, host=True):
+        """The VPN Node's DNS work: `dns` for a clone's Route steps and route.update, and `host` for route.destroy's reads and
+        writes. Without `host` it reports only what an executor before the primitives did."""
+        host = enabled and host
+        if self.dns != (enabled, host):
+            self.put('gateway', '/etc/orbit/executor/enabled', ('dns\n' if enabled else '') + ('host\n' if host else '') + 'proof\n')
+            self.guest('gateway', 'sh', '-c', 'systemctl reset-failed "$1" 2>/dev/null || :', 'sh', EXECUTOR_UNIT)
             self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
-            self.dns = enabled
+            self.dns = (enabled, host)
 
         def advertised():
             found = self.helper('capabilities', VPN_NODE)
             actions = found['actions']
-            return found if 'proof.noop' in actions and ('dns.publish_records' in actions) is enabled else None
+            return found if ('proof.noop' in actions and ('dns.publish_records' in actions) is enabled
+                             and all((action in actions) is host for action in ('file.read', 'file.ensure', 'config.apply'))) else None
 
         try:
-            return wait_for(advertised, f'the VPN Node executor did not advertise dns ({enabled})', 20)
+            return wait_for(advertised, f'the VPN Node executor did not advertise dns ({enabled}) and host ({host})', 20)
         except ProofFailure:
             self.run.evidence_text('vpn-executor.log', self.guest('gateway', 'sh', '-c', 'systemctl status --no-pager orbit-executor.service | head -5; '
                                                                  'journalctl --no-pager -u orbit-executor.service -n 40 -o cat', timeout=30) + '\n')
@@ -228,11 +238,18 @@ class RouteLane(CloneLane):
 
     def engine_receipts(self, summary, operation):
         journal = self.route_journal(operation, self.node_id) + self.route_journal(operation, VPN_NODE)
-        node_steps = [step for step in summary['steps'] if step['target'] != 'gateway']
-        for step in node_steps:
+        # Reads and polls (`file.read`, `http.probe`) bypass the executor's journal: their Gateway receipt is the evidence. A link
+        # removal that its read made unneeded is done without an order. Every write opened once and journaled its one result.
+        for step in (step for step in summary['steps'] if step['target'] != 'gateway' and step['first_sent_ms'] is not None):
+            if step['action'] in READS:
+                require(step['status'] == 'done' and step['error_code'] is None and step['output'] is not None,
+                        f'read step {step["name"]} of {operation} has no successful Gateway receipt: {step}')
+                continue
             mine = [entry for entry in journal if entry['operation'] == f'{operation}:{step["name"]}']
             require(sum(entry['record'] == 'open' for entry in mine) == 1 and [entry['outcome']['status'] for entry in mine if entry['record'] == 'done'] in (['applied'], ['done']),
                     f'step {step["name"]} of {operation} did not execute once in the Node journal: {mine}')
+        skipped = [step['name'] for step in summary['steps'] if step['target'] != 'gateway' and step['first_sent_ms'] is None and not step['on_failure']]
+        require(all(name.startswith(('dnsunlink-', 'caddyunlink-', 'pools-')) for name in skipped), f'{operation} skipped Node steps other than a link removal or an unneeded pool write: {skipped}')
         return journal
 
     @traced
@@ -245,8 +262,8 @@ class RouteLane(CloneLane):
                 and (fault is None or (fault == 'feature') == (via == 'swamp')), 'invalid route destroy case')
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
         sibling_before = self.healthy(sibling)
-        # A Swamp case either lacks the action (dns family off) or keeps it and lacks only the guarded input (`feature`).
-        self.set_dns(via == 'engine' or fault == 'feature')
+        # A Swamp case either lacks the DNS work (dns family off) or keeps `dns` and lacks only the host primitives (`feature`).
+        self.set_dns(via == 'engine' or fault == 'feature', host=via == 'engine')
         scope = self.routes_made[name]['scope']
         before = self.state(domain, scope)
         require(self.present(before), f'Route {domain} is not live before its removal')
@@ -285,15 +302,20 @@ class RouteLane(CloneLane):
                   'cli': cli, 'report_without_feature': report, 'restarted': restarted, 'cancelled_first': cancelled,
                   'served_names': {'before': names_before, 'after': names_after}}
         if via == 'engine':
-            steps = {step['name']: step for step in summary['steps']}
-            require(all(step['status'] == 'done' for step in steps.values()) and {'dns-0', 'grace', f'withdraw-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
+            # A failure step (`caddyback-<node>`, the Caddyfile put back after a pool failure) runs only after a failure.
+            steps = {step['name']: step for step in summary['steps'] if not step['on_failure']}
+            require(all(step['status'] == 'done' for step in steps.values()) and {'dnsread-0-records', 'dnsread-0-catalog', 'dns-0', 'grace', f'caddyread-{self.node_id}',
+                    f'guard-{self.node_id}', f'withdraw-{self.node_id}', f'poll-{self.node_id}', f'sibling-{self.node_id}'} <= set(steps),
                     f'route.destroy {operation} did not finish its engine steps')
-            grace_ms = steps[f'withdraw-{self.node_id}']['first_sent_ms'] - steps['dns-0']['done_ms']
-            require(grace_ms >= GRACE_MS, f'route.destroy {operation} withdrew the site {grace_ms} ms after the DNS receipt')
+            # From the last DNS receipt to the real withdrawal dispatch, the Caddyfile write; the read before it waits the grace too.
+            last_dns = max(step['done_ms'] for name, step in steps.items() if name.startswith('dns-'))
+            grace_ms = steps[f'withdraw-{self.node_id}']['first_sent_ms'] - last_dns
+            require(steps[f'caddyread-{self.node_id}']['first_sent_ms'] - last_dns >= GRACE_MS and grace_ms >= GRACE_MS,
+                    f'route.destroy {operation} withdrew the site {grace_ms} ms after the DNS receipt')
             result['grace_ms'] = grace_ms
             if fault == 'restart':
                 # Resumed from the stored DNS receipt time: not from zero after the restart, and the withdrawal sent once.
-                require(grace_ms < GRACE_MS + 5_000 and steps[f'withdraw-{self.node_id}']['sends'] == 1,
+                require(grace_ms < GRACE_MS + 5_000 and steps[f'withdraw-{self.node_id}']['sends'] == 1,  # within 36 s, sent once
                         f'route.destroy {operation} did not resume the grace after the restart: {grace_ms} ms, {steps[f"withdraw-{self.node_id}"]["sends"]} sends')
             result['journal'] = self.engine_receipts(summary, operation)
             if fault == 'receipt':
@@ -404,17 +426,12 @@ class RouteLane(CloneLane):
         return {'args': answer['args'], 'rc': answer['rc'], 'secs': answer['secs'], 'operation': data.get('id'), 'status': data.get('status')}
 
     def without_feature(self, path, key):
-        """The VPN Node reports dns.publish_records but not its guarded input: admission must take the whole removal to Swamp."""
-        self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
-        wait_for(lambda: 'dns.guarded_records' in self.helper('capabilities', VPN_NODE)['features'], 'the VPN Node did not report again', 20)
-        report = self.helper('report-without-feature', VPN_NODE, 'dns.guarded_records')
-        require('dns.publish_records' in report['actions'] and 'dns.guarded_records' not in report['features'],
-                'the VPN Node report still lists the guarded DNS input')
-        try:
-            admitted = self.admitted('DELETE', path, {}, key)
-        finally:
-            self.systemctl('gateway', 'restart', EXECUTOR_UNIT)
-        return admitted, None, report
+        """The VPN Node reports dns.publish_records but not the host primitives (an executor before them): admission must take the
+        whole removal to Swamp."""
+        report = self.set_dns(True, host=False)
+        require('dns.publish_records' in report['actions'] and 'file.read' not in report['actions'] and 'config.apply' not in report['actions'],
+                'the VPN Node report still lists the host primitives')
+        return self.admitted('DELETE', path, {}, key), None, report
 
     def served_names(self, withdrawn):
         """`dig +short` against the VPN Node for the fixed unaffected names and every other Route's name in its records: the engine
@@ -502,17 +519,33 @@ print("\\n".join(sorted(names)))'''
         summary = self.operation(operation, 'engine')
         steps = {step['name']: step for step in summary['steps']}
         left = self.state(domain, scope)
-        require(steps['dns-0']['status'] == 'done' and steps[f'withdraw-{self.node_id}']['status'] == 'failed'
-                and steps[f'withdraw-{self.node_id}']['error_code'] == 'owned_revision_conflict'
+        # The Gateway's guard of the read Caddyfile refuses before any write: the withdrawal is never sent.
+        require(steps['dns-0']['status'] == 'done' and steps[f'guard-{self.node_id}']['status'] == 'failed'
+                and steps[f'guard-{self.node_id}']['error_code'] == 'owned_revision_conflict' and steps[f'withdraw-{self.node_id}']['first_sent_ms'] is None
+                and terminal['error_code'] == 'route.withdraw_failed' and terminal.get('failed_step') == f'Withdraw site, remove cert-{self.node_id}'
                 and left['dns_answers'] == 0 and left['dns_record_lines'] == 0 and left['caddy_lines'] > 0
                 and self.db(f"SELECT id FROM routes WHERE domain='{domain}'"),
                 f'route.destroy {operation} did not stop after its DNS withdrawal with the site kept: {left}')
         return {'operation': summary, 'error_code': terminal['error_code'], 'failed_step': terminal.get('failed_step'), 'left': left,
                 'sibling': self.healthy(sibling)}
 
+    def hold_publication(self):
+        """Holds the Node's publication lock, which config.apply and route.withdraw_site take (and file.read does not), so the write
+        waits inside its action with the executor alive. The lock file must already exist: the fixture creates nothing it would leave."""
+        self.guest(self.node, 'test', '-f', PUBLISH_LOCK)
+        self.guest(self.node, 'sh', '-c', 'if systemctl is-active --quiet "$1"; then exit 1; fi', 'sh', HOLD_UNIT)
+        self.guest(self.node, 'systemd-run', '--unit', HOLD_UNIT, 'flock', PUBLISH_LOCK, 'sleep', '240')
+        wait_for(lambda: self.guest(self.node, 'sh', '-c', 'flock -n "$1" true && echo free || echo held', 'sh', PUBLISH_LOCK) == 'held',
+                 'the publication lock was not held', 10, interval=0.2)
+
+    def release_publication(self):
+        self.guest(self.node, 'sh', '-c', 'systemctl stop "$1" 2>/dev/null; systemctl reset-failed "$1" 2>/dev/null || :', 'sh', HOLD_UNIT)
+
     def dropped_withdraw(self, path, key, domain, scope, sibling):
-        step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'
-        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        """A lost receipt: the Caddyfile write waits on the held publication lock, a deterministic boundary, until the engine's
+        receipt consumer is stopped; then it runs and its receipt is dropped."""
+        step, action = f'withdraw-{self.node_id}', 'config.apply'
+        self.hold_publication()
         try:
             admitted = self.admitted('DELETE', path, {}, key)
             operation = int(admitted['id'])
@@ -521,21 +554,28 @@ print("\\n".join(sorted(names)))'''
                 rows = [row for row in self.steps(operation) if row['name'] == step]
                 return rows[0] if rows and rows[0]['first_sent_ms'] else None
 
-            dispatch = wait_for(published, f'route.destroy {operation} did not publish its withdrawal', 75, interval=0.25)
+            # The grace (31 s) and the Caddyfile read come first.
+            dispatch = wait_for(published, f'route.destroy {operation} did not publish its withdrawal', 90, interval=0.25)
             require(dispatch['sends'] == 1, f'route.destroy {operation} resent its withdrawal before the fault')
             queued = wait_for(lambda: self.helper('pending-order', self.node_id, operation, self.node_id, step, action),
                               f'route.destroy {operation} had no signed withdrawal order on JetStream', 5)
             self.systemctl('gateway', 'stop', 'orbit-gateway-engine.service')
-            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            self.release_publication()
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
-                               f'route.destroy {operation} did not leave the expected queued receipt', 30)
-            withdrawn = self.state(domain, scope)
+                               f'route.destroy {operation} did not leave the expected queued receipt', 50)
+            # The interrupted checkpoint: DNS and Caddy are withdrawn, the leaf is still there (its removal follows the poll, which the
+            # stopped engine never sent), and the fence is open. Complete removal is required only after the replay.
+            withdrawn = wait_for(lambda: None if (found := self.state(domain, scope))['caddy_admin'] else found,
+                                 f'route.destroy {operation} did not withdraw the site from Caddy', 15, interval=0.5)
             row = self.db(f'SELECT status, lock_key FROM operations WHERE id={operation}')[0]
             replay = self.admitted('DELETE', path, {}, key)
             pending = next(row for row in self.steps(operation) if row['name'] == step)
             # A route Operation takes no Operation lock (`lock_key`, on Swamp as on the engine): its fence is the Route Node hold, from
             # admission to the terminal state (RoutePublicationHolds), and the Route record.
-            fence = {'withdrawn_on_node': self.absent(withdrawn), 'operation_open': row['status'] not in TERMINAL, 'nodes_held': sum((holds := self.held(operation)).values()) > 0,
+            fence = {'dns_withdrawn': withdrawn['dns_record_lines'] == 0 and withdrawn['dns_answers'] == 0,
+                     'caddy_withdrawn': withdrawn['caddy_lines'] == 0 and not withdrawn['caddy_admin'], 'leaf_kept': withdrawn['leaf_paths'] == 1,
+                     'leaf_step_not_sent': all(row['first_sent_ms'] is None for row in self.steps(operation) if row['name'].startswith(('leaf-', 'leafhome-'))),
+                     'operation_open': row['status'] not in TERMINAL, 'nodes_held': sum((holds := self.held(operation)).values()) > 0,
                      'route_kept': bool(self.db(f"SELECT id FROM routes WHERE domain='{domain}'")), 'replay_same_operation': replay['id'] == operation,
                      'step_not_done': pending['status'] != 'done'}
             require(all(fence.values()), f'route.destroy {operation} did not keep its fence after the Node withdrew without a receipt: '
@@ -544,7 +584,7 @@ print("\\n".join(sorted(names)))'''
                            'operation_while_fenced': row, 'node_holds_while_fenced': holds, 'sibling_while_fenced': self.healthy(sibling), 'http_replay': {'id': replay['id'], 'status': replay['status']}}
             return admitted, interrupted
         finally:
-            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+            self.release_publication()
             self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
     @traced
@@ -601,8 +641,8 @@ print("\\n".join(sorted(names)))'''
 
     def withdrawal_boundary(self, instance, name, domain, scope, sibling):
         step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'
-        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
         try:
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
             admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
             operation = int(admitted['id'])
 
@@ -624,6 +664,7 @@ print("\\n".join(sorted(names)))'''
                        'sibling': self.healthy(sibling)}
             return admitted, capture
         finally:
+            # On every exit path: a CONT to a running executor changes nothing.
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
             self.systemctl('gateway', 'start', 'orbit-gateway-engine.service')
 
