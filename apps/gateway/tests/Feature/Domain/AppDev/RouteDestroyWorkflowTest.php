@@ -255,14 +255,16 @@ it('records the whole-file digests the engine guards with, and builds its steps 
     [$operation] = destroyAdmission($route);
 
     expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
-        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog'])]);
+        'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog']),
+        'catalog_file' => hash('sha256', $before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
     expect(fn () => $flow->steps($operation))->toThrow(EngineUnsupported::class, 'account\'s home or group');
     $steps = array_map(static fn ($step): string => $step->name, $flow->steps(withoutLeaves($operation)));
     $read = (new OperationEngineStep)->forceFill(['name' => "caddyread-{$node->id}", 'status' => 'done',
         'output' => json_encode(['state' => 'present', 'type' => 'file', 'sha256' => hash('sha256', $before['caddy']['content']), 'uid' => 0, 'gid' => 997, 'mode' => '0640'])]);
     $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read], 0, null);
-    expect($steps)->toBe(['dnsread-0-records', 'dnsread-0-catalog', 'dns-0', 'grace', "caddyread-{$node->id}", "guard-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "sibling-{$node->id}"])
+    expect($steps)->toBe(['dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace', "caddyread-{$node->id}",
+        "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "sibling-{$node->id}"])
         ->and($flow->local($operation, "guard-{$node->id}", $run))->toBeString()
         ->and($flow->input($operation, "withdraw-{$node->id}", $run)['files'][0]['from_sha256'])->toBe(hash('sha256', $before['caddy']['content']));
 });

@@ -47,7 +47,7 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
             'nodes' => [['node_id' => 3, 'production_instance_ids' => []]]],
         'route_lifecycle' => ['plan' => $plan],
         'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4', 'php_versions_after' => '8.4'],
-            '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n")]],
+            '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n"), 'catalog_file' => hash('sha256', "{\"shop\":1}\n")]],
     ], ...$input]]);
 }
 
@@ -78,12 +78,15 @@ function plainFile(string $content): array
 it('reads and withdraws DNS on the VPN Node, waits the grace, then reads, guards, withdraws, polls and probes a sibling', function (): void {
     expect(destroySteps(routeDestroyOperation()))->toBe([
         ['dnsread-0-records', 1, 'file.read', []],
+        ['dnsunlink-0-records', 1, 'file.ensure', ['dnsread-0-records']],
         ['dnsread-0-catalog', 1, 'file.read', []],
-        ['dns-0', 1, 'config.apply', ['dnsread-0-records', 'dnsread-0-catalog']],
+        ['dnsunlink-0-catalog', 1, 'file.ensure', ['dnsread-0-catalog']],
+        ['dns-0', 1, 'config.apply', ['dnsunlink-0-records', 'dnsunlink-0-catalog']],
         ['grace', 0, 'route.dns_grace', ['dns-0']],
         ['caddyread-3', 3, 'file.read', ['grace']],
         ['guard-3', 0, 'route.guard', ['caddyread-3']],
-        ['withdraw-3', 3, 'config.apply', ['guard-3']],
+        ['caddyunlink-3', 3, 'file.ensure', ['guard-3']],
+        ['withdraw-3', 3, 'config.apply', ['caddyunlink-3']],
         ['poll-3', 3, 'http.probe', ['withdraw-3']],
         ['sibling-3', 0, 'route.probe', ['poll-3']],
     ]);
@@ -91,10 +94,10 @@ it('reads and withdraws DNS on the VPN Node, waits the grace, then reads, guards
 
 it('withdraws the site at once when the Route has no private DNS answers', function (): void {
     expect(array_column(destroySteps(routeDestroyOperation(['dns' => [], 'grace' => []], ['route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]], 'dns_node_ids' => []]])), 0))
-        ->toBe(['caddyread-3', 'guard-3', 'withdraw-3', 'poll-3', 'sibling-3']);
+        ->toBe(['caddyread-3', 'guard-3', 'caddyunlink-3', 'withdraw-3', 'poll-3', 'sibling-3']);
 });
 
-it('sends every path, lock, owner, validator and unit, guarded by the digest each read answered', function (): void {
+it('sends every path, lock, owner, validator and unit, guarded by the digests the Gateway rendered from', function (): void {
     $flow = app(RouteDestroyEngineFlow::class);
     $records = "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n";
     $run = destroyRun(['dnsread-0-records' => plainFile($records), 'dnsread-0-catalog' => ['state' => 'absent'], 'caddyread-3' => plainFile(DestroyBefore)]);
@@ -105,7 +108,7 @@ it('sends every path, lock, owner, validator and unit, guarded by the digest eac
             'lock' => '/run/lock/orbit-dnsmasq.lock', 'recovery_dir' => '/var/lib/orbit/executor/recovery/operation-51/dns-0',
             'files' => [
                 ['path' => '/etc/dnsmasq.d/orbit-records.conf', 'content' => ['blob' => ['content' => "address=/other.example/10.44.0.8\n"]], 'from_sha256' => hash('sha256', $records), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
-                ['path' => '/var/lib/orbit/private-dns/catalog.json', 'content' => ['blob' => ['content' => "{}\n"]], 'from_sha256' => null, 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
+                ['path' => '/var/lib/orbit/private-dns/catalog.json', 'content' => ['blob' => ['content' => "{}\n"]], 'from_sha256' => hash('sha256', "{\"shop\":1}\n"), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
             ],
             'validators' => [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => ['.dpkg-dist', '.dpkg-old', '.dpkg-new']]],
             'units' => [['unit' => 'dnsmasq.service', 'load' => 'restart'], ['unit' => 'orbit-private-dns.service', 'load' => 'restart']],
@@ -130,11 +133,52 @@ it('refuses a Caddyfile changed outside the Route as owned_revision_conflict, an
     $flow = app(RouteDestroyEngineFlow::class);
     $guard = fn (array $read) => $flow->local(routeDestroyOperation(), 'guard-3', destroyRun(['caddyread-3' => $read]));
 
+    $conflict = fn (EngineStepRefusal $refusal) => expect($refusal->errorCode)->toBe('owned_revision_conflict');
+
     expect($guard(plainFile(DestroyBefore)))->toBeString()
         ->and($guard(plainFile(DestroyAfter)))->toBeString()
-        ->and(fn () => $guard(plainFile("changed {\n}\n")))->toThrow(fn (EngineStepRefusal $refusal) => expect($refusal->errorCode)->toBe('owned_revision_conflict'))
-        ->and(fn () => $guard(['state' => 'present', 'type' => 'symlink', 'uid' => 0, 'gid' => 0, 'mode' => '0777']))
-        ->toThrow(fn (EngineStepRefusal $refusal) => expect($refusal->errorCode)->toBe('owned_revision_conflict'));
+        // Another publisher (a role converge, another Route) changed the Caddyfile after admission: refused, never overwritten.
+        ->and(fn () => $guard(plainFile("other.orbit {\n}\nadded.orbit {\n}\n")))->toThrow($conflict)
+        ->and(fn () => $guard(['state' => 'absent']))->toThrow($conflict)
+        ->and(fn () => $guard(['state' => 'present', 'type' => 'directory', 'uid' => 0, 'gid' => 0, 'mode' => '0755']))->toThrow($conflict)
+        ->and($guard(['state' => 'present', 'type' => 'symlink', 'uid' => 0, 'gid' => 0, 'mode' => '0777']))->toContain('link');
+});
+
+it('keeps main\'s DNS refusal: a file changed after admission, such as a sibling added since, is guarded by the admission digest', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $admitted = hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n");
+    $sibling = "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\naddress=/new.example/10.44.0.9\n";
+    $files = fn (array $records, array $catalog): array => $flow->input(routeDestroyOperation(), 'dns-0',
+        destroyRun(['dnsread-0-records' => $records, 'dnsread-0-catalog' => $catalog]))['files'];
+
+    // config.apply refuses the write (owned_revision_conflict) because the live bytes are not the admission render.
+    expect(array_column($files(plainFile($sibling), plainFile("{\"shop\":1,\"new\":1}\n")), 'from_sha256'))->toBe([$admitted, hash('sha256', "{\"shop\":1}\n")])
+        // A retry that finds the desired bytes already written keeps them.
+        ->and(array_column($files(plainFile("address=/other.example/10.44.0.8\n"), plainFile("{}\n")), 'from_sha256'))
+        ->toBe([hash('sha256', "address=/other.example/10.44.0.8\n"), hash('sha256', "{}\n")]);
+});
+
+it('removes a link in a file\'s place without following it, then writes the file without a guard', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $link = ['state' => 'present', 'type' => 'symlink', 'uid' => 0, 'gid' => 0, 'mode' => '0777'];
+    $run = destroyRun(['dnsread-0-records' => $link, 'dnsread-0-catalog' => plainFile("{\"shop\":1}\n"), 'caddyread-3' => $link]);
+
+    expect($flow->needed(routeDestroyOperation(), 'dnsunlink-0-records', $run))->toBeTrue()
+        ->and($flow->needed(routeDestroyOperation(), 'dnsunlink-0-catalog', $run))->toBeFalse()
+        ->and($flow->needed(routeDestroyOperation(), 'caddyunlink-3', $run))->toBeTrue()
+        ->and($flow->needed(routeDestroyOperation(), 'dns-0', $run))->toBeTrue()
+        ->and($flow->input(routeDestroyOperation(), 'dnsunlink-0-records', $run))->toBe(['state' => 'absent', 'path' => '/etc/dnsmasq.d/orbit-records.conf'])
+        ->and($flow->input(routeDestroyOperation(), 'caddyunlink-3', $run))->toBe(['state' => 'absent', 'path' => '/etc/caddy/Caddyfile'])
+        ->and(array_column($flow->input(routeDestroyOperation(), 'dns-0', $run)['files'], 'from_sha256'))->toBe([null, hash('sha256', "{\"shop\":1}\n")])
+        ->and($flow->input(routeDestroyOperation(), 'withdraw-3', $run)['files'][0]['from_sha256'])->toBeNull();
+});
+
+it('refuses any other kind in a DNS file\'s place', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $run = destroyRun(['dnsread-0-records' => ['state' => 'present', 'type' => 'directory', 'uid' => 0, 'gid' => 0, 'mode' => '0755']]);
+
+    expect($flow->needed(routeDestroyOperation(), 'dnsunlink-0-records', $run))->toBeTrue()
+        ->and(fn () => $flow->input(routeDestroyOperation(), 'dnsunlink-0-records', $run))->toThrow(EngineStepRefusal::class);
 });
 
 it('leaves a removal the engine cannot reproduce exactly to Swamp', function (array $plan, array $input): void {
@@ -209,9 +253,9 @@ it('starts on the engine only when every Node with work reports its primitives',
 
     expect(app(EngineKinds::class)->routes(routeDestroyOperation()))->toBe($engine);
 })->with([
-    'both report' => [[1 => ['file.read', 'config.apply'], 3 => ['file.read', 'config.apply', 'http.probe']], true],
-    'a VPN Node before agent 0.36.0' => [[1 => ['dns.publish_records'], 3 => ['file.read', 'config.apply', 'http.probe']], false],
-    'a Route Node without http.probe' => [[1 => ['file.read', 'config.apply'], 3 => ['file.read', 'config.apply']], false],
+    'both report' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe']], true],
+    'a VPN Node before agent 0.36.0' => [[1 => ['dns.publish_records'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe']], false],
+    'a Route Node without http.probe' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply']], false],
 ]);
 
 it('ends the grace 31 s after the last DNS receipt, and fails it without one', function (): void {
@@ -231,6 +275,8 @@ it('ends the grace 31 s after the last DNS receipt, and fails it without one', f
 it('names a failed step as the Swamp chart\'s iteration, so the Route records the same error code', function (): void {
     expect(RouteDestroyEngineFlow::chartStep('dns-0'))->toBe('Remove private DNS-0')
         ->and(RouteDestroyEngineFlow::chartStep('dnsread-0-catalog'))->toBe('Remove private DNS-0')
+        ->and(RouteDestroyEngineFlow::chartStep('dnsunlink-0-records'))->toBe('Remove private DNS-0')
+        ->and(RouteDestroyEngineFlow::chartStep('caddyunlink-3'))->toBe('Withdraw site, remove cert-3')
         ->and(RouteDestroyEngineFlow::chartStep('grace'))->toBe('Wait the DNS grace-0')
         ->and(RouteDestroyEngineFlow::chartStep('caddyread-3'))->toBe('Withdraw site, remove cert-3')
         ->and(RouteDestroyEngineFlow::chartStep('guard-3'))->toBe('Withdraw site, remove cert-3')

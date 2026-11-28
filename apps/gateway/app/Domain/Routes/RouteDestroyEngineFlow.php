@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
 use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\EngineWait;
@@ -28,21 +29,23 @@ use RuntimeException;
  * rendered from (`route_guards`):
  *
  * - `dnsread-<i>-records`, `dnsread-<i>-catalog`: `file.read` of each VPN Node's dnsmasq records and private DNS catalog;
- * - `dns-<i>`: `config.apply` of both files under the DNS lock, guarded by the digests just read; dnsmasq tests them and both
- *   DNS services restart;
+ * - `dnsunlink-<i>-records`, `dnsunlink-<i>-catalog`: `file.ensure` absent of a link a read found in a file's place, only then;
+ * - `dns-<i>`: `config.apply` of both files under the DNS lock, guarded by the digests the Gateway rendered from at admission;
+ *   dnsmasq tests them and both DNS services restart;
  * - `grace`: the Gateway waits 31 s from the last DNS receipt, so resolvers that honour the TTL stop asking first ([EngineWait]);
  * - `caddyread-<node>`: `file.read` of the Caddyfile on each Node that served the Route;
  * - `guard-<node>`: the Gateway refuses a Caddyfile that holds neither the render it captured at admission nor the desired one;
+ * - `caddyunlink-<node>`: `file.ensure` absent of a link in the Caddyfile's place, only then;
  * - `withdraw-<node>`: `config.apply` of the Caddyfile under the Node's publication lock, validated and reloaded;
  * - `poll-<node>`: `http.probe` of Caddy's admin API until no withdrawn name is in its live configuration;
  * - `sibling-<node>`: a TLS handshake with another Route on that Node, so Caddy still serves the rest.
  *
- * Each read's receipt is the step's output, so a retry sends the same guard. A Node that holds a link in a file's place, `--offline`,
+ * Each read's receipt is the step's output, so a retry sends the same guard. `--offline`,
  * a replacement, LAN rules, the Ingress edge, any URL write, a production placement, access rows, and leaf folders or pools (the
  * account's home and group come from `account.read`, agent 0.37.0) start on Swamp ([EngineUnsupported]). Each step maps onto the
  * Swamp chart step it is part of, so the projection records the same `failed_step` and that step's error code.
  */
-final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineWait
+final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineSkip, EngineWait
 {
     public const string Kind = 'route.destroy';
 
@@ -75,8 +78,9 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     public const int AdminBudgetMs = 5_000;
 
     /** Each step prefix's Swamp chart label (NativeRouteRemovalProjection::StepCodes): a read and a check belong to their write. */
-    private const array Labels = ['dns' => 'Remove private DNS', 'dnsread' => 'Remove private DNS', 'grace' => 'Wait the DNS grace',
-        'caddyread' => 'Withdraw site, remove cert', 'guard' => 'Withdraw site, remove cert', 'withdraw' => 'Withdraw site, remove cert',
+    private const array Labels = ['dns' => 'Remove private DNS', 'dnsread' => 'Remove private DNS', 'dnsunlink' => 'Remove private DNS',
+        'grace' => 'Wait the DNS grace', 'caddyread' => 'Withdraw site, remove cert', 'guard' => 'Withdraw site, remove cert',
+        'caddyunlink' => 'Withdraw site, remove cert', 'withdraw' => 'Withdraw site, remove cert',
         'poll' => 'Withdraw site, remove cert', 'sibling' => 'Check nothing is left'];
 
     public function __construct(private NativeRouteRemovalProjection $projection, private RouteEngineFlow $create,
@@ -130,12 +134,14 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
         $steps = $dns = [];
         foreach ($vpns as $index => $vpn) {
             self::digest(self::guard($operation, $vpn), 'records');
-            $reads = ["dnsread-{$index}-records", "dnsread-{$index}-catalog"];
-            foreach ($reads as $read) {
-                $steps[] = new StepSpec($read, $vpn, 'file.read', (string) $vpn, budgetMs: 60_000, resendMs: 10_000);
+            self::digest(self::guard($operation, $vpn), 'catalog_file');
+            $unlinks = [];
+            foreach (['records', 'catalog'] as $file) {
+                $steps[] = new StepSpec("dnsread-{$index}-{$file}", $vpn, 'file.read', (string) $vpn, budgetMs: 60_000, resendMs: 10_000);
+                $steps[] = new StepSpec($unlinks[] = "dnsunlink-{$index}-{$file}", $vpn, 'file.ensure', (string) $vpn, ["dnsread-{$index}-{$file}"], budgetMs: 60_000, resendMs: 10_000);
             }
             RouteEngineFlow::fits(self::dnsInput($operation, $index, null));
-            $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $reads, budgetMs: 120_000, resendMs: 20_000);
+            $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $unlinks, budgetMs: 120_000, resendMs: 20_000);
         }
         $after = [];
         if ($dns !== []) {
@@ -149,7 +155,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
             RouteEngineFlow::fits(self::withdrawInput($operation, $node, null));
             $steps[] = new StepSpec("caddyread-{$node}", $node, 'file.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
             $steps[] = new StepSpec("guard-{$node}", 0, 'route.guard', 'gateway', ["caddyread-{$node}"], budgetMs: 30_000);
-            $steps[] = new StepSpec("withdraw-{$node}", $node, 'config.apply', (string) $node, ["guard-{$node}"], budgetMs: 600_000, resendMs: 30_000);
+            $steps[] = new StepSpec("caddyunlink-{$node}", $node, 'file.ensure', (string) $node, ["guard-{$node}"], budgetMs: 60_000, resendMs: 10_000);
+            $steps[] = new StepSpec("withdraw-{$node}", $node, 'config.apply', (string) $node, ["caddyunlink-{$node}"], budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("poll-{$node}", $node, 'http.probe', (string) $node, ["withdraw-{$node}"], budgetMs: 60_000, resendMs: 10_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["poll-{$node}"], budgetMs: 60_000);
         }
@@ -177,11 +184,20 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
             'dnsread' => ['path' => $parts[2] === 'records' ? self::Records : self::Catalog],
             'dns' => self::dnsInput($operation, $index, $run),
             'caddyread' => ['path' => self::Caddyfile],
+            'dnsunlink', 'caddyunlink' => self::unlink($step, $run),
             'withdraw' => self::withdrawInput($operation, $index, $run),
             'poll' => ['url' => self::Admin, 'budget_ms' => self::AdminBudgetMs,
                 'lacks' => array_map(static fn (string $domain): string => '"'.$domain.'"', self::domains($operation))],
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
+    }
+
+    /** A removal of a link runs only when the read found a link in the file's place (or another kind, which its input refuses). */
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
+    {
+        $kind = explode('-', $step, 2)[0];
+
+        return ! in_array($kind, ['dnsunlink', 'caddyunlink'], true) || ! in_array(self::read($run, self::readOf($step))['kind'], ['absent', 'file'], true);
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string
@@ -300,13 +316,16 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
 
     /**
      * Refuses, before any write, a Caddyfile that holds neither the render the Gateway captured at admission nor the desired one:
-     * a change outside this Route (`owned_revision_conflict`), or a link in its place.
+     * a change outside this Route (`owned_revision_conflict`). A link in its place passes: `caddyunlink` removes it. A missing
+     * Caddyfile or any other kind refuses, as main's withdrawal failed to read it.
      */
     private static function caddyGuard(Operation $operation, int $node, EngineRun $run): string
     {
-        $live = self::read($run, "caddyread-{$node}");
-        $desired = hash('sha256', self::caddy($operation, $node));
-        if ($live !== null && $live !== self::digest(self::guard($operation, $node), 'caddy') && $live !== $desired) {
+        $read = self::read($run, "caddyread-{$node}");
+        if ($read['kind'] === 'link') {
+            return 'a link in the Caddyfile\'s place, removed before the write';
+        }
+        if ($read['kind'] !== 'file' || ! in_array($read['sha256'], [self::digest(self::guard($operation, $node), 'caddy'), hash('sha256', self::caddy($operation, $node))], true)) {
             throw new EngineStepRefusal('owned_revision_conflict', "The Caddyfile on Node {$node} changed outside this Route.");
         }
 
@@ -314,37 +333,73 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     }
 
     /**
-     * A VPN Node's records and catalog without the Route, each guarded by the digest its read answered. Before the reads, a
-     * null run renders the order with no guard, only to measure it.
+     * A VPN Node's records and catalog without the Route. Each must still hold the bytes the Gateway rendered from at admission,
+     * unless its read already found the desired bytes; a link that `dnsunlink` removed is written without a guard. Before the
+     * reads, a null run renders the order only to measure it.
      *
      * @return array<string, mixed>
      */
     private static function dnsInput(Operation $operation, int $index, ?EngineRun $run): array
     {
         $row = RouteExecutionProof::objects(self::plan($operation)['dns'])[$index] ?? throw new LogicException("No DNS row {$index}.");
-        $file = static fn (string $path, string $content, string $read): array => ['path' => $path, 'content' => ['blob' => ['content' => $content]],
-            'from_sha256' => $run === null ? null : self::read($run, $read), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
+        $guard = self::guard($operation, ValidatedData::integer($row['node_id']));
+        $file = static function (string $path, string $content, string $file, string $admitted) use ($run, $index, $guard): array {
+            $read = $run === null ? null : self::read($run, "dnsread-{$index}-{$file}");
+            $from = match (true) {
+                $read === null => self::digest($guard, $admitted),
+                $read['kind'] === 'link' => null,
+                $read['kind'] === 'file' && $read['sha256'] === hash('sha256', $content) => $read['sha256'],
+                default => self::digest($guard, $admitted),
+            };
+
+            return ['path' => $path, 'content' => ['blob' => ['content' => $content]], 'from_sha256' => $from, 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
+        };
 
         return ['lock' => self::DnsLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/dns-{$index}",
-            'files' => [$file(self::Records, ValidatedData::string($row['records']), "dnsread-{$index}-records"),
-                $file(self::Catalog, ValidatedData::string($row['catalog']), "dnsread-{$index}-catalog")],
+            'files' => [$file(self::Records, ValidatedData::string($row['records']), 'records', 'records'),
+                $file(self::Catalog, ValidatedData::string($row['catalog']), 'catalog', 'catalog_file')],
             'validators' => [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => ['.dpkg-dist', '.dpkg-old', '.dpkg-new']]],
             'units' => [['unit' => 'dnsmasq.service', 'load' => 'restart'], ['unit' => 'orbit-private-dns.service', 'load' => 'restart']]];
     }
 
     /**
-     * One Node's Caddyfile without the Route, guarded by the digest its read answered, validated by Caddy and reloaded on every
-     * run, so a repeat after a crash still makes the withdrawal live.
+     * One Node's Caddyfile without the Route, guarded by the digest its read answered (the guard step checked it against the
+     * admission render), or unguarded after a link in its place went; validated by Caddy and reloaded on every run, so a
+     * repeat after a crash still makes the withdrawal live.
      *
      * @return array<string, mixed>
      */
     private static function withdrawInput(Operation $operation, int $node, ?EngineRun $run): array
     {
+        $read = $run === null ? null : self::read($run, "caddyread-{$node}");
+
         return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/withdraw-{$node}",
             'files' => [['path' => self::Caddyfile, 'content' => ['blob' => ['content' => self::caddy($operation, $node)]],
-                'from_sha256' => $run === null ? null : self::read($run, "caddyread-{$node}"), 'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
+                'from_sha256' => $read['sha256'] ?? null, 'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
             'validators' => [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']],
             'units' => [['unit' => 'caddy.service', 'load' => 'reload']]];
+    }
+
+    /**
+     * The removal of the link a read found in a file's place, never following it. Any other kind but a plain file refuses.
+     *
+     * @return array<string, mixed>
+     */
+    private static function unlink(string $step, EngineRun $run): array
+    {
+        $read = self::read($run, self::readOf($step));
+        if ($read['kind'] !== 'link') {
+            throw new EngineStepRefusal('owned_revision_conflict', "Step [{$step}] found a {$read['kind']} in the file's place.");
+        }
+        $parts = explode('-', $step);
+
+        return ['state' => 'absent', 'path' => $parts[0] === 'caddyunlink' ? self::Caddyfile : ($parts[2] === 'records' ? self::Records : self::Catalog)];
+    }
+
+    /** The read step an unlink step follows: `dnsunlink-0-records` → `dnsread-0-records`, `caddyunlink-3` → `caddyread-3`. */
+    private static function readOf(string $step): string
+    {
+        return str_replace(['dnsunlink-', 'caddyunlink-'], ['dnsread-', 'caddyread-'], $step);
     }
 
     /** The Caddyfile the Node serves once the Route is gone, as the Gateway rendered it. */
@@ -357,23 +412,25 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineW
     }
 
     /**
-     * The digest a `file.read` step answered: null for an absent file. A link or any other kind in the file's place refuses, so
-     * nothing writes through it.
+     * What a `file.read` step found: `absent`, a plain `file` with its digest, a `link`, or another kind by its type.
+     *
+     * @return array{kind: string, sha256: ?string}
      */
-    private static function read(EngineRun $run, string $step): ?string
+    private static function read(EngineRun $run, string $step): array
     {
         $read = json_decode((string) $run->output($step), true);
         if (! is_array($read) || ! in_array($read['state'] ?? null, ['absent', 'present'], true)) {
             throw new LogicException("Step [{$step}] has no read.");
         }
         if ($read['state'] === 'absent') {
-            return null;
+            return ['kind' => 'absent', 'sha256' => null];
         }
-        if (($read['type'] ?? null) !== 'file' || ! is_string($read['sha256'] ?? null)) {
-            throw new EngineStepRefusal('owned_revision_conflict', "Step [{$step}] found no plain file.");
+        $type = is_string($read['type'] ?? null) ? $read['type'] : 'unknown';
+        if ($type === 'file' && ! is_string($read['sha256'] ?? null)) {
+            throw new LogicException("Step [{$step}] read a file without its digest.");
         }
 
-        return $read['sha256'];
+        return ['kind' => $type === 'symlink' ? 'link' : $type, 'sha256' => $type === 'file' ? $read['sha256'] : null];
     }
 
     /**

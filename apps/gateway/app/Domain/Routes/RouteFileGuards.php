@@ -46,7 +46,9 @@ final readonly class RouteFileGuards
                 ...($after === null ? [] : ['php_versions_after' => implode(',', array_keys((array) (ValidatedData::object(
                     $this->publications->snapshot($node, $after, true)['php'])['configurations'] ?? [])))]),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
-                'catalog' => $dns === null ? null : self::catalogDigest(ValidatedData::string($dns['catalog']))], is_string(...));
+                'catalog' => $dns === null ? null : self::catalogDigest(ValidatedData::string($dns['catalog'])),
+                // The catalog's bytes as rendered: the engine's config.apply compares the live file byte for byte.
+                'catalog_file' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
         }
 
         return $guards;
