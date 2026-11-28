@@ -3,9 +3,10 @@ name = "orbit-executor-host"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Host-resource primitives of the Orbit executor: files, dotenv keys, access lists, trust, units, configuration sets and HTTP probes (ADR 0271 N3)"
+description = "Host-resource primitives of the Orbit executor: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes and Conn Server sessions, projects and pairing links (ADR 0271 N3)"
 
 [dependencies]
+orbit-executor-core = { path = "../executor-core" }
 regex = "1"
 rustix = { version = "1", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
@@ -13,6 +14,9 @@ serde_json = "1"
 sha2 = "0.10"
 
 [dev-dependencies]
+base64 = "0.22"
+# Opens a sealed answer in the tests.
+crypto_box = { version = "0.9", default-features = false, features = ["seal", "salsa20", "getrandom", "std"] }
 # Raises the open-file limit for the large-tree test.
 rustix = { version = "1", features = ["fs", "process"] }
 tempfile = "3"

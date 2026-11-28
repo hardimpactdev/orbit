@@ -150,7 +150,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Planned | `instance.checkout`, the branch rename of `instance.names` |
 | `git.ref.ensure` | One ref, set only from an expected old value, or absent | Planned | The ref moves of `instance.sync_base` and `instance.clear_base` |
 | `git.worktree.read` | The state of one work tree, read only | Planned | `instance.work_read`, the evidence reads of `instance.sync_base` |
-| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Planned | `instance.t3`, whose T3 names go with it |
+| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Built ([contract](#the-conn-server-primitives)) | `instance.t3`, whose T3 names go with it |
 
 Three notes apply to every row.
 
@@ -234,6 +234,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 | `file.read` | `path`, absolute | Opens the path without following a final link and answers what it holds as JSON (`output`). Reads only, outside the journal, and runs no command. |
 | `account.read` | `{"user": name}`, a user name | Resolves the user through the host's NSS via `getent` (fixed argv) and answers it as JSON (`output`). Reads only, outside the journal. |
+| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | A Conn Server's binary, home and account, and the session, project or link | See [The Conn Server primitives](#the-conn-server-primitives). |
 
 `file.read` answers `{"state": "absent"}` only when nothing is at the path. Otherwise it answers `{"state": "present", "type", "sha256", "uid", "gid", "mode"}`: `type` is `file`, `directory`, `symlink`, `fifo`, `socket`, `char_device` or `block_device`, `mode` the octal permission bits such as `0644`, and `sha256` the digest of a plain file's bytes, absent for any other type.
 
@@ -256,6 +257,24 @@ The input is exactly `{"user": "<name>"}`, and the name must be a plain user nam
 `getent` is a command, but a fixed one chosen in the Rust code, as `setfacl` is for `posix.acl.ensure` and `update-ca-certificates` for `ca.trust.ensure`. The order supplies only the checked name, as one separate argument after `--` and the database. So `account.read` stays within the [five conditions](#what-a-primitive-may-be): one account, no Orbit name or path, the name from the Gateway, read-only, and typed input with no command from the order.
 
 An executor reports `account.read` in its actions from agent 0.37.0, so the Gateway admits a flow that reads an account only on Nodes that report it.
+
+#### The Conn Server primitives
+
+`conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue` act on one Conn Server on the Node. Each takes `server`: `{"binary", "home", "user", "group"}`, the server binary and its state home as absolute paths, and the account that owns the home. They run the server's own local control plane, the same commands `instance.t3` runs, with a fixed argv: `/usr/bin/setpriv --reuid <uid> --regid <gid> --clear-groups -- <binary> <command…> --base-dir <home>`, under `timeout` 15 s and with an empty environment. The server's CLI takes no `--`, so every value is checked first and none may start with `-`. An unknown field, a relative path, or a label, title, subject, scope or lifetime outside its pattern fails `host.input_invalid` and runs nothing.
+
+| Primitive | Input besides `server` | Fixed commands | Answer |
+| --- | --- | --- | --- |
+| `conn.session.issue` | `label`; `subject`; `scopes` (1 to 64, `[a-z:-]+`); `ttl` (`until-revoked` or a count with `m`, `h` or `d`, such as `3650d`); `seal_to` | `auth session list --json`, then `auth session issue --label <label> --subject <subject> --ttl <ttl> --scope <scope>… --json` | Output `{"session_id", "scopes", "sealed"}`; `sealed` opens to `{"token"}` |
+| `conn.project.ensure` | `workspace` (absolute); `title` | `project add <workspace> --title <title>`, only when the server's `userdata/projects.json` in its home lacks that folder under that title, then a read-back | Changes: 0 or 1 |
+| `conn.pairing.issue` | `address` (a loopback IP and port); `label`; `scopes`; `session_ttl`, the `sessionTtl` a device's session gets; `seal_to` | `auth pairing list --json`; `auth session issue` for a 5-minute `access:read` `access:write` session; `curl` `POST http://<address>/api/auth/pairing-token` with `{label, scopes, sessionTtl}`; `auth session revoke <id>` | Output `{"pairing_id", "expires_at", "sealed"}`; `sealed` opens to `{"credential"}` |
+
+A token and a pairing code leave the Node only sealed to the Gateway's `seal_to` key, inside the receipt's output, as `instance.t3` returns its sessions ([Primitives that span more than one file or call](#primitives-that-span-more-than-one-file-or-call)). The journal holds that receipt, so it too holds only the sealed bytes. The minting session's bearer goes to `curl` on standard input as a header, never in an argument, lives only in memory, and is revoked before the step answers. A failure logs its code and the exit code or HTTP status, never a server answer's body.
+
+Each issue makes one item per order. A repeated delivery of the order answers its stored receipt, so the same sealed item. An order that runs again after a crash finds its own item on the server first: a session whose `subject` the server lists fails `conn.session_issued`, and a link whose `label` it lists fails `conn.pairing_issued`, so a retry never makes a second one. The Gateway therefore sends a subject or label of the order's own. `conn.project.ensure` is desired state, and a repeat answers 0.
+
+Other failures are `conn.session_failed`, `conn.project_failed` and `conn.pairing_failed`: a server that cannot run, the time limit, a refusal, an answer with no token or code, a local API that is not reached or answers other than 200, or a minting session that cannot be revoked.
+
+They meet the [five conditions](#what-a-primitive-may-be): one Conn Server's session, project or link; the binary, home, account, folder, labels, scopes and lifetimes all from the Gateway, with only the server's own file layout and scope names in the Rust code; desired state for the project, and one item per order for the issues; and commands fixed in the Rust code, with the order supplying only checked values. They join the host family and the Gateway's signable actions. No flow sends them yet, and none answers `conn.pairing_create`. The Gateway admits a kind only on Nodes that report it, from agent 0.42.0.
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 

@@ -110,6 +110,12 @@ pub enum Action {
     FileRead,
     /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
+    /// Issue one session of a Conn Server, its token sealed to the Gateway (ADR 0271 N3). Its target is the Node.
+    ConnSessionIssue,
+    /// Make one folder a project of a Conn Server (ADR 0271 N3). Its target is the Node.
+    ConnProjectEnsure,
+    /// Issue one pairing link of a Conn Server, its code sealed to the Gateway (ADR 0271 N3). Its target is the Node.
+    ConnPairingIssue,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -124,7 +130,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 41] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -163,6 +169,9 @@ impl Action {
         Self::HttpProbe,
         Self::FileRead,
         Self::AccountRead,
+        Self::ConnSessionIssue,
+        Self::ConnProjectEnsure,
+        Self::ConnPairingIssue,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -198,7 +207,10 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => Family::Host,
+            | Self::AccountRead
+            | Self::ConnSessionIssue
+            | Self::ConnProjectEnsure
+            | Self::ConnPairingIssue => Family::Host,
         }
     }
 
@@ -234,7 +246,10 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => TargetKind::Node,
+            | Self::AccountRead
+            | Self::ConnSessionIssue
+            | Self::ConnProjectEnsure
+            | Self::ConnPairingIssue => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -321,6 +336,9 @@ impl Action {
             Self::HttpProbe => "http.probe",
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
+            Self::ConnSessionIssue => "conn.session.issue",
+            Self::ConnProjectEnsure => "conn.project.ensure",
+            Self::ConnPairingIssue => "conn.pairing.issue",
         }
     }
 }
@@ -373,6 +391,9 @@ impl FromStr for Action {
             "http.probe" => Ok(Self::HttpProbe),
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
+            "conn.session.issue" => Ok(Self::ConnSessionIssue),
+            "conn.project.ensure" => Ok(Self::ConnProjectEnsure),
+            "conn.pairing.issue" => Ok(Self::ConnPairingIssue),
             _ => Err(UnknownActionError),
         }
     }
@@ -416,7 +437,7 @@ pub enum Family {
     Instance,
     /// A Process's run state and a Schedule's Node timer (ADR 0271).
     Process,
-    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
+    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads, Conn Server sessions, projects and pairing links (ADR 0271 N3).
     Host,
 }
 

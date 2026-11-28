@@ -3,6 +3,8 @@
 //!
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
 //! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
+//! - [`session_issue`], [`project_ensure`], [`pairing_issue`] (`conn.session.issue`, `conn.project.ensure`,
+//!   `conn.pairing.issue`): one session, one project and one pairing link of a Conn Server.
 //! - [`account_read`] (`account.read`): the uid, primary group and home of one account, read only through the host's NSS.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
 //! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access or default list of one path, or of one folder tree.
@@ -17,6 +19,7 @@
 
 mod account;
 mod acl;
+mod conn;
 mod config;
 mod dotenv;
 mod file;
@@ -27,6 +30,8 @@ mod read;
 mod trust;
 mod unit;
 
+#[cfg(test)]
+mod conn_tests;
 #[cfg(test)]
 mod tests;
 
@@ -40,6 +45,7 @@ use serde::Deserialize;
 
 pub use account::{account_read, Account};
 pub use acl::{acl_ensure, Acl};
+pub use conn::{pairing_issue, project_ensure, session_issue, IssuedPairing, IssuedSession};
 pub use config::config_apply;
 pub use dotenv::dotenv_ensure;
 pub use file::file_ensure;
@@ -89,6 +95,30 @@ pub trait System {
     ///
     /// A message when the command cannot start.
     fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
+
+    /// Runs a command with a time limit, an empty environment and `stdin` on its standard input, and returns how it exited.
+    ///
+    /// # Errors
+    ///
+    /// A message when the command cannot start.
+    fn exec(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<Exit, String> {
+        use std::io::Write as _;
+        let mut child = Command::new(TIMEOUT)
+            .arg(seconds.to_string())
+            .args(argv)
+            .env_clear()
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        if let Some(mut input) = child.stdin.take() {
+            // A command that exits before it reads its input is judged by its exit, not by the broken pipe.
+            let _ = input.write_all(stdin.unwrap_or_default());
+        }
+        let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        Ok(Exit { code: output.status.code(), stdout: output.stdout, stderr: output.stderr })
+    }
 
     /// A user's id by name.
     ///
@@ -194,6 +224,26 @@ impl System for NodeSystem {
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
         std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
+    }
+}
+
+/// How a command run by [`System::exec`] ended.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Exit {
+    /// The exit code, `None` when a signal ended it.
+    pub code: Option<i32>,
+    /// Its standard output.
+    pub stdout: Vec<u8>,
+    /// Its standard error.
+    pub stderr: Vec<u8>,
+}
+
+impl Exit {
+    /// Standard error as text, trimmed and cut to 512 bytes for a log line.
+    pub(crate) fn stderr_text(&self) -> String {
+        let text = String::from_utf8_lossy(&self.stderr);
+        let text = text.trim();
+        text.char_indices().take_while(|(index, _)| *index < 512).map(|(_, c)| c).collect()
     }
 }
 
