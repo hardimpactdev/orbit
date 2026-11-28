@@ -143,7 +143,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `docker.container.ensure`, `docker.container.restart` | One Docker container | Planned | The container branches of the process family |
 | `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Planned | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
 | `incus.instance.read` | The state, configuration and snapshots of one Incus instance, read only | Planned | The seed choice of `instance.clone`; the machine id read of `instance.prepare` |
-| `incus.acl.ensure`, `incus.device.ensure`, `incus.volume.ensure` | One network ACL, one device, one storage volume | Planned | The rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, their removal in `instance.destroy` |
+| `incus.acl.ensure`, `incus.device.ensure`, `incus.volume.ensure` | One network ACL, one device, one storage volume | Built; [the incus family](#the-incus-family) | The rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, their removal in `instance.destroy` |
 | `git.fetch` | One ref fetched into one repository | Planned | `instance.fetch_branch`; the bundle transfer of `instance.checkout` and `instance.sync_base` |
 | `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Planned | `instance.checkout`, the branch rename of `instance.names` |
 | `git.ref.ensure` | One ref, set only from an expected old value, or absent | Planned | The ref moves of `instance.sync_base` and `instance.clear_base` |
@@ -294,6 +294,32 @@ An executor with the `route` family reports the `tls.csr_input` feature. With it
 It keeps a key that `openssl pkey` reads as PEM or DER, and puts its owner and mode right. A file that is decisively not a key (empty, or holding no PEM block of any kind and failing DER) is replaced once, as on main, and the request goes on.
 
 Deviation from main, for safety: a file with a PEM block openssl cannot read (encrypted, a certificate only, other), or an inspection that times out or cannot start, fails the request with `app-dev.certificate_request_failed` and keeps the file. Main replaced these; Orbit never writes such keys. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
+
+### The incus family
+
+The `incus` family (`crates/incus`) holds the Incus primitives of the [catalogue](#the-catalogue). App-dev enables it from agent 0.40.0 (`NodeExecutorInput::FamilySince`), because Incus runs there. No flow sends them yet: the Instance rewrite moves the rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume` and their removal in `instance.destroy` onto them ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats#actions-that-predate-the-rule)). Each targets the Node.
+
+Each speaks the Incus REST API over its unix socket and runs no command. The socket is `socket` from the input, an absolute path, or the Incus default `/var/lib/incus/unix.socket`. Every request and every wait for a background operation shares one deadline, `timeout_ms` from 1000 to 600000. It waits on an operation with `GET /1.0/operations/<id>/wait`, so a copy that outlasts the deadline fails `incus.timeout` and Incus finishes it alone.
+
+| Primitive | Input | Work |
+| --- | --- | --- |
+| `incus.acl.ensure` | `project`, `name`, `state` `present` or `absent`, `timeout_ms`, optional `socket`; `present` also takes `description`, `config` (string map) and `ingress` and `egress` rules | Reads `/1.0/network-acls/<name>`. Creates it, or replaces description, configuration and rules with `PUT` under the `ETag` it read, only when one differs. `absent` deletes it only when `used_by` is empty, else `incus.acl_in_use`. |
+| `incus.device.ensure` | `project`, `instance`, `device` (the device key), `state`, `timeout_ms`, optional `socket`; `present` takes `config`, a string map with a `type` | Reads the instance's own devices and writes them back with `PUT` under the `ETag` it read, with only that key set or removed |
+| `incus.volume.ensure` | `project`, `pool`, `name` (a custom volume), `state`, `timeout_ms`, optional `socket`; `present` takes `source` (`pool`, `volume`, optional `snapshot` and `project`) and optional `config` | `present` copies the source without its snapshots and patches each given key that differs; `absent` deletes exactly that unused custom volume |
+
+`incus.device.ensure` never touches a profile's devices. Every other device and every other field of the instance stays as it was read. A missing instance answers `incus.instance_missing`.
+
+`incus.volume.ensure` copies with `volume_only`, and sets a configuration key that differs with `PATCH`, which leaves every other key as it is. `absent` deletes the volume only when its `used_by` is empty, else it refuses `incus.volume_in_use`.
+
+A rule takes `action` (`allow`, `allow-stateless`, `drop` or `reject`) and `state` (`enabled`, `disabled` or `logged`), and optionally `description`, `source`, `destination`, `protocol`, `source_port`, `destination_port`, `icmp_type` and `icmp_code`. The ACL compares every rule field by field, an unset field as the empty string that Incus stores, so a repeat answers 0.
+
+`incus.volume.ensure` records its source in the volume's configuration at creation, as `user.source` = `<project>/<pool>/<volume>[/<snapshot>]`. A volume of that name whose record differs, or that has none, refuses `incus.volume_source_conflict` and is never written. A source that does not exist refuses `incus.volume_source_missing` before the copy. A `config` that sets `user.source` or a `volatile.` key refuses.
+
+Incus itself refuses to delete a volume that an instance uses, so `absent` has no switch to override `incus.volume_in_use`. A flow first removes the disk with `incus.device.ensure` and then the volume.
+
+Every input is typed. An unknown field, a name that is not one plain path part (`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`), a socket that is not a plain absolute path, or a `timeout_ms` outside its range refuses `incus.input_invalid` before any request. Each primitive reads the resource back after a change and answers `applied` with its number of changes. When the read-back differs from the input, it fails `incus.not_converged`. A socket it cannot open answers `incus.unreachable`. An API error or a failed operation answers `incus.api_failed`; its detail goes only to the executor's log.
+
+They meet the [five conditions](#what-a-primitive-may-be). Each acts on one Incus resource, a program on the host with its own interface. Its name and input describe the ACL, device or volume, and the Gateway sends every project, pool, name, device, rule and key; the Rust code holds only the Incus default socket and the `user.source` key. Each is desired state with a read-back. Each sends only typed JSON that it builds itself, never a command from the order.
 
 ### The instance family
 

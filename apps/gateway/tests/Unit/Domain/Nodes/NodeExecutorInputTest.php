@@ -86,3 +86,11 @@ it('enables the host primitives where Route steps run, app-dev and vpn, only onc
         ->and(NodeExecutorInput::intent('14', 'orbit', 'executor-linux-x86_64', [RoleName::Gateway], $artifacts, ['k'], '0.36.0')['enabled'] ?? null)->toBe("proof\n")
         ->and(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppProd], $artifacts, ['k'], '0.36.0'))->toBeNull();
 });
+
+it('enables the incus primitives on app-dev, where Incus runs, only once the pinned delivery knows the incus family', function () use ($artifacts): void {
+    expect(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.39.0')['enabled'] ?? null)
+        ->toBe("firewall\nhost\ninstance\npower\nprocess\nproof\nroute\n")
+        ->and(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.40.0')['enabled'] ?? null)
+        ->toBe("firewall\nhost\nincus\ninstance\npower\nprocess\nproof\nroute\n")
+        ->and(NodeExecutorInput::intent('1', 'orbit', 'executor-linux-x86_64', [RoleName::Vpn], $artifacts, ['k'], '0.40.0')['enabled'] ?? null)->toBe("dns\nhost\n");
+});

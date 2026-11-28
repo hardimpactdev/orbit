@@ -110,6 +110,13 @@ pub enum Action {
     FileRead,
     /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
+    /// One network ACL in one Incus project, with its rules, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusAclEnsure,
+    /// One device key of one Incus instance, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusDeviceEnsure,
+    /// One custom Incus storage volume copied from a source volume or snapshot, or absent, through the Incus API (ADR 0271 N3).
+    /// Its target is the Node.
+    IncusVolumeEnsure,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -124,7 +131,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 41] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -163,6 +170,9 @@ impl Action {
         Self::HttpProbe,
         Self::FileRead,
         Self::AccountRead,
+        Self::IncusAclEnsure,
+        Self::IncusDeviceEnsure,
+        Self::IncusVolumeEnsure,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -199,6 +209,7 @@ impl Action {
             | Self::HttpProbe
             | Self::FileRead
             | Self::AccountRead => Family::Host,
+            Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
         }
     }
 
@@ -234,7 +245,10 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => TargetKind::Node,
+            | Self::AccountRead
+            | Self::IncusAclEnsure
+            | Self::IncusDeviceEnsure
+            | Self::IncusVolumeEnsure => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -321,6 +335,9 @@ impl Action {
             Self::HttpProbe => "http.probe",
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
+            Self::IncusAclEnsure => "incus.acl.ensure",
+            Self::IncusDeviceEnsure => "incus.device.ensure",
+            Self::IncusVolumeEnsure => "incus.volume.ensure",
         }
     }
 }
@@ -373,6 +390,9 @@ impl FromStr for Action {
             "http.probe" => Ok(Self::HttpProbe),
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
+            "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
+            "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
+            "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
             _ => Err(UnknownActionError),
         }
     }
@@ -418,6 +438,8 @@ pub enum Family {
     Process,
     /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
     Host,
+    /// Incus primitives over the Incus API: network ACLs, instance devices and storage volumes (ADR 0271 N3).
+    Incus,
 }
 
 /// The family name is unknown to this executor.
@@ -439,6 +461,7 @@ impl Family {
             "instance" => Some(Self::Instance),
             "process" => Some(Self::Process),
             "host" => Some(Self::Host),
+            "incus" => Some(Self::Incus),
             _ => None,
         }
     }
@@ -497,6 +520,9 @@ mod tests {
         assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
         assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert_eq!("incus.volume.ensure".parse(), Ok(Action::IncusVolumeEnsure));
+        assert!(Enabled::parse("incus\n").expect("valid file").allows(Action::IncusAclEnsure));
+        assert!(!Enabled::parse("host\n").expect("valid file").allows(Action::IncusDeviceEnsure));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));
