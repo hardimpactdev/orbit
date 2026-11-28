@@ -7,6 +7,7 @@ description = "Host-resource primitives of the Orbit executor: files, dotenv key
 
 [dependencies]
 regex = "1"
+rustix = { version = "1", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

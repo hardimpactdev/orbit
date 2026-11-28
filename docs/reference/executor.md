@@ -114,6 +114,8 @@ Every action in the executor's enum must meet these five conditions. A pull requ
 | Desired state | It reads the resource, changes only what differs, reads it back, and answers the number of changes. A repeat changes nothing. |
 | Typed input | It never runs a command, a script or an argument list that the order carries. The commands a primitive runs are fixed in its Rust code. |
 
+The only exception to one resource is the tree scope of `posix.acl.ensure`: one access list entry over one folder tree, the root and every folder and file below it ([The host family](#the-host-family)). Nick approved it on 2026-11-28 for one entry and one tree, nothing more. The Gateway does not know a checkout's file tree, so it cannot send one order per path. No other primitive acts on a tree, and the tree scope takes no other entry, root or command.
+
 Desired state applies wherever the resource allows it; a restart, for example, is bound to its order instead. A workspace folder and a unit name pattern are examples of Orbit paths and names that arrive in the input. The order of the steps, the content of each file, and what a failure means for the Operation belong to the Operation's flow in the Gateway.
 
 ### The catalogue
@@ -131,7 +133,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `file.read` | The digest, type, owner and mode of one path, read only; never its content | Built | The unguarded Caddyfile, pool and dnsmasq catalog writes of `route.publish_site` and `dns.publish_records`: it reads the live digest that `config.apply` takes as `from_sha256` |
 | `dotenv.ensure` | Keys of one dotenv file | Built | The `APP_URL` edit of `route.publish_site`; the `.env` merge of `instance.checkout` |
 | `json.ensure` | Keys of one JSON file | Planned | The JSON merges of `instance.prepare` |
-| `posix.acl.ensure` | The access list of one path | Built | The `setfacl` calls of `route.publish_site` |
+| `posix.acl.ensure` | One entry of the access list of one path, or of one folder tree with `scope: tree` (feature `posix.acl.tree`) | Built | The `setfacl` calls of `route.publish_site` |
 | `ca.trust.ensure` | One certificate in a trust store | Built | The trust steps of `route.publish_site` and `instance.prepare` |
 | `hostname.ensure` | The host name of one machine | Planned | The host name steps of `instance.start` and `instance.names` |
 | `account.ensure` | One user account and its group | Planned | The app-account step of `instance.start` |
@@ -224,7 +226,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | --- | --- | --- |
 | `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file takes exactly one of `content` (a blob) and `source_path` (an absolute path on the Node), and may carry `from_sha256`; with `source_path` it may carry `source_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
-| `posix.acl.ensure` | One path, subject user, `rwx` permissions, `default`, `optional`, and the account `setfacl` runs as; send one order per path | Reads the path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; nothing below the path changes |
+| `posix.acl.ensure` | One absolute path, subject user, `rwx` permissions, `default`, `optional`, the account `setfacl` runs as, and `scope` `path` (the default) or `tree` | Reads each path with `getfacl`, never through a link, and sets the entry only where it or the mask differs. With `path`, nothing below the path changes. |
 | `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and runs the plain updater after a change |
 | `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` from 1 s to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
 | `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
@@ -247,7 +249,13 @@ Each of these refuses with its own code. A missing source answers `file.source_m
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
 
-`posix.acl.ensure` acts on exactly one path, the access or default entry of that path only; the Gateway sends one order per path. If a recursive ACL is genuinely needed, that is a primitive-rule change for Nick.
+With `scope: path`, `posix.acl.ensure` acts on exactly one path, the access or default entry of that path only.
+
+With `scope: tree`, it converges the one entry on the root and every entry below it, the [single exception](#what-a-primitive-may-be) to one resource. An access entry applies to every folder and plain file, and a default entry to every folder. It applies the same exact compare, mask rule and first-default seeding to each path, answers the number of paths it changed, and reads each changed path back. Paths that need the same entries share one fixed `setfacl -P -n -m` call, up to 200 paths each.
+
+The tree walk runs in Rust. It opens each folder relative to its parent's descriptor with `O_NOFOLLOW` and reads each entry with `AT_SYMLINK_NOFOLLOW`. A link is skipped and never followed, also when it points out of the tree, and so is a root that is a link. Anything else that is neither a folder nor a plain file is skipped too.
+
+The path spelling refuses `/` and its aliases, such as `//`, `/.` and `/srv/..`, as for every path. A read error anywhere in the walk or in `getfacl` fails the whole order with `acl.ensure_failed`, before any change. Only a missing root with `optional` answers `0`. An executor with the host family reports the `posix.acl.tree` feature, so admission can require it.
 
 `ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Route creation needs it: it installs the managed root CA, as `route.publish_site` does today. After a change it runs the plain `update-ca-certificates`, never `--fresh`. It then checks with `openssl verify -no-CApath -no-CAstore -CAfile /etc/ssl/certs/ca-certificates.crt`, so only the named bundle counts, that the certificate is trusted and has a subject-hash link (`present`), or is not trusted (`absent`). Only a conclusive answer counts: a timeout, a command that cannot start or another failure answers `trust.ensure_failed`.
 

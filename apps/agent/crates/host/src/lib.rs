@@ -4,7 +4,7 @@
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
 //! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
-//! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path.
+//! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path, or of one folder tree (`scope: tree`).
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
 //! - [`unit_ensure`] (`systemd.unit.ensure`): one unit, enabled and running or stopped.
 //! - [`config_apply`] (`config.apply`): one set of configuration files that share a lock, validated by a fixed validator,
