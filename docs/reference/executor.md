@@ -224,13 +224,19 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | --- | --- | --- |
 | `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
-| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads each affected path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; answers the paths it changed. It writes the mask explicitly and widens it only by bits no other entry holds, so every other subject keeps its effective permissions, and reads them back |
-| `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/`, and rebuilds the store with `update-ca-certificates --fresh` until the bundle holds it and its name and subject-hash links reach it. `absent` removes the file, always rebuilds, and checks the bundle no longer holds it |
-| `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` up to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails. `activating` and `deactivating` never count as running or stopped: it waits for a settled state within the budget, or fails |
+| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads each affected path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; answers the paths it changed |
+| `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and rebuilds the store until the host trusts it |
+| `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` up to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
 | `config.apply` | Lock path, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
+
+`posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions.
+
+`ca.trust.ensure` refuses anything but exactly one PEM certificate before any change. It rebuilds with `update-ca-certificates --fresh` until the bundle holds the certificate and its name and subject-hash links reach the placed file. `absent` removes the file, always rebuilds, and fails when the rebuilt bundle still holds it.
+
+`systemd.unit.ensure` never counts `activating` or `deactivating` as running or stopped. It waits for a settled state within `budget_ms`, or fails.
 
 `config.apply` takes the lock the input names, for example `/etc/caddy/.orbit-publish.lock` or `/run/lock/orbit-dnsmasq.lock`, so it shares the lock with Swamp's writers of the same files. Under it, each live file must hold its `from_sha256` or already the desired bytes, or be absent when the input names no digest. Otherwise it refuses `owned_revision_conflict` before any write. It writes the changed files, runs each validator, and reloads or restarts each unit on every run. A validator comes from a fixed list, and Rust builds its command:
 
