@@ -423,8 +423,8 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     /**
      * Checks that the trust anchor already holds the Route's root, or is absent. An Orbit root rotation is not run here: a
      * same-name replacement leaves the new root without its subject-hash link, which `ca.trust.ensure` refuses. The create
-     * refuses before any request, as the Node's site step (`route.publish_failed`); during a rotation route.create is off in
-     * `ORBIT_ENGINE_KINDS` until Swamp has rotated every development Node.
+     * refuses before any request, as the Node's site step (`route.publish_failed`). After a rotation route.create stays off in
+     * `ORBIT_ENGINE_KINDS` until the ca.trust.ensure rotation fix (ORB-6406) has repaired the subject-hash link on every development Node.
      *
      * @param  array<string, mixed>  $plan
      */

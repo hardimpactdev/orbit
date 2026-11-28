@@ -354,8 +354,8 @@ it('installs the root only under the one trust anchor main and Swamp use, so eit
     $root = routePlan()['root_certificate'];
     $run = routeRun(['site-3-read-trust' => $read]);
 
-    // engine→engine, or Swamp rotated first and the engine create comes with the new root: the anchor already holds it, so the
-    // check passes and ca.trust.ensure finds nothing to change (it answers 0). A Node without the anchor gets it installed.
+    // The anchor already holds this root (engine→engine), or there is none yet: the check passes, and the order is
+    // ca.trust.ensure present under the one fixed name, with no other trust source.
     expect($flow->local(routeOperation(routePlan()), 'site-3-trustcheck', $run))->toBeString()
         ->and($flow->input(routeOperation(routePlan()), 'site-3-read-trust', $run))->toBe(['path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
         ->and($flow->input(routeOperation(routePlan()), 'site-3-trust', $run))->toBe(['state' => 'present', 'name' => 'orbit-managed-root-ca.crt',
@@ -364,9 +364,24 @@ it('installs the root only under the one trust anchor main and Swamp use, so eit
             static fn (string $name): bool => str_contains($name, 'untrust') || str_contains($name, 'cafile')))->toBe([]);
 })->with([
     'engine→engine with the same root' => ['same', routeRead(hash('sha256', routePlan()['root_certificate']))],
-    'Swamp rotated, then an engine create with the new root' => ['swamp', routeRead(hash('sha256', routePlan()['root_certificate']))],
     'no anchor yet' => ['absent', '{"state":"absent"}'],
 ]);
+
+it('sends after a Swamp rotation the order for the new root under the same fixed anchor, and nothing else for trust', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $new = "-----BEGIN CERTIFICATE-----\nTkVX\n-----END CERTIFICATE-----\n";
+    $plan = routePlan(['root_certificate' => $new]);
+    // Swamp rewrote the fixed file to the new root: the read finds its bytes, so the check passes. Whether ca.trust.ensure then
+    // converges depends on the subject-hash link Swamp's update leaves out, hence route.create stays off until ORB-6406.
+    $rotated = routeRun(['site-3-read-trust' => routeRead(hash('sha256', $new))]);
+    $trust = array_values(array_filter(array_map(static fn ($step): string => $step->name, $flow->steps(routeOperation($plan))),
+        static fn (string $name): bool => str_contains($name, 'trust')));
+
+    expect($flow->local(routeOperation($plan), 'site-3-trustcheck', $rotated))->toBe('node 3 trusts the root')
+        ->and($trust)->toBe(['site-3-read-trust', 'site-3-trustcheck', 'site-3-trust'])
+        ->and($flow->input(routeOperation($plan), 'site-3-trust', $rotated))->toBe(['state' => 'present', 'name' => 'orbit-managed-root-ca.crt',
+            'certificate' => ['blob' => ['content' => $new]], 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]);
+});
 
 it('refuses before any request when the trust anchor holds another root, so no same-name rotation runs on the engine', function (): void {
     $flow = app(RouteEngineFlow::class);
