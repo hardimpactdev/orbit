@@ -23,7 +23,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
-Recent agent versions changed the executor as follows.
+Recent agent versions changed the executor as follows. This tree builds agent `0.45.0` before the pin moves.
 
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
@@ -36,6 +36,8 @@ Later versions add catalogue primitives.
 
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
 - **Unit restart and signal:** Agent `0.45.0` adds `systemd.unit.restart` and `systemd.unit.signal` to the host family, one run of one unit restarted or signalled at most once per order ([the host family](/reference/executor#the-host-family)).
+
+Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 

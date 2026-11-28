@@ -3,7 +3,7 @@ name = "orbit-executor-incus"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Incus primitives of the Orbit executor: one Incus instance through the Incus REST API over its unix socket (ADR 0271 N3)"
+description = "Incus primitives of the Orbit executor through the Incus REST API over its unix socket: instances, network ACLs, instance devices and storage volumes (ADR 0271 N3)"
 
 [dependencies]
 regex = "1"
