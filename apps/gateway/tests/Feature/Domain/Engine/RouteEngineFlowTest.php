@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Engine\EngineContent;
+use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
@@ -51,6 +52,17 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s site and a G
         ['site-3', 3, 'route.publish_site', ['sign-0']],
         ['probe-0', 0, 'route.probe', ['site-3']],
     ]);
+});
+
+it('asks for the request with its folder owner, modes and subject, only from a Node that reports that input', function (): void {
+    $steps = app(RouteEngineFlow::class)->steps(routeOperation(routePlan()));
+
+    expect($steps[0]->features)->toBe(['tls.csr_input'])
+        ->and(RouteEngineFlow::csrInput(['directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef', 'domain' => 'shop.orbit']))->toBe([
+            'directory' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef',
+            'key' => '/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem', 'user' => 'root', 'group' => 'caddy',
+            'directory_mode' => '0750', 'key_mode' => '0640', 'subject' => '/CN=Orbit', 'domain' => 'shop.orbit',
+        ]);
 });
 
 it('publishes private DNS on the VPN Node after the signature, beside the site, and probes after the site alone', function (): void {
@@ -187,4 +199,17 @@ it('leaves a Route to Swamp when a leaf or account is outside the executor\'s sh
     'a domain the executor refuses' => [['leaves' => [[...routePlan()['leaves'][0], 'domain' => 'Shop Orbit']]]],
     'an account the executor refuses' => [['nodes' => ['3' => ['account' => 'Root!']]]],
     'a pool without its unit' => [['php_reloads' => []]],
+]);
+
+it('runs a Route on the engine only when its leaf Node reports the request input, and on Swamp before the pin', function (array $features, bool $engine): void {
+    config(['orbit.engine.kinds' => ['route.create']]);
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'route.publish_site']);
+    $bus->shouldReceive('nodeFeatures')->andReturn($features);
+    $this->app->instance(MachineBus::class, $bus);
+
+    expect(app(EngineKinds::class)->routes(routeOperation(routePlan())))->toBe($engine);
+})->with([
+    'a Node with the host primitives' => [['tls.csr_input'], true],
+    'an older executor' => [[], false],
 ]);

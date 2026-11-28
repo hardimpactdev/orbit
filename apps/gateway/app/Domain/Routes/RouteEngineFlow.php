@@ -44,6 +44,12 @@ final readonly class RouteEngineFlow implements EngineDefinition
 
     private const string Directory = '#\A/etc/caddy/orbit-certificates/[A-Za-z0-9][A-Za-z0-9._-]*/versions/[0-9a-f]{16}\z#D';
 
+    /**
+     * The executor input that gives `tls.ensure_csr` its folder's owner and modes and the request's subject (ADR 0271 N3). A Node
+     * whose executor does not report it runs the Route on Swamp.
+     */
+    public const string CsrFeature = 'tls.csr_input';
+
     public const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
 
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
@@ -64,7 +70,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             $node = ValidatedData::integer($leaf['node_id']);
             self::csrInput($leaf);
-            $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000);
+            $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000, features: [self::CsrFeature]);
             $steps[] = $signs[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000);
         }
         $after = array_map(static fn (StepSpec $step): string => $step->name, $signs);
@@ -141,7 +147,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
 
     /**
      * @param  array<string, mixed>  $leaf
-     * @return array{directory: string, domain: string}
+     * @return array{directory: string, key: string, user: string, group: string, directory_mode: string, key_mode: string, subject: string, domain: string}
      */
     public static function csrInput(array $leaf): array
     {
@@ -151,7 +157,9 @@ final readonly class RouteEngineFlow implements EngineDefinition
             throw new EngineUnsupported('A leaf outside the executor\'s shape runs on Swamp.');
         }
 
-        return ['directory' => $directory, 'domain' => $domain];
+        // The version folder is root:caddy 0750 and its key root:caddy 0640, so only Caddy reads it; the request's CN is `Orbit`.
+        return ['directory' => $directory, 'key' => $directory.'/key.pem', 'user' => 'root', 'group' => 'caddy', 'directory_mode' => '0750', 'key_mode' => '0640',
+            'subject' => '/CN=Orbit', 'domain' => $domain];
     }
 
     /**

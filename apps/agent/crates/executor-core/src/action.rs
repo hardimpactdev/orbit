@@ -90,6 +90,21 @@ pub enum Action {
     /// Enable and start a Schedule's own Node timer and read it back (ADR 0271). Its target is the Node's part for that
     /// Schedule (`<node>:schedule-<uuid>`).
     ScheduleEnsureTimer,
+    /// Converge one file, folder or link, or its absence (ADR 0271 N3). Its target is the Node.
+    FileEnsure,
+    /// Converge keys of one dotenv file (ADR 0271 N3). Its target is the Node.
+    DotenvEnsure,
+    /// Converge one entry of the access list of one path (ADR 0271 N3). Its target is the Node.
+    PosixAclEnsure,
+    /// Converge one certificate in the host's trust store (ADR 0271 N3). Its target is the Node.
+    CaTrustEnsure,
+    /// Converge one systemd unit to enabled or disabled, running or stopped (ADR 0271 N3). Its target is the Node.
+    SystemdUnitEnsure,
+    /// Apply one set of configuration files that share a lock: guard, write, validate, load, and roll back on failure
+    /// (ADR 0271 N3). Its target is the Node, so the Node's sets apply one at a time.
+    ConfigApply,
+    /// Read one HTTP answer with a bounded wait and a typed expectation (ADR 0271 N3). Read-only. Its target is the Node.
+    HttpProbe,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -104,7 +119,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 36] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -134,6 +149,13 @@ impl Action {
         Self::ProcessReadInstance,
         Self::ProcessRestart,
         Self::ScheduleEnsureTimer,
+        Self::FileEnsure,
+        Self::DotenvEnsure,
+        Self::PosixAclEnsure,
+        Self::CaTrustEnsure,
+        Self::SystemdUnitEnsure,
+        Self::ConfigApply,
+        Self::HttpProbe,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -161,12 +183,19 @@ impl Action {
             | Self::InstanceClearBase
             | Self::InstanceWorkRead => Family::Instance,
             Self::ProcessEnsureState | Self::ProcessReadInstance | Self::ProcessRestart | Self::ScheduleEnsureTimer => Family::Process,
+            Self::FileEnsure
+            | Self::DotenvEnsure
+            | Self::PosixAclEnsure
+            | Self::CaTrustEnsure
+            | Self::SystemdUnitEnsure
+            | Self::ConfigApply
+            | Self::HttpProbe => Family::Host,
         }
     }
 
     /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
     pub fn read_only(self) -> bool {
-        matches!(self, Self::InstanceWorkRead)
+        matches!(self, Self::InstanceWorkRead | Self::HttpProbe)
     }
 
     /// What the action's target names.
@@ -187,7 +216,14 @@ impl Action {
             | Self::ProcessEnsureState
             | Self::ProcessReadInstance
             | Self::ProcessRestart
-            | Self::ScheduleEnsureTimer => TargetKind::Node,
+            | Self::ScheduleEnsureTimer
+            | Self::FileEnsure
+            | Self::DotenvEnsure
+            | Self::PosixAclEnsure
+            | Self::CaTrustEnsure
+            | Self::SystemdUnitEnsure
+            | Self::ConfigApply
+            | Self::HttpProbe => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -209,6 +245,7 @@ impl Action {
     /// A Route withdrawal's DNS and site steps are fenced too: they run inside a receipt-bound removal.
     pub fn receipt_fenced(self) -> bool {
         // The Route actions are fenced for an engine-run Route update (route.update), whose target stays fenced until each receipt.
+        // The host primitives that change a resource replace them in the Route flows (ADR 0271, Actions that predate the rule), so they are fenced too.
         matches!(
             self,
             Self::InstanceDestroy
@@ -223,6 +260,12 @@ impl Action {
                 | Self::ProcessReadInstance
                 | Self::ProcessRestart
                 | Self::ScheduleEnsureTimer
+                | Self::FileEnsure
+                | Self::DotenvEnsure
+                | Self::PosixAclEnsure
+                | Self::CaTrustEnsure
+                | Self::SystemdUnitEnsure
+                | Self::ConfigApply
         )
     }
 
@@ -258,6 +301,13 @@ impl Action {
             Self::ProcessReadInstance => "process.read_instance",
             Self::ProcessRestart => "process.restart",
             Self::ScheduleEnsureTimer => "schedule.ensure_timer",
+            Self::FileEnsure => "file.ensure",
+            Self::DotenvEnsure => "dotenv.ensure",
+            Self::PosixAclEnsure => "posix.acl.ensure",
+            Self::CaTrustEnsure => "ca.trust.ensure",
+            Self::SystemdUnitEnsure => "systemd.unit.ensure",
+            Self::ConfigApply => "config.apply",
+            Self::HttpProbe => "http.probe",
         }
     }
 }
@@ -301,6 +351,13 @@ impl FromStr for Action {
             "process.read_instance" => Ok(Self::ProcessReadInstance),
             "process.restart" => Ok(Self::ProcessRestart),
             "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
+            "file.ensure" => Ok(Self::FileEnsure),
+            "dotenv.ensure" => Ok(Self::DotenvEnsure),
+            "posix.acl.ensure" => Ok(Self::PosixAclEnsure),
+            "ca.trust.ensure" => Ok(Self::CaTrustEnsure),
+            "systemd.unit.ensure" => Ok(Self::SystemdUnitEnsure),
+            "config.apply" => Ok(Self::ConfigApply),
+            "http.probe" => Ok(Self::HttpProbe),
             _ => Err(UnknownActionError),
         }
     }
@@ -344,6 +401,8 @@ pub enum Family {
     Instance,
     /// A Process's run state and a Schedule's Node timer (ADR 0271).
     Process,
+    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes (ADR 0271 N3).
+    Host,
 }
 
 /// The family name is unknown to this executor.
@@ -364,6 +423,7 @@ impl Family {
             "dns" => Some(Self::Dns),
             "instance" => Some(Self::Instance),
             "process" => Some(Self::Process),
+            "host" => Some(Self::Host),
             _ => None,
         }
     }

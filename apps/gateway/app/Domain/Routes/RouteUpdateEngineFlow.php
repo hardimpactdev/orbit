@@ -90,7 +90,8 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, EngineWa
             foreach (array_keys(RouteExecutionProof::objects($plan['leaves'])) as $index) {
                 $node = ValidatedData::integer(RouteExecutionProof::objects($plan['leaves'])[$index]['node_id']);
                 $this->create->csrInput(RouteExecutionProof::objects($plan['leaves'])[$index]);
-                $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, ['current'], budgetMs: 60_000, resendMs: 15_000);
+                $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, ['current'], budgetMs: 60_000, resendMs: 15_000,
+                    features: [RouteEngineFlow::CsrFeature]);
                 $steps[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000, resendMs: self::LocalResendMs);
                 $signs[] = "sign-{$index}";
             }
