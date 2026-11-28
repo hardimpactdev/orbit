@@ -58,6 +58,11 @@ impl NodeSystem {
     /// Sends one request and answers Incus's envelope. The connect, every write, every read and the answer itself share the
     /// one deadline: an answer that arrives in slow fragments fails once the deadline passes.
     pub(crate) fn request(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Answer, Failure> {
+        self.send(method, path, body, None).map(|(answer, _)| answer)
+    }
+
+    /// Sends one request, with `If-Match` when an `ETag` is given, and answers Incus's envelope and the answer's `ETag`.
+    pub(crate) fn send(&self, method: &str, path: &str, body: Option<&Value>, if_match: Option<&str>) -> Result<(Answer, Option<String>), Failure> {
         let late = || Failure::new(TIMEOUT, format!("{method} {path}: past the deadline"));
         let io = |error: std::io::Error| {
             let code = if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) { TIMEOUT } else { API_FAILED };
@@ -65,8 +70,9 @@ impl NodeSystem {
         };
         let mut stream = self.connect().map_err(io)?;
         let content = body.map(Value::to_string).unwrap_or_default();
+        let condition = if_match.map(|etag| format!("If-Match: {etag}\r\n")).unwrap_or_default();
         let request = format!(
-            "{method} {path} HTTP/1.0\r\nHost: incus\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{content}",
+            "{method} {path} HTTP/1.0\r\nHost: incus\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{condition}\r\n{content}",
             content.len()
         );
         let mut sent = 0;
@@ -112,8 +118,8 @@ impl NodeSystem {
     }
 }
 
-/// Parses one HTTP answer that holds an Incus envelope.
-fn parse(raw: &[u8]) -> Result<Answer, String> {
+/// Parses one HTTP answer that holds an Incus envelope, and its `ETag`.
+fn parse(raw: &[u8]) -> Result<(Answer, Option<String>), String> {
     let split = raw
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -130,9 +136,13 @@ fn parse(raw: &[u8]) -> Result<Answer, String> {
     {
         return Err("a chunked answer".to_owned());
     }
+    let etag = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim().eq_ignore_ascii_case("etag").then(|| value.trim().to_owned())
+    });
     let envelope: Value = serde_json::from_slice(&raw[split + 4..])
         .map_err(|error| format!("HTTP {status}: an answer that is not JSON: {error}"))?;
-    match envelope.get("type").and_then(Value::as_str) {
+    let answer = match envelope.get("type").and_then(Value::as_str) {
         Some("sync") if (200..300).contains(&status) => Ok(Answer::Sync(
             envelope.get("metadata").cloned().unwrap_or(Value::Null),
         )),
@@ -160,5 +170,71 @@ fn parse(raw: &[u8]) -> Result<Answer, String> {
             ))
         }
         _ => Err(format!("HTTP {status}: an unknown envelope")),
+    }?;
+    Ok((answer, etag))
+}
+
+impl NodeSystem {
+    /// Reads one object: its metadata and `ETag`, or `None` when Incus answers 404.
+    pub(crate) fn get(&self, path: &str) -> Result<Option<(Value, Option<String>)>, Failure> {
+        match self.send("GET", path, None, None)? {
+            (Answer::Sync(metadata), etag) => Ok(Some((metadata, etag))),
+            (Answer::Error(404, _), _) => Ok(None),
+            (answer, _) => Err(Failure::new(API_FAILED, format!("GET {path}: {answer:?}"))),
+        }
+    }
+
+    /// Sends one change and, when Incus runs it in the background, waits for its operation within the deadline. A `DELETE`
+    /// carries no body.
+    pub(crate) fn change(&self, method: &str, path: &str, body: Option<&Value>, if_match: Option<&str>) -> Result<(), Failure> {
+        match self.send(method, path, body, if_match)? {
+            (Answer::Sync(_), _) => Ok(()),
+            (Answer::Async(operation), _) => self.wait(&operation),
+            (Answer::Error(code, error), _) => Err(Failure::new(API_FAILED, format!("{method} {path}: {code} {error}"))),
+        }
+    }
+
+    /// Waits for one background operation within the deadline: Incus holds each wait at most the whole seconds left.
+    pub(crate) fn wait(&self, operation: &str) -> Result<(), Failure> {
+        loop {
+            let path = format!("{operation}/wait?timeout={}", self.seconds_left());
+            let metadata = match self.request("GET", &path, None)? {
+                Answer::Sync(metadata) => metadata,
+                answer => return Err(Failure::new(API_FAILED, format!("GET {path}: {answer:?}"))),
+            };
+            match metadata["status_code"].as_u64() {
+                Some(200) => return Ok(()),
+                // Created, started, running, pending: not finished within this wait.
+                Some(100..=106) => {
+                    if self.remaining().is_none() {
+                        return Err(Failure::new(TIMEOUT, format!("{operation} still runs at the deadline")));
+                    }
+                }
+                _ => {
+                    return Err(Failure::new(
+                        API_FAILED,
+                        format!("{operation}: {} {}", metadata["status"].as_str().unwrap_or("failed"), metadata["err"].as_str().unwrap_or("")),
+                    ))
+                }
+            }
+        }
+    }
+
+    /// The volume copies still running in a project. Incus names no resource on a copy's operation, so every running copy
+    /// in the project counts.
+    pub(crate) fn copies(&self, project: &str) -> Result<Vec<String>, Failure> {
+        let path = format!("/1.0/operations?project={project}&recursion=1");
+        let (operations, _) = self.get(&path)?.ok_or_else(|| Failure::new(API_FAILED, "no operations list"))?;
+        let mut found = Vec::new();
+        for operation in operations["running"].as_array().into_iter().flatten() {
+            if operation["description"] == "Copying storage volume" {
+                let id = operation["id"]
+                    .as_str()
+                    .filter(|id| crate::NAME.is_match(id))
+                    .ok_or_else(|| Failure::new(API_FAILED, "an operation without an id"))?;
+                found.push(format!("/1.0/operations/{id}"));
+            }
+        }
+        Ok(found)
     }
 }

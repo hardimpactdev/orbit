@@ -38,6 +38,8 @@ The Incus and Git families follow, each on app-dev Nodes only.
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
 - **Git primitives:** Agent `0.41.0` adds the [git family](/reference/executor#the-git-family) with `git.fetch`, `git.checkout`, `git.ref.ensure` and `git.worktree.read` on app-dev Nodes.
 
+Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
+
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
 The observer listens on no network port. To build and test the agent workspace, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).

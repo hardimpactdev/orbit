@@ -121,6 +121,13 @@ pub enum Action {
     /// Converge one Incus instance: copied from a snapshot, running, stopped or absent, through the Incus API over its unix
     /// socket (ADR 0271 N3). Its target is the Node, because the instance may not exist yet.
     IncusInstanceEnsure,
+    /// One network ACL in one Incus project, with its rules, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusAclEnsure,
+    /// One device key of one Incus instance, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusDeviceEnsure,
+    /// One custom Incus storage volume copied from a source volume or snapshot, or absent, through the Incus API (ADR 0271 N3).
+    /// Its target is the Node.
+    IncusVolumeEnsure,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -135,7 +142,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 46] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -179,6 +186,9 @@ impl Action {
         Self::GitRefEnsure,
         Self::GitWorktreeRead,
         Self::IncusInstanceEnsure,
+        Self::IncusAclEnsure,
+        Self::IncusDeviceEnsure,
+        Self::IncusVolumeEnsure,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -216,7 +226,7 @@ impl Action {
             | Self::FileRead
             | Self::AccountRead => Family::Host,
             Self::GitFetch | Self::GitCheckout | Self::GitRefEnsure | Self::GitWorktreeRead => Family::Git,
-            Self::IncusInstanceEnsure => Family::Incus,
+            Self::IncusInstanceEnsure | Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
         }
     }
 
@@ -257,7 +267,10 @@ impl Action {
             | Self::GitCheckout
             | Self::GitRefEnsure
             | Self::GitWorktreeRead
-            | Self::IncusInstanceEnsure => TargetKind::Node,
+            | Self::IncusInstanceEnsure
+            | Self::IncusAclEnsure
+            | Self::IncusDeviceEnsure
+            | Self::IncusVolumeEnsure => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -353,6 +366,9 @@ impl Action {
             Self::GitRefEnsure => "git.ref.ensure",
             Self::GitWorktreeRead => "git.worktree.read",
             Self::IncusInstanceEnsure => "incus.instance.ensure",
+            Self::IncusAclEnsure => "incus.acl.ensure",
+            Self::IncusDeviceEnsure => "incus.device.ensure",
+            Self::IncusVolumeEnsure => "incus.volume.ensure",
         }
     }
 }
@@ -410,6 +426,9 @@ impl FromStr for Action {
             "git.ref.ensure" => Ok(Self::GitRefEnsure),
             "git.worktree.read" => Ok(Self::GitWorktreeRead),
             "incus.instance.ensure" => Ok(Self::IncusInstanceEnsure),
+            "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
+            "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
+            "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
             _ => Err(UnknownActionError),
         }
     }
@@ -457,7 +476,8 @@ pub enum Family {
     Host,
     /// Git primitives: one ref fetched, one work tree's branch, one ref compared and set, one work tree read (ADR 0271 N3).
     Git,
-    /// Incus primitives through the Incus API over its unix socket: one instance (ADR 0271 N3).
+    /// Incus primitives through the Incus API over its unix socket: instances, network ACLs, instance devices and storage volumes
+    /// (ADR 0271 N3).
     Incus,
 }
 
@@ -540,6 +560,9 @@ mod tests {
         assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
         assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert_eq!("incus.volume.ensure".parse(), Ok(Action::IncusVolumeEnsure));
+        assert!(Enabled::parse("incus\n").expect("valid file").allows(Action::IncusAclEnsure));
+        assert!(!Enabled::parse("host\n").expect("valid file").allows(Action::IncusDeviceEnsure));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

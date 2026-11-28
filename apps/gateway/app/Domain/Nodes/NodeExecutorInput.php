@@ -31,8 +31,8 @@ final readonly class NodeExecutorInput
      * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`). `process`
      * (Process start and stop, Node-timer enable) is on app-dev only; app-prod joins in a later rollout. `host` holds the host-resource
      * primitives (files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes) that the Route flows compose
-     * (ADR 0271, Actions that predate the rule), so it goes where Route steps run: app-dev and vpn. `incus` holds the Incus primitives (one instance) and goes where Incus holds
-     * the instances: app-dev.
+     * (ADR 0271, Actions that predate the rule), so it goes where Route steps run: app-dev and vpn. `incus` holds the Incus primitives (instances, network
+     * ACLs, instance devices, storage volumes) and goes where Incus holds the instances: app-dev.
      * `git` holds the Git primitives (one ref fetched, one work tree's branch, one ref compared and set, one work tree read) that
      * replace the Instance checkout and task sync actions, which run on app-dev only.
      *

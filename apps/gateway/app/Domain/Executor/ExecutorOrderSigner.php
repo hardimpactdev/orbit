@@ -20,7 +20,8 @@ final readonly class ExecutorOrderSigner
 {
     public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'route.withdraw_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names', 'instance.destroy', 'instance.sync_base', 'instance.clear_base', 'instance.work_read', 'process.ensure_state', 'process.read_instance', 'process.restart', 'schedule.ensure_timer',
         'file.ensure', 'dotenv.ensure', 'posix.acl.ensure', 'ca.trust.ensure', 'systemd.unit.ensure', 'config.apply', 'http.probe', 'file.read', 'account.read',
-        'git.fetch', 'git.checkout', 'git.ref.ensure', 'git.worktree.read', 'incus.instance.ensure'];
+        'git.fetch', 'git.checkout', 'git.ref.ensure', 'git.worktree.read', 'incus.instance.ensure',
+        'incus.acl.ensure', 'incus.device.ensure', 'incus.volume.ensure'];
 
     public const int MaxWireBytes = 4096;
 
