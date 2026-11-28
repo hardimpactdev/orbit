@@ -132,12 +132,15 @@ pub fn vp(home: &Path) -> Value {
     json!({"packages": named_versions(&rows, "package", "version")})
 }
 
-/// Homebrew formulae from their install receipts, and casks from the Caskroom, each with its installed versions.
+/// Homebrew formulae from their install receipts, and casks from the Caskroom, each with its installed versions. A
+/// formula also names the version its `opt` link points at, the one Homebrew uses, and then its receipt is that keg's.
 pub fn brew(prefix: &Path) -> Value {
     let mut formulae = Vec::new();
     for (name, versions) in versions(&prefix.join("Cellar")) {
-        let receipt = versions
-            .last()
+        let linked = linked(prefix, &name, &versions);
+        let receipt = linked
+            .as_ref()
+            .or(versions.last())
             .and_then(|version| {
                 small_text(
                     &prefix
@@ -158,13 +161,17 @@ pub fn brew(prefix: &Path) -> Value {
                     .collect()
             })
             .unwrap_or_default();
-        formulae.push(json!({
+        let mut formula = json!({
             "name": name,
             "versions": versions,
             "tap": receipt.pointer("/source/tap"),
             "on_request": receipt.get("installed_on_request"),
             "dependencies": dependencies,
-        }));
+        });
+        if let Some(linked) = linked {
+            formula["linked"] = json!(linked);
+        }
+        formulae.push(formula);
     }
     let casks: Vec<Value> = versions(&prefix.join("Caskroom"))
         .into_iter()
@@ -196,6 +203,15 @@ pub fn observe(manager: &str, candidates: &[String]) -> Option<Value> {
     };
     data["scope"] = json!(scope.to_string_lossy());
     Some(data)
+}
+
+/// The version `<prefix>/opt/<name>` links to as `../Cellar/<name>/<version>`, when it is one of the installed versions.
+fn linked(prefix: &Path, name: &str, versions: &[String]) -> Option<String> {
+    let target = std::fs::read_link(prefix.join("opt").join(name)).ok()?;
+    let version = target.file_name()?.to_str()?;
+    (target == Path::new("../Cellar").join(name).join(version)
+        && versions.iter().any(|known| known == version))
+    .then(|| version.to_owned())
 }
 
 /// `<root>/<name>/<version>` directories as name → sorted versions.
@@ -370,6 +386,58 @@ mod tests {
                 "casks": [{"name": "firefox", "versions": ["140.0"]}],
             })
         );
+        std::fs::remove_dir_all(&prefix).unwrap();
+    }
+
+    #[test]
+    fn brew_reads_the_receipt_of_the_linked_keg() {
+        let prefix = dir("brew-receipt");
+        let core = r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[]}"#;
+        let other = r#"{"installed_on_request":false,"source":{"tap":"someone/tap"},"runtime_dependencies":[{"full_name":"oniguruma"}]}"#;
+        std::fs::create_dir_all(prefix.join("opt")).unwrap();
+        // `1.9` sorts after `1.10`, so the last folder and the linked one differ in both directions.
+        for (name, linked, linked_receipt, stale_receipt) in
+            [("jq", "1.10", core, other), ("yq", "1.9", other, core)]
+        {
+            let stale = if linked == "1.10" { "1.9" } else { "1.10" };
+            for (version, receipt) in [(linked, linked_receipt), (stale, stale_receipt)] {
+                let keg = prefix.join("Cellar").join(name).join(version);
+                std::fs::create_dir_all(&keg).unwrap();
+                std::fs::write(keg.join("INSTALL_RECEIPT.json"), receipt).unwrap();
+            }
+            std::os::unix::fs::symlink(
+                format!("../Cellar/{name}/{linked}"),
+                prefix.join("opt").join(name),
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            brew(&prefix)["formulae"],
+            json!([
+                {"name": "jq", "versions": ["1.10", "1.9"], "linked": "1.10", "tap": "homebrew/core", "on_request": true, "dependencies": []},
+                {"name": "yq", "versions": ["1.10", "1.9"], "linked": "1.9", "tap": "someone/tap", "on_request": false, "dependencies": ["oniguruma"]},
+            ])
+        );
+        std::fs::remove_dir_all(&prefix).unwrap();
+    }
+
+    #[test]
+    fn brew_names_the_linked_version_of_several() {
+        let prefix = dir("brew-linked");
+        std::fs::create_dir_all(prefix.join("Cellar/fzf/0.74.3")).unwrap();
+        std::fs::create_dir_all(prefix.join("Cellar/fzf/0.75.0")).unwrap();
+        std::fs::create_dir_all(prefix.join("Cellar/rg/15.2.0")).unwrap();
+        std::fs::create_dir_all(prefix.join("Cellar/rg/16.0.0")).unwrap();
+        std::fs::create_dir_all(prefix.join("opt")).unwrap();
+        std::os::unix::fs::symlink("../Cellar/fzf/0.74.3", prefix.join("opt/fzf")).unwrap();
+        std::os::unix::fs::symlink("../Cellar/rg/17.0.0", prefix.join("opt/rg")).unwrap();
+
+        let formulae = &brew(&prefix)["formulae"];
+        assert_eq!(formulae[0]["versions"], json!(["0.74.3", "0.75.0"]));
+        assert_eq!(formulae[0]["linked"], json!("0.74.3"));
+        assert_eq!(formulae[1]["versions"], json!(["15.2.0", "16.0.0"]));
+        assert!(formulae[1].get("linked").is_none());
         std::fs::remove_dir_all(&prefix).unwrap();
     }
 }
