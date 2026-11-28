@@ -326,13 +326,24 @@ The `git` family (`crates/git`, agent 0.41.0, app-dev Nodes) holds the Git primi
 | `git.ref.ensure` | `repository`, `ref`, `state`, `commit` with `present`, and the required `expect` | `{"commit", "changes"}` |
 | `git.worktree.read` | `worktree`, optional `against` | `{"state": "absent"}`, or the state of the work tree |
 
-`git.fetch` fetches `+<ref>:<into>`, both full refs, from a `source` that is either `{"url": {"url", "credential"}}`, with the credential optional, or `{"bundle": {"path"}}`. It reads the source's ref first, with `ls-remote` or `bundle list-heads`. A source that lacks `ref` answers `commit: null`, changes nothing and makes no repository. An existing repository is checked before that first call. A missing one is read for and made from a private empty folder under the system temporary folder, so no other repository's configuration applies. `create` makes it bare, in the source's object format (SHA-1 or SHA-256, by the length of the id the source answers), and a repository this order made is removed again when its fetch fails. Without `create`, a missing repository fails `git.repository_missing`.
+`git.fetch` fetches `+<ref>:<into>`, both full refs, from a `source` that is either `{"url": {"url", "credential"}}`, with the credential optional, or `{"bundle": {"path"}}`. It reads the source's ref first, with `ls-remote` or `bundle list-heads`. A source that lacks `ref` answers `commit: null`, changes nothing and makes no repository.
+
+An existing repository is checked before that first call. A missing one is read for and made from a private empty folder under the system temporary folder, so no other repository's configuration applies. `create` makes it bare, in the source's object format (SHA-1 or SHA-256, by the length of the id the source answers), and a repository this order made is removed again when its fetch fails. Without `create`, a missing repository fails `git.repository_missing`.
 
 `git.checkout` puts `HEAD` on `branch`, which must exist as `refs/heads/<branch>`: a `HEAD` that names an unborn branch refuses `git.checkout_refused`. It reads the branch `HEAD` names itself, one level (`symbolic-ref --no-recurse`), so a `HEAD` on an alias refuses `git.ref_symbolic` and the alias's referent is never certified, reset or renamed. It renames `rename_from` when the work tree is on it and `branch` does not exist yet. Otherwise it switches to an existing `branch`, or makes it at `start`, an object id or a full ref.
 
 `reset`, an object id, resets hard, and `clean` removes untracked files that are not ignored. Each runs only when the work tree differs, and both need `destructive: true`, else `git.destructive_not_allowed`. A repeat answers 0 changes.
 
-`git.checkout` refuses every state it cannot prove safe with `git.checkout_refused`, before anything changes, and passes no `--force` or `--discard-changes`. Before a switch or a reset it checks the target tree and the index against the disk. A folder at a path the index or the target holds refuses, as does a file the index lacks at a path of the target, an untracked file or another repository where the target needs a folder, and a submodule in the target or the index. Paths that only share a folder are no collision. A clean refuses when any untracked path is or holds another repository, a bare one included, so a clean never removes one.
+`git.checkout` refuses every state it cannot prove safe with `git.checkout_refused`, before anything changes, and passes no `--force` or `--discard-changes`.
+
+Before a switch or a reset it checks the target tree and the index against the disk. Each of these refuses:
+
+- a folder at a path the index or the target holds;
+- a file the index lacks at a path of the target;
+- an untracked file or another repository where the target needs a folder;
+- a submodule in the target or the index.
+
+Paths that only share a folder are no collision. A clean refuses when any untracked path is or holds another repository, a bare one included, so a clean never removes one.
 
 A reset or clean also refuses a work tree with assume-unchanged or skip-worktree entries. The check before a reset, the reset and the read-back measure the same tracked state: `status --untracked-files=no --ignore-submodules=all`. A supported repeat answers 0 changes.
 
@@ -360,7 +371,9 @@ A repository's own configuration can name keys that no fixed setting covers for 
 
 Every operand is checked before anything runs or changes. Paths are absolute and normal. A ref is a full name under `refs/` that `check-ref-format` accepts, and a branch is a name that cannot start with `-`. A URL is `https://` with a host and no user information, query, fragment, percent sign, space or control byte. Operands follow `--` or `--end-of-options`. An unknown field fails `git.input_invalid`, and the message never echoes a value from the input.
 
-A URL fetch's credential is a blob reference to a `store` credential line, `https://<user>:<password>@<host>`, never an inline value. The executor fetches the blob and checks it by its SHA-256, as for `instance.fetch_branch`. The line must name the URL's own host. Git's askpass is the fixed `/usr/bin/printenv`, and the answers sit in two environment entries named exactly as Git's prompts, `Username for 'https://<host>': ` and `Password for 'https://<user>@<host>': `. So Git sends the credential only when the server asks for it, never as a header up front. Nothing reaches the argument list or a file. A credentialed call keeps none of Git's own messages, and every failure detail masks the password, its encoded form and all URL user information.
+A URL fetch's credential is a blob reference to a `store` credential line, `https://<user>:<password>@<host>`, never an inline value. The executor fetches the blob and checks it by its SHA-256, as for `instance.fetch_branch`. The line must name the URL's own host.
+
+Git's askpass is the fixed `/usr/bin/printenv`, and the answers sit in two environment entries named exactly as Git's prompts, `Username for 'https://<host>': ` and `Password for 'https://<user>@<host>': `. So Git sends the credential only when the server asks for it, never as a header up front. Nothing reaches the argument list or a file. A credentialed call keeps none of Git's own messages, and every failure detail masks the password, its encoded form and all URL user information.
 
 Git refuses a repository that the executor's user does not own (`safe.directory`), and the family never relaxes that, so a repository or work tree it acts on belongs to root. A work tree inside an Incus instance is not covered yet. The bundle transfer covered is the import of a bundle file that is already on the Node.
 
