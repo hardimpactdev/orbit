@@ -1,6 +1,6 @@
 sequenceDiagram
   %% route.create on the Gateway engine: the steps of route/create.mmd (workflow operation-route-create) as host catalogue primitives composed in the Gateway (RouteEngineFlow, RouteHostSteps). ADR 0271, Routes rewrite PR B (ORB-6352).
-  %% Pending: the account's key copy needs file.ensure `source_path` (ORB-6360) and Caddy's recursive access needs a tree scope for posix.acl.ensure (Nick's decision); admission keeps route.create on Swamp until both exist.
+  %% Pending: Caddy's recursive access needs a tree scope for posix.acl.ensure (Nick's decision); a Route with access rows runs on Swamp until it exists.
   %% status: draft
   %% command: route:create
   %% kind: route.create
@@ -23,7 +23,7 @@ sequenceDiagram
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node and `file.source_path` on the Node of an account copy
     %%> - the flow accepts the plan shape; an Ingress edge, a LAN rule, a production `.env`, awake markers, Caddy access rows, or a pool outside the two pool kinds throws `EngineUnsupported`
-    %%> - while either pending step is missing, the kind's admission refuses every Route (RouteEngineFlow::admit), so route.create runs on Swamp
+    %%> - the kind's own admission (RouteEngineFlow::admit) also refuses a Route with Caddy access rows, and a Node with work that lacks one host primitive, or a leaf Node that lacks `tls.csr_input` or `file.source_path`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Make a CSR on the Node<br/>tls.ensure_csr · csr-i
@@ -40,7 +40,7 @@ sequenceDiagram
     EN->>N: Reload the pools<br/>config.apply · site-node-reload
     %%> The same files and validators, then each pool unit reloads on every run, as route.publish_site did
     EN->>N: Install leaf, copies<br/>file.ensure · cert-i …
-    %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`, pending ORB-6360), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
+    %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
     EN->>N: Trust the Orbit root<br/>ca.trust.ensure · site-node-trust
     %%> `orbit-managed-root-ca.crt`, root:root 0644; the plain `update-ca-certificates` runs after a change
     EN->>N: Apply the Caddyfile<br/>config.apply · site-node-caddy

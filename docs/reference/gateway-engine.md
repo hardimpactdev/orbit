@@ -33,7 +33,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
-| `route.create` (admission refuses it until its pending steps exist) | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
+| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
@@ -73,7 +73,7 @@ The Gateway renders every file whole, the pools with the account's group and hom
 
 A failed site step records `Install cert, publish site-<node>` with `route.input_invalid`, `route.content_missing` or `route.publish_failed`, as `route.publish_site` did. A failed `dns-<i>` records `Publish private DNS-<i>` with the `dns.*` code `dns.publish_records` answered. A guard refusal stays `owned_revision_conflict`.
 
-Two steps wait on the catalogue. The account's key copy (`key-<i>`) needs `file.ensure` with `source_path` (feature `file.source_path`). Caddy's access needs a tree scope for `posix.acl.ensure`, which Nick decides. Until both exist, the kind's admission refuses every Route, and `route.create` runs on Swamp. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or other PHP-FPM pools stay on Swamp in any case.
+Admission runs `route.create` on the engine only when all of these hold. The Route has no Caddy access rows. Every Node with work reports the `host` family, each host primitive the flow sends. Every leaf Node reports `tls.csr_input` and `file.source_path`, the `source_path` input of `file.ensure` that copies the key on the Node. Any other `route.create` runs on Swamp as a whole. Caddy's access waits on a tree scope for `posix.acl.ensure`, which Nick decides. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or other PHP-FPM pools stay on Swamp in any case.
 
 ### route.destroy
 

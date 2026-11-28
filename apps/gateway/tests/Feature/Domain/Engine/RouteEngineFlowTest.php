@@ -280,16 +280,33 @@ it('leaves a Route to Swamp when a leaf or account is outside the executor\'s sh
     'a pool without its unit' => [['php_reloads' => []]],
 ]);
 
-it('keeps route.create on Swamp, also on a Node with every host primitive, until its pending steps exist', function (): void {
+it('runs route.create on the engine only without access rows, on Nodes with the host family, the request input and the host file copy', function (array $plan, array $actions, array $features, bool $engine): void {
     config(['orbit.engine.kinds' => ['route.create']]);
     $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+    $bus->shouldReceive('nodeActions')->andReturn($actions);
+    $bus->shouldReceive('nodeFeatures')->andReturn($features);
+    $this->app->instance(MachineBus::class, $bus);
+
+    expect(app(EngineKinds::class)->routes(routeOperation(routePlan($plan))))->toBe($engine);
+})->with([
+    'every condition' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'],
+        ['tls.csr_input', 'file.source_path'], true],
+    'Caddy access rows' => [['acl' => routeAccess()], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure', 'posix.acl.ensure'],
+        ['tls.csr_input', 'file.source_path'], false],
+    'no host family' => [[], ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records'], ['tls.csr_input', 'file.source_path'], false],
+    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], ['file.source_path'], false],
+    'no host file copy' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], ['tls.csr_input'], false],
+]);
+
+it('refuses a VPN Node without the host family in the kind\'s own admission', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeActions')->with(3)->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
+    $bus->shouldReceive('nodeActions')->with(1)->andReturn(['dns.publish_records']);
     $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input', 'file.source_path']);
     $this->app->instance(MachineBus::class, $bus);
 
-    expect(app(EngineKinds::class)->routes(routeOperation(routePlan())))->toBeFalse()
-        ->and(fn () => app(RouteEngineFlow::class)->admit(routeOperation(routePlan())))->toThrow(EngineUnsupported::class, 'ORB-6360');
-});
+    app(RouteEngineFlow::class)->admit(routeOperation(routePlan(['dns' => [['node_id' => 1, 'records' => "r\n", 'catalog' => "{}\n"]]])));
+})->throws(EngineUnsupported::class, 'Node 1 lacks the host family');
 
 it('renders a shared pool with the account\'s group and home in place of the render\'s placeholders', function (): void {
     expect(RouteHostSteps::render("group = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/app-1\n", 'orbit', '/home/orbit'))

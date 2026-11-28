@@ -53,7 +53,7 @@ A failed step leaves the Route `pending` with the failed step and its error code
 
 ### Proposed executor path
 
-On the Gateway engine, the Gateway composes the Route from host catalogue primitives: it renders every file whole and sends each with the digest it was rendered from, under the locks Swamp's writers take ([route.create on the engine](/reference/gateway-engine#routecreate)). Until the account's key copy and Caddy's recursive access have their primitives, every route.create runs the Swamp flow above.
+On the Gateway engine, the Gateway composes the Route from host catalogue primitives: it renders every file whole and sends each with the digest it was rendered from, under the locks Swamp's writers take ([route.create on the engine](/reference/gateway-engine#routecreate)). A Route with Caddy access rows, or a Node without those primitives, runs the Swamp flow above.
 
 <div className="flow-at" data-chart="route/engine/create"></div>
 

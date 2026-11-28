@@ -10,6 +10,7 @@ use App\Domain\Engine\EngineAdmission;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Models\Operation;
@@ -56,8 +57,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
     private const int OrderOverhead = 400;
 
+    /** The host primitives route.create sends: a Node reports the `host` family (agent 0.36.0) when it lists each. */
+    private const array HostFamily = ['config.apply', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
+
     public function __construct(private NativeRouteConvergenceProjection $projection, private SignDirectCertificatesAction $signer,
-        private LeafCertificateSigner $root) {}
+        private LeafCertificateSigner $root, private MachineBus $bus) {}
 
     public function steps(Operation $operation): array
     {
@@ -103,12 +107,28 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * route.create stays on Swamp until its two pending steps exist: the account's key copy (file.ensure `source_path`,
-     * ORB-6360) and Caddy's recursive access (a tree scope for posix.acl.ensure, Nick's decision; RouteHostSteps::access).
+     * route.create runs on the engine only for a Route without Caddy access rows, whose every Node with work reports the `host`
+     * family (each host primitive the flow sends), and whose every leaf Node also reports `tls.csr_input` and file.ensure
+     * `source_path`. Any other route.create runs on Swamp, as a whole. Caddy access waits on a tree scope for posix.acl.ensure
+     * (Nick's decision, RouteHostSteps::access), so a Route with access rows never reaches it on the engine.
      */
     public function admit(Operation $operation): void
     {
-        throw new EngineUnsupported('route.create on the host primitives waits on file.ensure source_path (ORB-6360) and a posix.acl.ensure tree scope.');
+        $plan = self::plan($operation);
+        if (($plan['acl'] ?? []) !== []) {
+            throw new EngineUnsupported('A Route with Caddy access rows runs on Swamp until posix.acl.ensure takes a tree scope.');
+        }
+        $leaves = array_map(static fn (array $leaf): int => ValidatedData::integer($leaf['node_id']), RouteExecutionProof::objects($plan['leaves']));
+        $nodes = array_values(array_unique([...ValidatedData::integerList($plan['site_nodes']), ...$leaves,
+            ...array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['dns'] ?? []))]));
+        foreach ($nodes as $node) {
+            if (array_diff(self::HostFamily, $this->bus->nodeActions($node)) !== []) {
+                throw new EngineUnsupported("Node {$node} lacks the host family; the Route runs on Swamp.");
+            }
+            if (in_array($node, $leaves, true) && array_diff([self::CsrFeature, RouteHostSteps::SourcePathFeature], $this->bus->nodeFeatures($node)) !== []) {
+                throw new EngineUnsupported("Node {$node} lacks tls.csr_input or file.ensure source_path; the Route runs on Swamp.");
+            }
+        }
     }
 
     /**
