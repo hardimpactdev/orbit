@@ -58,8 +58,9 @@ final readonly class Engine
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
     private const array FencedSuccess = ['instance.destroy' => 'done', 'dns.publish_records' => 'applied', 'route.withdraw_site' => 'applied', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
         'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', ProcessControlEngineFlow::Action => 'applied', ProcessControlEngineFlow::ReadAction => 'output', ProcessControlEngineFlow::RestartAction => 'output', ScheduleEnableEngineFlow::Action => 'output',
-        // The fenced host primitives (ADR 0271 N3) each answer `applied` with their changes.
-        'file.ensure' => 'applied', 'dotenv.ensure' => 'applied', 'posix.acl.ensure' => 'applied', 'ca.trust.ensure' => 'applied',
+        // The fenced host primitives (ADR 0271 N3) each answer `applied` with their changes; `posix.acl.ensure` answers its
+        // changes and the paths its tree walk left out as output.
+        'file.ensure' => 'applied', 'dotenv.ensure' => 'applied', 'posix.acl.ensure' => 'output', 'ca.trust.ensure' => 'applied',
         'systemd.unit.ensure' => 'applied', 'config.apply' => 'applied'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}

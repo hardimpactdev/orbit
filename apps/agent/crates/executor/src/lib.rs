@@ -363,11 +363,13 @@ fn dns(order: &VerifiedOrder) -> Outcome {
 /// The host family (ADR 0271 N3): one host resource per order, every path, name, lock and digest from the input. A failure's
 /// code goes to the Gateway, its detail only to the log.
 fn host(order: &VerifiedOrder) -> Outcome {
+    if order.action() == Action::PosixAclEnsure {
+        return acl_ensure(order);
+    }
     let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
     let primitive: fn(&orbit_executor_host::NodeSystem, &serde_json::Value) -> Result<u32, orbit_executor_host::Failure> = match order.action() {
         Action::FileEnsure => orbit_executor_host::file_ensure,
         Action::DotenvEnsure => orbit_executor_host::dotenv_ensure,
-        Action::PosixAclEnsure => orbit_executor_host::acl_ensure,
         Action::CaTrustEnsure => orbit_executor_host::trust_ensure,
         Action::SystemdUnitEnsure => orbit_executor_host::unit_ensure,
         Action::ConfigApply => orbit_executor_host::config_apply,
@@ -379,6 +381,19 @@ fn host(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |changes| Outcome::Applied { changes },
+    )
+}
+
+/// `posix.acl.ensure` of the host family: the paths it changed and the paths a tree walk left out, as JSON in the receipt's
+/// output (`{changes, skipped_mounts, skipped_hard_links}`).
+fn acl_ensure(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_host::acl_ensure(&system, order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |acl| Outcome::Output { stdout: serde_json::json!(acl).to_string() },
     )
 }
 
