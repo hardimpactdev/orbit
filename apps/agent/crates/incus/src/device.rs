@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use crate::{connect, input, not_converged, Failure, State};
+use crate::{connect, input, not_converged, plain, Failure, State, NAME};
 
 /// The writable fields of an instance that a `PUT` carries back unchanged.
 const WRITABLE: [&str; 7] = [
@@ -57,6 +57,14 @@ pub fn device_ensure(raw: &Value) -> Result<u32, Failure> {
             ))
         }
     };
+    if let Some(config) = &input.config {
+        if config.iter().any(|(key, value)| !NAME.is_match(key) || !plain(value)) {
+            return Err(Failure::new("incus.input_invalid", "a config key is not a plain key, or a value is empty or padded"));
+        }
+        if config.get("dependent").is_some_and(|value| truthy(value)) {
+            return Err(Failure::new("incus.input_invalid", "a dependent disk changes its volume too"));
+        }
+    }
     let client = connect(
         input.socket.as_deref(),
         input.timeout_ms,
@@ -77,6 +85,10 @@ pub fn device_ensure(raw: &Value) -> Result<u32, Failure> {
     let (instance, etag) = read()?;
     if instance["devices"].get(&input.device) == desired.as_ref() {
         return Ok(0);
+    }
+    // Incus removes a dependent disk's volume with the device, so its change cannot stay within this device key.
+    if instance["devices"][input.device.as_str()]["dependent"].as_str().is_some_and(truthy) {
+        return Err(Failure::new("incus.device_dependent", format!("{} is a dependent disk", input.device)));
     }
     let mut body: Map<String, Value> = WRITABLE
         .iter()
@@ -104,4 +116,9 @@ pub fn device_ensure(raw: &Value) -> Result<u32, Failure> {
     } else {
         Err(not_converged(&input.device))
     }
+}
+
+/// Whether Incus reads a value as true.
+fn truthy(value: &str) -> bool {
+    ["true", "1", "yes", "on"].contains(&value.to_ascii_lowercase().as_str())
 }

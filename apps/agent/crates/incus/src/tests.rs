@@ -27,6 +27,8 @@ enum Reply {
     Json(u16, Value),
     Chunked(u16, Value),
     Silent,
+    /// A reply written one byte at a time, each after a pause: a server whose every read is short.
+    Drip(Duration, Value),
     /// A reply after a delay, as Incus answers a wait only when its timeout ends.
     After(Duration, Box<Reply>),
 }
@@ -102,6 +104,16 @@ impl Fake {
                         let text = value.to_string();
                         let (a, b) = text.split_at(text.len() / 2);
                         let _ = write!(stream, "HTTP/1.1 {status} X\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{a}\r\n{:x}\r\n{b}\r\n0\r\n\r\n", a.len(), b.len());
+                    }
+                    Reply::Drip(pause, value) => {
+                        let text = value.to_string();
+                        let answer = format!("HTTP/1.1 200 X\r\nContent-Length: {}\r\n\r\n{text}", text.len());
+                        for byte in answer.bytes() {
+                            thread::sleep(pause);
+                            if stream.write_all(&[byte]).is_err() {
+                                break;
+                            }
+                        }
                     }
                     Reply::Silent | Reply::After(..) => thread::sleep(Duration::from_secs(5)),
                 }
@@ -440,115 +452,136 @@ fn stored_volume(source: &str, used_by: Value) -> Value {
     volume
 }
 
+fn project(volumes: &str) -> Reply {
+    ok(json!({"name": "p1", "config": {"features.storage.volumes": volumes}}))
+}
+
+fn no_operations() -> Reply {
+    ok(json!({"running": []}))
+}
+
+fn copying() -> Reply {
+    ok(json!({"running": [{"id": "op9", "resources": {"storage_volumes": ["/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"]}}]}))
+}
+
+fn codes(result: Result<u32, Failure>) -> Result<u32, &'static str> {
+    result.map_err(|failure| failure.code)
+}
+
 #[test]
-fn volume_present_copies_from_the_snapshot_and_records_it() {
-    let fake = Fake::new(vec![
-        missing(),
-        ok(json!({"name": "s1"})),
-        queued(),
-        finished(200),
-        ok(stored_volume("p1/pool1/v1/s1", json!([]))),
-    ]);
+fn volume_present_copies_from_the_snapshot_keeping_its_settings() {
+    let snapshot = json!({"name": "s1", "config": {"size": "512MiB", "block.filesystem": "ext4", "volatile.uuid": "x", "user.source": "older"}});
+    let fake = Fake::new(vec![project("true"), no_operations(), missing(), ok(snapshot), queued(), finished(200), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(1));
     let seen = fake.seen();
+    assert_eq!(seen[0].path, "/1.0/projects/p1");
+    assert_eq!(seen[1].path, "/1.0/operations?project=p1&recursion=1");
+    assert_eq!(seen[2].path, "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1");
+    assert_eq!(seen[3].path, "/1.0/storage-pools/pool1/volumes/custom/v1/snapshots/s1?project=p1");
+    assert_eq!((seen[4].method.as_str(), seen[4].path.as_str()), ("POST", "/1.0/storage-pools/pool1/volumes/custom?project=p1"));
+    // The source's settings stay, the input's keys win, and only the source's volatile keys and provenance go.
     assert_eq!(
-        seen[0].path,
-        "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"
-    );
-    assert_eq!(
-        seen[1].path,
-        "/1.0/storage-pools/pool1/volumes/custom/v1/snapshots/s1?project=p1"
-    );
-    assert_eq!(
-        (seen[2].method.as_str(), seen[2].path.as_str()),
-        ("POST", "/1.0/storage-pools/pool1/volumes/custom?project=p1")
-    );
-    assert_eq!(
-        seen[2].body,
-        json!({"name": "v2", "type": "custom", "config": {"size": "1GiB", "user.source": "p1/pool1/v1/s1"},
+        seen[4].body,
+        json!({"name": "v2", "type": "custom", "config": {"block.filesystem": "ext4", "size": "1GiB", "user.source": "p1/pool1/v1/s1"},
             "source": {"type": "copy", "pool": "pool1", "name": "v1/s1", "project": "p1", "volume_only": true}})
     );
 }
 
 #[test]
-fn volume_repeat_answers_zero_and_a_changed_key_is_patched() {
-    let fake = Fake::new(vec![ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
+fn volume_repeat_answers_zero_and_a_changed_key_keeps_the_description() {
+    let fake = Fake::new(vec![project("true"), no_operations(), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
     assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
 
-    let mut input = volume(&Fake::new(vec![]), "present");
-    let fake = Fake::new(vec![
-        ok(stored_volume("p1/pool1/v1/s1", json!([]))),
-        ok(json!({})),
-        ok({
-            let mut grown = stored_volume("p1/pool1/v1/s1", json!([]));
-            grown["config"]["size"] = json!("2GiB");
-            grown
-        }),
-    ]);
-    input["socket"] = json!(fake.socket());
+    let mut described = stored_volume("p1/pool1/v1/s1", json!([]));
+    described["description"] = json!("kept");
+    let mut grown = described.clone();
+    grown["config"]["size"] = json!("2GiB");
+    let fake = Fake::new(vec![project("true"), no_operations(), ok(described), ok(json!({})), ok(grown)]);
+    let mut input = volume(&fake, "present");
     input["config"] = json!({"size": "2GiB"});
     assert_eq!(volume_ensure(&input), Ok(1));
-    assert_eq!(
-        (fake.seen()[1].method.as_str(), &fake.seen()[1].body),
-        ("PATCH", &json!({"config": {"size": "2GiB"}}))
-    );
+    let put = &fake.seen()[3];
+    assert_eq!((put.method.as_str(), put.if_match.as_deref()), ("PUT", Some("\"e1\"")));
+    assert_eq!(put.body, json!({"config": {"size": "2GiB", "user.source": "p1/pool1/v1/s1"}, "description": "kept"}));
+}
+
+#[test]
+fn volume_waits_for_a_copy_still_running_before_it_counts() {
+    let fake = Fake::new(vec![project("true"), copying(), finished(200), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
+    assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
+    assert!(fake.seen()[2].path.starts_with("/1.0/operations/op9/wait?timeout="));
+
+    let running = || Reply::After(Duration::from_millis(400), Box::new(finished(103)));
+    let fake = Fake::new(vec![project("true"), copying(), running(), running(), running(), running()]);
+    let mut input = volume(&fake, "present");
+    input["timeout_ms"] = json!(1000);
+    assert_eq!(codes(volume_ensure(&input)), Err("incus.copy_in_progress"));
+    assert!(fake.seen().iter().all(|seen| seen.method == "GET"), "nothing written");
+
+    let fake = Fake::new(vec![project("true"), copying(), finished(400)]);
+    assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.api_failed"));
+}
+
+#[test]
+fn volume_refuses_a_project_that_keeps_its_volumes_in_default() {
+    for state in ["present", "absent"] {
+        let fake = Fake::new(vec![project("false")]);
+        assert_eq!(codes(volume_ensure(&volume(&fake, state))), Err("incus.project_storage_not_owned"));
+        assert_eq!(fake.seen().len(), 1, "only the project read");
+    }
+    // A source in another project must own its volumes too.
+    let fake = Fake::new(vec![project("true"), project("false")]);
+    let mut input = volume(&fake, "present");
+    input["source"]["project"] = json!("p2");
+    assert_eq!(codes(volume_ensure(&input)), Err("incus.project_storage_not_owned"));
+    assert_eq!(fake.seen()[1].path, "/1.0/projects/p2");
 }
 
 #[test]
 fn volume_from_another_source_refuses_and_is_never_written() {
-    for found in [
-        stored_volume("p1/pool1/v9/s1", json!([])),
-        json!({"name": "v2", "config": {}, "used_by": []}),
-    ] {
-        let fake = Fake::new(vec![ok(found)]);
-        assert_eq!(
-            volume_ensure(&volume(&fake, "present")).map_err(|failure| failure.code),
-            Err("incus.volume_source_conflict")
-        );
-        assert_eq!(fake.seen().len(), 1, "only the read");
+    for found in [stored_volume("p1/pool1/v9/s1", json!([])), json!({"name": "v2", "config": {}, "used_by": []})] {
+        let fake = Fake::new(vec![project("true"), no_operations(), ok(found)]);
+        assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_conflict"));
+        assert_eq!(fake.seen().len(), 3, "only reads");
     }
 }
 
 #[test]
 fn volume_with_a_missing_source_refuses() {
-    let fake = Fake::new(vec![missing(), missing()]);
-    assert_eq!(
-        volume_ensure(&volume(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.volume_source_missing")
-    );
-    assert_eq!(fake.seen().len(), 2);
+    let fake = Fake::new(vec![project("true"), no_operations(), missing(), missing()]);
+    assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_missing"));
+    assert_eq!(fake.seen().len(), 4);
 }
 
 #[test]
 fn volume_absent_deletes_exactly_that_unused_volume() {
-    let fake = Fake::new(vec![
-        ok(stored_volume("p1/pool1/v1/s1", json!([]))),
-        queued(),
-        finished(200),
-        missing(),
-    ]);
+    let fake = Fake::new(vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([]))), no_operations(), ok(json!([])), ok(json!([])), queued(), finished(200), missing()]);
     assert_eq!(volume_ensure(&volume(&fake, "absent")), Ok(1));
-    assert_eq!(
-        (fake.seen()[1].method.as_str(), fake.seen()[1].path.as_str()),
-        (
-            "DELETE",
-            "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"
-        )
-    );
-    assert_eq!(fake.seen()[1].length, 0);
+    let seen = fake.seen();
+    assert_eq!(seen[3].path, "/1.0/storage-pools/pool1/volumes/custom/v2/snapshots?project=p1");
+    assert_eq!(seen[4].path, "/1.0/storage-pools/pool1/volumes/custom/v2/backups?project=p1");
+    assert_eq!((seen[5].method.as_str(), seen[5].path.as_str()), ("DELETE", "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"));
+    // A DELETE carries no body: Incus answers without reading one, and an unread body resets the connection.
+    assert_eq!(seen[5].length, 0);
 
-    let fake = Fake::new(vec![missing()]);
+    let fake = Fake::new(vec![project("true"), missing()]);
     assert_eq!(volume_ensure(&volume(&fake, "absent")), Ok(0));
+}
 
-    let fake = Fake::new(vec![ok(stored_volume(
-        "p1/pool1/v1/s1",
-        json!(["/1.0/instances/c1?project=p1"]),
-    ))]);
-    assert_eq!(
-        volume_ensure(&volume(&fake, "absent")).map_err(|failure| failure.code),
-        Err("incus.volume_in_use")
-    );
-    assert_eq!(fake.seen().len(), 1);
+#[test]
+fn volume_absent_refuses_while_used_copied_or_holding_snapshots_or_backups() {
+    let stored = || ok(stored_volume("p1/pool1/v1/s1", json!([])));
+    let cases = [
+        (vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!(["/1.0/instances/c1?project=p1"]))), no_operations()], "incus.volume_in_use"),
+        (vec![project("true"), stored(), copying()], "incus.copy_in_progress"),
+        (vec![project("true"), stored(), no_operations(), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/snapshots/s1"]))], "incus.volume_has_snapshots"),
+        (vec![project("true"), stored(), no_operations(), ok(json!([])), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/backups/b1"]))], "incus.volume_has_backups"),
+    ];
+    for (replies, code) in cases {
+        let fake = Fake::new(replies);
+        assert_eq!(codes(volume_ensure(&volume(&fake, "absent"))), Err(code));
+        assert!(fake.seen().iter().all(|seen| seen.method == "GET"), "{code}: nothing deleted");
+    }
 }
 
 #[test]
@@ -557,17 +590,16 @@ fn volume_refusals_before_any_request() {
     let base = volume(&fake, "present");
     let mut cases = Vec::new();
     let mut no_source = base.clone();
-    no_source
-        .as_object_mut()
-        .expect("an object")
-        .remove("source");
+    no_source.as_object_mut().expect("an object").remove("source");
     cases.push(no_source);
     let mut own = base.clone();
     own["source"] = json!({"pool": "pool1", "volume": "v2"});
     cases.push(own);
-    let mut reserved = base.clone();
-    reserved["config"] = json!({"user.source": "x"});
-    cases.push(reserved);
+    for config in [json!({"user.source": "x"}), json!({"size": " 1GiB"}), json!({"size": ""})] {
+        let mut odd = base.clone();
+        odd["config"] = config;
+        cases.push(odd);
+    }
     let mut unknown = base.clone();
     unknown["source"]["argv"] = json!(["incus"]);
     cases.push(unknown);
@@ -575,11 +607,51 @@ fn volume_refusals_before_any_request() {
     absent["state"] = json!("absent");
     cases.push(absent);
     for input in cases {
-        assert_eq!(
-            volume_ensure(&input).map_err(|failure| failure.code),
-            Err("incus.input_invalid"),
-            "{input}"
-        );
+        assert_eq!(codes(volume_ensure(&input)), Err("incus.input_invalid"), "{input}");
     }
     assert!(fake.seen().is_empty());
+}
+
+#[test]
+fn device_refuses_a_dependent_disk_and_padded_values() {
+    let fake = Fake::new(vec![]);
+    for config in [json!({"type": "disk", "pool": "pool1", "source": "v1", "path": "/data", "dependent": "true"}), json!({"type": "disk", "path": "/data "}), json!({"type": "disk", "path": ""})] {
+        let mut input = device(&fake, "present");
+        input["config"] = config;
+        assert_eq!(codes(device_ensure(&input)), Err("incus.input_invalid"));
+    }
+    assert!(fake.seen().is_empty());
+
+    // An existing dependent disk is never changed or removed: Incus would remove its volume with it.
+    let mut dependent = data();
+    dependent["dependent"] = json!("yes");
+    for state in ["present", "absent"] {
+        let fake = Fake::new(vec![ok(instance(json!({"data": dependent.clone()})))]);
+        assert_eq!(codes(device_ensure(&device(&fake, state))), Err("incus.device_dependent"));
+        assert_eq!(fake.seen().len(), 1);
+    }
+}
+
+#[test]
+fn acl_refuses_forms_incus_would_store_otherwise() {
+    let fake = Fake::new(vec![]);
+    for (field, value) in [("destination", "10.0.0.1, 10.0.0.2"), ("destination", "10.0.0.1,"), ("destination_port", " 443"), ("protocol", "tcp "), ("description", "padded ")] {
+        let mut input = acl(&fake, "present");
+        input["egress"][0][field] = json!(value);
+        assert_eq!(codes(acl_ensure(&input)), Err("incus.input_invalid"), "{field}");
+    }
+    let mut input = acl(&fake, "present");
+    input["config"] = json!({"user.note": ""});
+    assert_eq!(codes(acl_ensure(&input)), Err("incus.input_invalid"));
+    assert!(fake.seen().is_empty());
+}
+
+#[test]
+fn an_answer_in_fragments_cannot_stretch_the_deadline() {
+    let fake = Fake::new(vec![Reply::Drip(Duration::from_millis(50), json!({"type": "sync", "metadata": stored_acl(json!([]))}))]);
+    let mut input = acl(&fake, "present");
+    input["timeout_ms"] = json!(1000);
+    let started = std::time::Instant::now();
+    assert_eq!(codes(acl_ensure(&input)), Err("incus.timeout"));
+    assert!(started.elapsed() < Duration::from_millis(1500), "one wall-clock deadline: {:?}", started.elapsed());
 }

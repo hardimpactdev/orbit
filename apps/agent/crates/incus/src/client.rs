@@ -4,11 +4,13 @@ use std::fmt::Write as _;
 use std::io::{ErrorKind, Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::Failure;
+use crate::{Failure, NAME};
 
 /// The most bytes one answer may hold.
 const MAX_ANSWER: u64 = 16 * 1024 * 1024;
@@ -43,25 +45,10 @@ impl Client {
             .ok_or_else(|| Failure::new("incus.timeout", "the time limit passed"))
     }
 
-    /// Sends one request and reads its whole answer.
-    pub(crate) fn request(
-        &self,
-        method: &str,
-        path: &str,
-        body: Option<&Value>,
-        if_match: Option<&str>,
-    ) -> Result<Answer, Failure> {
-        let left = self.left()?;
-        let mut stream = UnixStream::connect(&self.socket).map_err(|error| {
-            Failure::new(
-                "incus.unreachable",
-                format!("{}: {error}", self.socket.display()),
-            )
-        })?;
-        stream
-            .set_read_timeout(Some(left))
-            .and_then(|()| stream.set_write_timeout(Some(left)))
-            .map_err(|error| io(&error))?;
+    /// Sends one request and reads its whole answer. The connect, every write and every read take only what is left of the
+    /// one deadline, so an answer that arrives in fragments cannot stretch the bound.
+    pub(crate) fn request(&self, method: &str, path: &str, body: Option<&Value>, if_match: Option<&str>) -> Result<Answer, Failure> {
+        let mut stream = self.connect()?;
         let payload = body.map(Value::to_string).unwrap_or_default();
         let mut head = format!("{method} {path} HTTP/1.1\r\nHost: incus\r\nConnection: close\r\nAccept: application/json\r\n");
         if body.is_some() {
@@ -71,19 +58,64 @@ impl Client {
             let _ = write!(head, "If-Match: {etag}\r\n");
         }
         head.push_str("\r\n");
-        stream
-            .write_all(head.as_bytes())
-            .and_then(|()| stream.write_all(payload.as_bytes()))
-            .map_err(|error| io(&error))?;
+        let mut out = head.into_bytes();
+        out.extend_from_slice(payload.as_bytes());
+        let mut written = 0;
+        while written < out.len() {
+            stream.set_write_timeout(Some(self.left()?)).map_err(|error| io(&error))?;
+            match stream.write(&out[written..]) {
+                Ok(0) => return Err(Failure::new("incus.api_failed", "the socket closed before the request was sent")),
+                Ok(count) => written += count,
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(error) => return Err(io(&error)),
+            }
+        }
         let mut raw = Vec::new();
-        stream
-            .take(MAX_ANSWER + 1)
-            .read_to_end(&mut raw)
-            .map_err(|error| io(&error))?;
-        if u64::try_from(raw.len()).map_or(true, |length| length > MAX_ANSWER) {
-            return Err(Failure::new("incus.api_failed", "the answer is too large"));
+        let mut chunk = [0_u8; 16 * 1024];
+        loop {
+            stream.set_read_timeout(Some(self.left()?)).map_err(|error| io(&error))?;
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => raw.extend_from_slice(&chunk[..count]),
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(error) => return Err(io(&error)),
+            }
+            if u64::try_from(raw.len()).map_or(true, |length| length > MAX_ANSWER) {
+                return Err(Failure::new("incus.api_failed", "the answer is too large"));
+            }
         }
         parse(&raw)
+    }
+
+    /// Connects within what is left of the deadline. A unix connect blocks while the daemon's backlog is full, so it runs on
+    /// a thread the deadline waits for.
+    fn connect(&self) -> Result<UnixStream, Failure> {
+        let left = self.left()?;
+        let socket = self.socket.clone();
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = sender.send(UnixStream::connect(&socket));
+        });
+        match receiver.recv_timeout(left) {
+            Ok(Ok(stream)) => Ok(stream),
+            Ok(Err(error)) => Err(Failure::new("incus.unreachable", format!("{}: {error}", self.socket.display()))),
+            Err(_) => Err(Failure::new("incus.timeout", "the connect outlasted the time limit")),
+        }
+    }
+
+    /// The operations still running in a project that name the given resource path, such as a volume being copied.
+    pub(crate) fn running(&self, project: &str, resource: &str) -> Result<Vec<String>, Failure> {
+        let path = format!("/1.0/operations?project={project}&recursion=1");
+        let (operations, _) = self.get(&path)?.ok_or_else(|| Failure::new("incus.api_failed", "no operations list"))?;
+        let mut found = Vec::new();
+        for operation in operations["running"].as_array().into_iter().flatten() {
+            let names = operation["resources"].as_object().into_iter().flat_map(|kinds| kinds.values()).filter_map(Value::as_array).flatten();
+            if names.filter_map(Value::as_str).any(|name| name.split('?').next() == Some(resource)) {
+                let id = operation["id"].as_str().filter(|id| NAME.is_match(id)).ok_or_else(|| Failure::new("incus.api_failed", "an operation without an id"))?;
+                found.push(format!("/1.0/operations/{id}"));
+            }
+        }
+        Ok(found)
     }
 
     /// Reads one object: its metadata and `ETag`, or `None` when Incus answers 404.
@@ -122,7 +154,7 @@ impl Client {
         }
     }
 
-    fn wait(&self, operation: &str) -> Result<(), Failure> {
+    pub(crate) fn wait(&self, operation: &str) -> Result<(), Failure> {
         loop {
             // Incus holds the wait at most `timeout` seconds; the socket's own timeout bounds a server that never answers.
             let seconds = self.left()?.as_secs().max(1);

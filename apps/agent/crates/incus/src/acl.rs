@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use crate::{connect, input, not_converged, Failure, State};
+use crate::{connect, input, not_converged, plain, Failure, State, NAME};
 
 /// The fields of one ACL rule, as Incus keeps them: each a string, empty when unset.
 const RULE_FIELDS: [&str; 10] = [
@@ -83,6 +83,17 @@ pub fn acl_ensure(raw: &Value) -> Result<u32, Failure> {
                 "a rule's action or state is not one Incus knows",
             ));
         }
+    }
+    // Incus stores a rule's fields and the configuration trimmed, with an empty value as unset; a form it would store
+    // otherwise never reads back equal, so it refuses before any request.
+    let list = |value: &str| value.is_empty() || value.split(',').all(plain);
+    let rules_plain = input.ingress.iter().chain(&input.egress).all(|rule| {
+        (rule.description.is_empty() || plain(&rule.description))
+            && [&rule.source, &rule.destination, &rule.source_port, &rule.destination_port].into_iter().all(|value| list(value))
+            && [&rule.protocol, &rule.icmp_type, &rule.icmp_code].into_iter().all(|value| value.is_empty() || plain(value))
+    });
+    if !rules_plain || (!input.description.is_empty() && !plain(&input.description)) || input.config.iter().any(|(key, value)| !NAME.is_match(key) || !plain(value)) {
+        return Err(Failure::new("incus.input_invalid", "a value is padded, empty in a list, or an empty config value"));
     }
     if input.state == State::Absent
         && (!input.config.is_empty()

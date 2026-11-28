@@ -106,6 +106,11 @@ pub(crate) fn connect(
     ))
 }
 
+/// A value Incus stores as given: not empty, which Incus reads as unset, and not padded, which it trims.
+pub(crate) fn plain(value: &str) -> bool {
+    !value.is_empty() && value.trim() == value
+}
+
 /// The read-back after a change found the resource other than asked.
 pub(crate) fn not_converged(what: &str) -> Failure {
     Failure::new(
