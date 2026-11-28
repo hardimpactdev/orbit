@@ -218,13 +218,23 @@ fn fetch_refuses_options_other_transports_and_missing_repositories() {
         )),
         "git.credential_missing"
     );
+}
+
+#[test]
+fn fetch_refuses_a_missing_bundle_and_a_missing_repository_without_create() {
+    let s = scratch();
+    let repository = s.at("mirror.git");
     let no_bundle = json!({"repository": repository, "source": {"bundle": {"path": "/nonexistent.bundle"}}, "ref": "refs/heads/main", "into": "refs/heads/main", "create": true});
     assert_eq!(code(fetch(&s.system, &no_bundle)), "git.fetch_failed");
     std::fs::write(s.at("plain"), "x").expect("plain");
     let absent = json!({"repository": repository, "source": {"bundle": {"path": s.at("plain")}}, "ref": "refs/heads/main", "into": "refs/heads/main"});
     assert_eq!(code(fetch(&s.system, &absent)), "git.repository_missing");
     assert!(!repository.exists(), "nothing was made");
+}
 
+#[test]
+fn fetch_refuses_a_folder_that_is_no_repository_top_a_folder_as_bundle_and_an_unreachable_remote() {
+    let s = scratch();
     // A folder in a repository that is not its own top refuses: discovery never climbs to the parent repository.
     let (tree, _, _) = work(&s);
     std::fs::create_dir(tree.join("inner")).expect("inner");

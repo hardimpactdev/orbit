@@ -150,8 +150,7 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
-            | Action::ConfigApply | Action::HttpProbe => host(order),
+            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure | Action::ConfigApply | Action::HttpProbe => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
             Action::GitFetch | Action::GitCheckout | Action::GitRefEnsure | Action::GitWorktreeRead => git(order),
             Action::InstanceDestroy => self.destroy(order),
