@@ -152,7 +152,7 @@ impl Run for Families {
             Action::DnsPublishRecords => dns(order),
             Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
             | Action::ConfigApply | Action::HttpProbe => host(order),
-            Action::FileRead => file_read(order),
+            Action::FileRead | Action::AccountRead => host_read(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -382,15 +382,20 @@ fn host(order: &VerifiedOrder) -> Outcome {
     )
 }
 
-/// `file.read` of the host family: what one path holds, as JSON in the receipt's output. It changes nothing.
-fn file_read(order: &VerifiedOrder) -> Outcome {
+/// `file.read` and `account.read` of the host family: what one path or one account holds, as JSON in the receipt's output.
+/// They change nothing.
+fn host_read(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
-    orbit_executor_host::file_read(&system, order.input()).map_or_else(
+    let read = match order.action() {
+        Action::AccountRead => orbit_executor_host::account_read(&system, order.input()).map(|account| serde_json::json!(account)),
+        _ => orbit_executor_host::file_read(&system, order.input()).map(|read| serde_json::json!(read)),
+    };
+    read.map_or_else(
         |failure| {
             log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
             Outcome::failed(failure.code)
         },
-        |read| Outcome::Output { stdout: serde_json::json!(read).to_string() },
+        |read| Outcome::Output { stdout: read.to_string() },
     )
 }
 
