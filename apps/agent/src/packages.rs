@@ -133,12 +133,14 @@ pub fn vp(home: &Path) -> Value {
 }
 
 /// Homebrew formulae from their install receipts, and casks from the Caskroom, each with its installed versions. A
-/// formula also names the version its `opt` link points at, the one Homebrew uses.
+/// formula also names the version its `opt` link points at, the one Homebrew uses, and then its receipt is that keg's.
 pub fn brew(prefix: &Path) -> Value {
     let mut formulae = Vec::new();
     for (name, versions) in versions(&prefix.join("Cellar")) {
-        let receipt = versions
-            .last()
+        let linked = linked(prefix, &name, &versions);
+        let receipt = linked
+            .as_ref()
+            .or(versions.last())
             .and_then(|version| {
                 small_text(
                     &prefix
@@ -166,7 +168,7 @@ pub fn brew(prefix: &Path) -> Value {
             "on_request": receipt.get("installed_on_request"),
             "dependencies": dependencies,
         });
-        if let Some(linked) = linked(prefix, &name, &versions) {
+        if let Some(linked) = linked {
             formula["linked"] = json!(linked);
         }
         formulae.push(formula);
@@ -383,6 +385,39 @@ mod tests {
                 "formulae": [{"name": "jq", "versions": ["1.8.2"], "tap": "homebrew/core", "on_request": true, "dependencies": ["oniguruma"]}],
                 "casks": [{"name": "firefox", "versions": ["140.0"]}],
             })
+        );
+        std::fs::remove_dir_all(&prefix).unwrap();
+    }
+
+    #[test]
+    fn brew_reads_the_receipt_of_the_linked_keg() {
+        let prefix = dir("brew-receipt");
+        let core = r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[]}"#;
+        let other = r#"{"installed_on_request":false,"source":{"tap":"someone/tap"},"runtime_dependencies":[{"full_name":"oniguruma"}]}"#;
+        std::fs::create_dir_all(prefix.join("opt")).unwrap();
+        // `1.9` sorts after `1.10`, so the last folder and the linked one differ in both directions.
+        for (name, linked, linked_receipt, stale_receipt) in
+            [("jq", "1.10", core, other), ("yq", "1.9", other, core)]
+        {
+            let stale = if linked == "1.10" { "1.9" } else { "1.10" };
+            for (version, receipt) in [(linked, linked_receipt), (stale, stale_receipt)] {
+                let keg = prefix.join("Cellar").join(name).join(version);
+                std::fs::create_dir_all(&keg).unwrap();
+                std::fs::write(keg.join("INSTALL_RECEIPT.json"), receipt).unwrap();
+            }
+            std::os::unix::fs::symlink(
+                format!("../Cellar/{name}/{linked}"),
+                prefix.join("opt").join(name),
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            brew(&prefix)["formulae"],
+            json!([
+                {"name": "jq", "versions": ["1.10", "1.9"], "linked": "1.10", "tap": "homebrew/core", "on_request": true, "dependencies": []},
+                {"name": "yq", "versions": ["1.10", "1.9"], "linked": "1.9", "tap": "someone/tap", "on_request": false, "dependencies": ["oniguruma"]},
+            ])
         );
         std::fs::remove_dir_all(&prefix).unwrap();
     }
