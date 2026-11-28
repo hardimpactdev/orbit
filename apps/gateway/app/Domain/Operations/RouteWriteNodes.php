@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Engine\Engine;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -12,8 +13,8 @@ use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The Nodes a Route write changes files on, from its admitted plans, and the one exclusion between an engine-run Route update
- * and every other Route writer. The two never queue behind each other: whichever comes second is refused, so no snapshot either
+ * The Nodes a Route write changes files on, from its admitted plans, and the one exclusion between an engine-run Route update or
+ * removal and every other Route writer. The two never queue behind each other: whichever comes second is refused, so no snapshot either
  * captured is dispatched after the other changed its Nodes. Swamp writers among themselves keep RoutePublicationHolds.
  */
 final readonly class RouteWriteNodes
@@ -58,7 +59,7 @@ final readonly class RouteWriteNodes
         if ($nodes === [] && ! $late) {
             return;
         }
-        $engine = Operation::query()->where('kind', RouteUpdateEngineFlow::Kind)->whereKeyNot($operation->id)
+        $engine = Operation::query()->whereIn('kind', [RouteUpdateEngineFlow::Kind, RouteDestroyEngineFlow::Kind])->whereKeyNot($operation->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->get()
             ->first(static fn (Operation $open): bool => Engine::owns($open) && ($late || array_intersect($nodes, self::written($open)) !== []));
         if ($engine === null) {

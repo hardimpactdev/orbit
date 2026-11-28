@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Operations\RouteWriteNodes;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -121,3 +122,15 @@ it('treats a timed-out Swamp update whose run is not proven stopped as still wri
     $expired->forceFill(['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]])->save();
     RouteUpdateEngineFlow::holdNodes($engine);
 })->with(['a serving Node' => ['serving'], 'a VPN-only Node' => ['dns']]);
+
+it('fences an engine route.destroy against every other Route write on its serving and VPN Nodes, both ways', function (string $shape): void {
+    $removal = ['route_removal' => ['dns_node_ids' => $shape === 'dns' ? [8] : []],
+        'route_lifecycle' => ['plan' => ['retire_nodes' => $shape === 'dns' ? [] : [8], 'dns' => []]]];
+    routeWriter('route.destroy', $removal, engine: true);
+    $swamp = routeWriter('route.update', engineUpdateInput($shape === 'dns' ? 'dns' : 'retire', 8));
+
+    expect(fn () => RouteWriteNodes::refuseBesideEngine($swamp))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'))
+        ->and(fn () => RouteDestroyEngineFlow::holdNodes(routeWriter('route.destroy', $removal)))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.publication_held'));
+})->with(['a serving Node' => ['retire'], 'a DNS-only VPN Node' => ['dns']]);

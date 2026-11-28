@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% route.destroy on the Gateway engine: the steps of route/destroy.mmd (workflow operation-route-removal) as `dns` and `route` family primitives. Built for ADR 0267 and ADR 0271 (RouteDestroyEngineFlow); runtime proof pending.
-  %% Reuses `dns.publish_records` for the DNS withdrawal; the site withdrawal is `route.withdraw_site`, a `route` family primitive that route/engine/update.mmd and the planned Route steps of instance/container/destroy-engine.mmd reuse.
+  %% route.destroy on the Gateway engine: the steps of route/destroy.mmd (workflow operation-route-removal) composed in the Gateway from host primitives (`file.read`, `config.apply`, `http.probe`). Built for ADR 0271 (RouteDestroyEngineFlow, Routes rewrite PR C).
+  %% Every path, lock, owner, validator and unit arrives in the order; the Gateway renders each whole file. instance/container/destroy-engine.mmd still withdraws its Routes with `dns.publish_records` and `route.withdraw_site` until its own rewrite.
   %% status: built
   %% command: route:destroy
   %% kind: route.destroy
@@ -23,36 +23,58 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `route.destroy` is in `ORBIT_ENGINE_KINDS`
-    %%> - every Node a step touches reports its action in `$KV.NODES`: `dns.publish_records` (exists) on each VPN Node, `route.withdraw_site` on each Route Node
-    %%> - each VPN Node also lists the guarded DNS input, `dns.guarded_records`, in its reported `features` (as `instance.t3_pairing` is listed), checked by EngineKinds::routes from the step's `features`; the existing decoder refuses unknown fields, so without the feature the whole removal stays on Swamp and never fails after a step acted
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `file.read`, `file.ensure` and `config.apply` on each VPN Node, and `http.probe` too on each Route Node (agent 0.36.0)
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
-    %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, a pool change on a Node the Route does not leave, Caddy access or link writes, a never-activated replacement (it restores the old domain's URL and DNS), LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`, so the application never keeps pointing at a withdrawn name
-    %%> - also refused: a public Route or a Process proxy (`route_private_development`, from the Route's own placement at admission; a Node-local proxy to a loopback upstream is admitted, and an Ingress elsewhere in its cluster does not count), a PHP version whose last shared pool would leave, by the pools the Node serves before and after (`php_versions`, `php_versions_after`; a version the removal leaves untouched is admitted), and any Node order over the signer's 4 KB limit, checked before any order
-    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - production gate (as ORB-6337): each serving Node has the active `app-dev` role and each DNS Node the `vpn` role; no `production_control`, and no production Instance on a serving Node
+    %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, Caddy access rows (`posix.acl.ensure` with scope `tree`, A4) or link writes, a never-activated replacement, LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`
+    %%> - leaf folders and pools need the account's home and group, which `account.read` (agent 0.37.0) reads on the Node; a Route Node with either must report it
+    %%> - also refused: a public Route or a Process proxy (`route_private_development`), and a PHP version whose last shared pool would leave
+    Note over GW: Bind steps, take the lock<br/>hold every Node, publish the start
     %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    %%> - in the same transaction the start refuses `route.publication_held` while another open Route write, on either engine, writes or holds one of its Nodes, the DNS-only VPN Nodes included (RouteWriteNodes); an engine removal fences later Route writes the same way
     GW-->>CLI: 202 Accepted<br/>task ID
+    opt a leaf or a pool to change
+      EN->>N: Read the account<br/>account.read · account-node
+      %%> The account's uid, gid, group and home as the Node's NSS answers them; `identity-node`, a Gateway step, refuses an absent or unreadable account before any step below changes a file
+      N-->>EN: Account
+    end
     opt domain outside the TLD
-      EN->>V: Withdraw the DNS answers<br/>dns.publish_records · dns-i
-      %%> Reuses `dns.publish_records` with the records and the catalog rendered without the Route, its Router answers (`overrides`) included; other Routes' records stay byte for byte
-      %%> The guarded input (behind the feature above) carries, per file, the digest the Gateway rendered from (`route_guards`, the whole files rendered from the sites at admission) and the desired bytes as a blob named by their digest
-      %%> The catalog's digest is of its canonical form (keys in byte order, `[]` read as `{}`, compact, one newline): Swamp's withdrawal rewrites the same catalog in its merge's key order and with `{}`; any change of content still refuses
-      %%> Per file: live equals desired (this step already wrote it, also one half of a records/catalog pair) is kept; live equals the rendered-from digest is replaced; anything else refuses `owned_revision_conflict` and writes nothing, so unrelated changes are never overwritten
-      %%> `dnsmasq --test`, then the restart, on every run, also a replay, so files written before a crash are loaded; a failed check puts the previous files back and restarts nothing
-      V-->>EN: Files and restart<br/>applied · catalog digest
+      EN->>V: Read records and catalog<br/>file.read · dnsread-i
+      %%> Two reads, never following a link: the digest, type, owner and mode of `/etc/dnsmasq.d/orbit-records.conf` and `/var/lib/orbit/private-dns/catalog.json`; the receipt is the step's output, so a retry sends the same guard
+      %%> A link in a file's place is removed without following it (`file.ensure` absent, `dnsunlink-i-file`), only then; the step is done without an order otherwise; any other kind refuses
+      V-->>EN: Digest or absent
+      EN->>V: Write records and catalog<br/>config.apply · dns-i
+      %%> The records and catalog rendered without the Route, owner `root:root 0644`, under the DNS lock `/run/lock/orbit-dnsmasq.lock`; each guarded (`from_sha256`) by the digest of the bytes the Gateway rendered from at admission (`records`, `catalog_file`), or by the read digest when the read already found the desired bytes; a file that was a link is written unguarded
+      %%> A file changed after admission, by another Route or any other publisher, refuses before any write (`owned_revision_conflict`), as on main; a sibling added since is never erased
+      %%> `dnsmasq --test` with `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`, then `dnsmasq` and `orbit-private-dns` restart on every run; a failed test or restart puts the old files back and loads them again
+      %%> The prior state is recorded in `/var/lib/orbit/executor/recovery/operation-<id>/dns-<i>`, so a run that stopped is undone by its replay
+      V-->>EN: Files and restart<br/>applied
       Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
       %%> A Gateway step (`grace`) after every `dns-i`: it runs no earlier than 31 s after the last recorded DNS receipt (`done_ms`), as Swamp's `route-dns-grace`; a redelivered receipt or a resend never moves that time
-      %%> The engine keeps that time on the step (`EngineWait`) and schedules its deadline on the bus; no process sleeps, so a restart of the engine consumer, the Gateway or Horizon resumes only what is left, and a lost deadline is run by the reconciler's nudge, late but never early
-      %%> A cancel during the wait ends the Operation `cancelled` with nothing withdrawn from the Route Node: the DNS answers stay withdrawn and the Route is kept
-      %%> A retry Operation is a new run, whose own DNS step (`applied: 0`) starts a full 31 s again
+      %%> The engine keeps that time on the step (`EngineWait`) and schedules its deadline on the bus; no process sleeps, so a restart resumes only what is left (ORB-6333)
+      %%> A cancel during the wait ends the Operation `cancelled` with nothing withdrawn from the Route Node
     end
-    EN->>N: Withdraw site and leaf<br/>withdraw_site · node
-    %%> One Node-local primitive under the Node target lock and Swamp's own publication lock (`flock` on `/etc/caddy/.orbit-publish.lock`): the live Caddyfile must equal the digest of the one the Gateway rendered from at admission, or already the desired bytes, so every other site stays byte for byte; a shared pool is merged by scope as Swamp's withdrawal does: each scope the render changes must still hold its rendered-from or desired state, its group written as the account's gid or as its group's name; every other scope keeps its live state, also its absence, and an absent pool is never created
-    %%> Then the pools are written and tested, the candidate Caddyfile is validated as `caddy` and moved in place, the pools and Caddy reload, and only then the leaves go; a failed pool test, pool reload or Caddy reload puts the previous files back and reloads them (`route.pool_failed`, projected as the chart's `Converge PHP-FPM pools`; `route.withdraw_failed`)
-    %%> Caddy and PHP-FPM reload on every run, also a replay that finds nothing to change, as `route.publish_site` does, so a crash after the commit still makes the withdrawal live
-    %%> Removes the Route's owned Caddy site block, its leaf certificate folders and, for a development target, its PHP-FPM pool share; a repeat finds them absent and changes nothing (`applied: 0`)
-    %%> A live Caddyfile or pool that matches neither state refuses before any write (`owned_revision_conflict`); the guarded DNS step takes the Node's DNS lock (`/run/lock/orbit-dnsmasq.lock`) the same way
-    N-->>EN: Owned state absent<br/>site · leaf · pool read back
-    %%> Verification read-back in the same primitive: the desired Caddyfile is live, no leaf folder remains, and Caddy's admin API (`127.0.0.1:2019/config/`) names none of the Route's domains (`route.withdraw_unverified`)
+    EN->>N: Read files and account<br/>file.read · account.read
+    %%> `caddyread-node`, and `poolread-node-k` for each pool; the account was read first (`account-node`, `account.read`: uid, gid, group, home), and `identity-node` refused an absent or unreadable one before any DNS or Caddy step
+    N-->>EN: Digests · account
+    Note over EN: Guard the Caddyfile<br/>guard-node
+    %%> A Gateway step: the read digest must be the Caddyfile rendered at admission (`route_guards`) or the desired one, else `owned_revision_conflict` and nothing is written; a missing Caddyfile or another kind refuses too
+    %%> Each pool must hold its render at admission or the desired one in a writer's form (each scope's group as gid or name, with or without a trailing separator; at most 8 scopes, more runs on Swamp), else `owned_revision_conflict`
+    %%> A link in its place passes: `caddyunlink-node` removes it without following it (`file.ensure` absent), and the write below goes unguarded; the step is done without an order otherwise
+    EN->>N: Write and reload Caddy<br/>config.apply · withdraw-node
+    %%> The whole Caddyfile without the Route, guarded by the digest read, owner `root:caddy 0640`, under the publication lock `/etc/caddy/.orbit-publish.lock`
+    %%> `caddy validate` as `caddy`, then `caddy.service` reloads on every run, also a replay that finds nothing to change; a failed validation or reload puts the old file back and reloads it
+    %%> Recovery record in `/var/lib/orbit/executor/recovery/operation-<id>/withdraw-<node>`
+    N-->>EN: applied
+    EN->>N: Poll Caddy's admin API<br/>http.probe · poll-node
+    %%> `http://127.0.0.1:2019/config/` until no withdrawn name appears in it, within 5 s (ORB-6335); unmet fails the chart's withdrawal step
+    N-->>EN: met
+    opt a pool or a leaf to change
+      EN->>N: Pools and leaves<br/>config.apply · file.ensure
+      %%> `pools-node`: each pool rendered whole by the Gateway (in place of withdraw.rs `merge_pool`), the gid and home from `account.read`, guarded by its read, under `/etc/caddy/.orbit-publish.lock`; `php-fpm -t` per pool, then each pool reloads; a failure restores them, `caddyback-node` puts back the Caddyfile captured at admission (guarded by the withdrawal just written), and the run fails `Converge PHP-FPM pools`; no order when every guarded pool is absent
+      %%> `leaf-node-k`, `leafhome-node-k`: `file.ensure` absent, recursive, of `/etc/caddy/orbit-certificates/<scope>` and `<home>/.orbit/certificates/<scope>`, only once Caddy no longer names them
+      N-->>EN: applied
+    end
     EN->>N: Probe a sibling Route<br/>TLS over WireGuard
     %%> A Gateway step (`sibling-node`) as route.create's probe: a TLS handshake with another Route on the same Node, trusting only the Orbit root, proves Caddy still serves the rest; skipped when the Node serves no other Route
     opt the receipt is lost
@@ -67,13 +89,14 @@ sequenceDiagram
     end
     alt every step verified
       EN->>GW: Delete the Route record<br/>free the held Nodes
-      %%> - the kind's own projection records the result, the same rows a Swamp run records
+      %%> - the kind's own projection records the result, the same rows a Swamp run records: the Route goes `retiring` before its record is deleted, and the only authoritative Route of an active Instance stays (ORB-6339); a projection that throws is retried twice, then fails `engine.projection_failed`
     else a step fails
       EN--xGW: Failed step<br/>error_code · redacted detail
       %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
       Note over GW: Record the failure<br/>Route kept · failed step
       %%> - what was withdrawn stays withdrawn; no rollback
-      %%> - retry: the same command; the DNS step repeats with the same bytes (`applied: 0`) and each Node withdrawal converges
+      %%> - each step maps onto the Swamp chart step it is part of (reads, unlinks, guard and poll onto `Withdraw site, remove cert` or `Remove private DNS`), so the projection records main's `failed_step` and that step's code: a guard conflict (`owned_revision_conflict` in the receipt) persists `route.withdraw_failed` or `private_dns.publication_failed`, as on main
+      %%> - retry: the same command; its reads take the files as they are and each write converges
     end
   else the engine does not admit it
     Note over GW: Start the Swamp run<br/>operation-route-removal

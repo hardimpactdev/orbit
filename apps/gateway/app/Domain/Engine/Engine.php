@@ -61,7 +61,7 @@ final readonly class Engine
         // The fenced host primitives (ADR 0271 N3) each answer `applied` with their changes; `posix.acl.ensure` answers its
         // changes and the paths its tree walk left out as output.
         'file.ensure' => 'applied', 'dotenv.ensure' => 'applied', 'posix.acl.ensure' => 'output', 'ca.trust.ensure' => 'applied',
-        'systemd.unit.ensure' => 'applied', 'config.apply' => 'applied'];
+        'systemd.unit.ensure' => 'applied', 'config.apply' => 'applied', 'http.probe' => 'applied', 'file.read' => 'output', 'account.read' => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -342,6 +342,13 @@ final readonly class Engine
                 $overdue = $deadline && $step->status === 'sent' && $now >= ($step->resend_at_ms ?? PHP_INT_MAX)
                     && ($step->node_id > 0 || $receiptBound || $until($step) !== null);
                 if (! $ready && ! $overdue) {
+                    continue;
+                }
+                // A Node step that earlier results made unneeded is done without an order (EngineSkip).
+                if ($ready && $step->node_id > 0 && $definition instanceof EngineSkip
+                    && ! $definition->needed($operation, $step->name, new EngineRun($operationId, $steps, 0, null))) {
+                    $step->update(['status' => 'done', 'done_ms' => $now, 'output' => 'not needed']);
+
                     continue;
                 }
                 // A wait keeps its time on the step and its deadline on the bus: nothing holds a process, so a restart resumes
