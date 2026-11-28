@@ -89,6 +89,7 @@ final readonly class ObservedPackages
                 // The fact carries no cask artifacts, so Orbit can't show that it could manage a cask later.
                 $manager === ToolManagerName::BrewCask => ToolInventoryPackage::BLOCK_ARTIFACT,
                 $dependency => ToolInventoryPackage::BLOCK_DEPENDENCY,
+                ($row['held'] ?? null) === true => ToolInventoryPackage::BLOCK_HELD,
                 count($versions) !== 1 || $versions[0] === 'latest' => ToolInventoryPackage::BLOCK_VERSION,
                 default => null,
             };

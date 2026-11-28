@@ -30,6 +30,9 @@ final readonly class ToolInventoryPackage
 
     public const string BLOCK_AUTHORIZATION = 'authorization_required';
 
+    /** apt holds the package (`apt-mark hold`), so apt will not change it. */
+    public const string BLOCK_HELD = 'held';
+
     /** A withdrawn Tool of the same package is still finishing its removal. */
     public const string BLOCK_REMOVAL = 'removal_pending';
 
@@ -77,6 +80,7 @@ final readonly class ToolInventoryPackage
                 self::BLOCK_VERSION,
                 self::BLOCK_AUTHORIZATION,
                 self::BLOCK_REMOVAL,
+                self::BLOCK_HELD,
             ], true)
         ) {
             throw new InvalidArgumentException('An inventory adoption block is invalid.');

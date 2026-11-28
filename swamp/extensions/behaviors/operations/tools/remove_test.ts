@@ -238,3 +238,9 @@ Deno.test("a removal's check after its package step reads whether the package su
         (error: { code?: string }) => assertEquals(error.code, "tool.installed_version_mismatch"),
     );
 });
+
+Deno.test("a held apt package is not removed: the hold refuses before dpkg runs", () => {
+    const { input, facts } = fixture();
+    const refused = probe(input, { ...facts, held: true });
+    assertEquals([refused.ready, refused.remove, refused.error_code], [false, false, "tool.package_held"]);
+});

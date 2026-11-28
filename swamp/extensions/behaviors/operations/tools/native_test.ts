@@ -1,10 +1,12 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { WriteInput } from "./write.ts";
+import { ToolRefusal } from "./contract.ts";
 import {
     after,
     aptWrite,
     candidate,
     commands,
+    homebrewReadable,
     inventory,
     removalPlan,
 } from "./native.ts";
@@ -167,4 +169,90 @@ Deno.test("Homebrew write and remove commands retain the admitted package", () =
         assertEquals(c.remove.slice(-3), ["uninstall", "--formula", "hello"]);
         assertEquals(c.write.includes("-c") || c.remove.includes("-c"), false);
     }
+});
+
+Deno.test("the Homebrew prefix rule makes private entries readable once and keeps owner and write bits", async () => {
+    const prefix = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${prefix}/Cellar/git/2.52.0`, { recursive: true });
+        await Deno.writeTextFile(`${prefix}/Cellar/git/2.52.0/INSTALL_RECEIPT.json`, "{}");
+        await Deno.writeTextFile(`${prefix}/shared`, "");
+        await Deno.writeTextFile(`${prefix}/readable`, "");
+        await Deno.symlink("Cellar/git", `${prefix}/link`);
+        const modes = { "": 0o700, "/Cellar": 0o755, "/Cellar/git": 0o700, "/Cellar/git/2.52.0": 0o750,
+            "/Cellar/git/2.52.0/INSTALL_RECEIPT.json": 0o700, "/shared": 0o620, "/readable": 0o644 };
+        for (const [path, mode] of Object.entries(modes)) await Deno.chmod(prefix + path, mode);
+        const run = async () => {
+            const [program, ...args] = homebrewReadable(prefix);
+            const result = await new Deno.Command(program, { args, stdout: "piped" }).output();
+            assertEquals(result.code, 0);
+            return new TextDecoder().decode(result.stdout).split("\n").filter(Boolean).map((path) => path.slice(prefix.length)).sort();
+        };
+        assertEquals(await run(), ["", "/Cellar/git", "/Cellar/git/2.52.0", "/Cellar/git/2.52.0/INSTALL_RECEIPT.json", "/shared"]);
+        const after = Object.fromEntries(await Promise.all(Object.keys(modes).map(async (path) => [path, (await Deno.lstat(prefix + path)).mode! & 0o7777])));
+        assertEquals(after, { "": 0o755, "/Cellar": 0o755, "/Cellar/git": 0o755, "/Cellar/git/2.52.0": 0o755,
+            "/Cellar/git/2.52.0/INSTALL_RECEIPT.json": 0o744, "/shared": 0o664, "/readable": 0o644 });
+        assertEquals(await run(), []);
+    } finally { await Deno.remove(prefix, { recursive: true }); }
+});
+
+Deno.test("only a Linux Homebrew Tool carries the prefix rule", () => {
+    assertEquals(commands(input("brew")).readable, homebrewReadable());
+    assertEquals(commands(input("brew-cask")).readable?.[1], "/home/linuxbrew/.linuxbrew");
+    assertEquals(commands(input("apt")).readable, null);
+    assertEquals(commands({ ...input("brew"), platform: "macos", architecture: "arm64" }).readable, null);
+});
+
+Deno.test("an apt package held with apt-mark hold reads as installed and held", () => {
+    const step = (stdout: string) => ({ status: "succeeded", outputs: { exitCode: 0, stdout } });
+    const held = inventory(input("apt"), step("apt 3.1"), step("hello\thold ok installed\t2.3.1-1\n"));
+    assertEquals([held.versions, (held as Record<string, unknown>).held], [["2.3.1-1"], true]);
+    const normal = inventory(input("apt"), step("apt 3.1"), step("hello\tinstall ok installed\t2.3.1-1\n"));
+    assertEquals([normal.versions, "held" in normal], [["2.3.1-1"], false]);
+});
+
+Deno.test("the Homebrew prefix rule leaves a file hard-linked from outside the prefix as it is", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/prefix`);
+        await Deno.writeTextFile(`${folder}/outside`, "");
+        await Deno.chmod(`${folder}/outside`, 0o600);
+        await Deno.link(`${folder}/outside`, `${folder}/prefix/alias`);
+        const [program, ...args] = homebrewReadable(`${folder}/prefix`);
+        assertEquals((await new Deno.Command(program, { args }).output()).code, 0);
+        assertEquals((await Deno.stat(`${folder}/outside`)).mode! & 0o777, 0o600);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the Homebrew prefix rule stays on the prefix's file system", () => {
+    assertEquals(homebrewReadable("/prefix").slice(0, 3), ["/usr/bin/find", "/prefix", "-xdev"]);
+});
+
+/** Whether this host lets an unprivileged user mount in a private namespace; CI runners do not. */
+const userNamespaces = await new Deno.Command("unshare", { args: ["-rm", "true"], stdout: "null", stderr: "null" }).output()
+    .then((result) => result.success, () => false);
+
+Deno.test({ name: "the Homebrew prefix rule does not descend into another file system mounted in the prefix", ignore: !userNamespaces, async fn() {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/prefix/mounted`, { recursive: true });
+        const rule = homebrewReadable(`${folder}/prefix`).map((arg) => `'${arg}'`).join(" ");
+        // A private mount namespace of an unprivileged user mounts a tmpfs inside the prefix, as a bind mount would.
+        const script = `mount -t tmpfs -o mode=0755 none '${folder}/prefix/mounted' && mkdir -m 0700 '${folder}/prefix/mounted/private' ` +
+            `&& : > '${folder}/prefix/mounted/secret' && chmod 0600 '${folder}/prefix/mounted/secret' && ${rule} >/dev/null ` +
+            `&& stat -c %a '${folder}/prefix/mounted/private' '${folder}/prefix/mounted/secret'`;
+        const result = await new Deno.Command("unshare", { args: ["-rm", "sh", "-c", script], stdout: "piped", stderr: "piped" }).output();
+        assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+        assertEquals(new TextDecoder().decode(result.stdout).trim().split("\n"), ["700", "600"]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+} });
+
+Deno.test("several dpkg rows of one package read as one version, held when any row is held, and disagreeing versions are unclear", () => {
+    const step = (stdout: string) => ({ status: "succeeded", outputs: { exitCode: 0, stdout } });
+    const read = (rows: string) => inventory(input("apt"), step("apt 3.1"), step(rows)) as Record<string, unknown>;
+    for (const rows of ["hello\tinstall ok installed\t1.0\nhello\thold ok installed\t1.0\n", "hello\thold ok installed\t1.0\nhello\tinstall ok installed\t1.0\n"]) {
+        assertEquals([read(rows).versions, read(rows).held], [["1.0"], true]);
+    }
+    assertEquals("held" in read("hello\tinstall ok installed\t1.0\nhello\tinstall ok installed\t1.0\n"), false);
+    assertThrows(() => read("hello\tinstall ok installed\t1.0\nhello\thold ok installed\t1.1\n"), ToolRefusal, "tool.version_probe_failed");
 });

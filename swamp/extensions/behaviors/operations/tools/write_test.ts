@@ -190,3 +190,16 @@ Deno.test("a refusal says whether it read the package, so a repeated admitted ve
     const unread = decide(input({ kind: "tool.update", tool_id: 1, installed_version: "1.0.0" }), { facts: { ...facts, versions: [null] } });
     assertEquals([unread.ready, unread.installed_version, unread.inventory_read], [false, "1.0.0", false]);
 });
+
+Deno.test("a held apt package at its coordinate is unchanged, and at another version the hold refuses before any write", () => {
+    const held = { ...facts, versions: ["1.0.0"], held: true };
+    const owned = { tool_id: 1, installed_version: "1.0.0" };
+    for (const changes of [{ kind: "tool.update", desired_version: "1.0.0" }, { kind: "tool.update" }, { kind: "tool.install" }]) {
+        const kept = decide(input({ ...owned, ...changes }), { facts: held });
+        assertEquals([kept.ready, kept.mutate, kept.outcome, kept.installed_version], [true, false, "unchanged", "1.0.0"]);
+    }
+    for (const changes of [{ desired_version: "2.0.0" }, { version_constraint: "^2.0" }]) {
+        const refused = decide(input({ ...owned, kind: "tool.update", ...changes }), { facts: held, candidate: { version: "2.0.0" } });
+        assertEquals([refused.ready, refused.mutate, refused.error_code, refused.installed_version], [false, false, "tool.package_held", "1.0.0"]);
+    }
+});

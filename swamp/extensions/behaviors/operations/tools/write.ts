@@ -2,6 +2,7 @@ import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import {
+    allows,
     type Context,
     exactMatches,
     Facts,
@@ -65,6 +66,11 @@ export function before(
     // An update changes only a package Orbit owns, also one a request queued before the ownership contract asks for.
     if (input.kind === "tool.update" && !input.package_owned) {
         throw new ToolRefusal("tool.state_invalid");
+    }
+    // A held package at its desired coordinate needs nothing; any other version would need a write apt refuses.
+    if (present && facts.held === true) {
+        if (allows(plain(input), facts.versions![0]!) && exactMatches(input, facts.versions![0]!)) return false;
+        throw new ToolRefusal("tool.package_held");
     }
     if (input.desired_version !== null) {
         if (!present || !exactMatches(input, facts.versions![0]!)) return true;

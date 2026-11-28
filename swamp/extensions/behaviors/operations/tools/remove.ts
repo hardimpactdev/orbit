@@ -31,6 +31,8 @@ export function removalDecision(
             present && input.manager === "composer" &&
             !facts.roots?.includes(input.package)
         ) throw new ToolRefusal("tool.remove_failed");
+        // dpkg does not remove a package held with `apt-mark hold`.
+        if (present && facts.held === true) throw new ToolRefusal("tool.package_held");
         if (present && homebrewRemovalBlock(input, facts)) {
             throw new ToolRefusal("tool.remove_failed");
         }
