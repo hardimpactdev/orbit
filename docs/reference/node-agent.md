@@ -30,7 +30,8 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **Route withdrawal read-back:** Agent `0.35.0` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)).
 - **Host primitives:** Agent `0.36.0` turns on the [host family](/reference/executor#the-host-family) with `file.read` on app-dev and vpn Nodes.
 - **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
-- **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature. `posix.acl.ensure` now reads and writes each list through the path's own descriptor, takes a `user` or a `group`, and answers its changes and skipped paths as output ([the host family](/reference/executor#the-host-family)).
+- **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
+- **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
