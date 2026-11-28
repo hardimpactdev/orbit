@@ -126,7 +126,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `sleep`, `wake`, `discard` | The frozen state of one container | Built; [stays one call each](#primitives-that-span-more-than-one-file-or-call) | |
 | `ufw.ensure_rule` | One ufw rule, port or route | Built for port rules; route rules planned | The `ufw route allow` call inside `instance.clone`; the rule removals of `instance.destroy` |
 | `tls.ensure_csr` | One private key and its signing request | Built; its folder, owner, modes and certificate subject arrive in the input (feature `tls.csr_input`) | |
-| `file.ensure` | One file, folder or link: content, owner, mode, an optional digest it must still hold, or absent | Built | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
+| `file.ensure` | One file, folder or link: content from a blob or from another plain file on the same host, owner, mode, an optional digest it must still hold, or absent | Built | Most of `instance.prepare`, `instance.club_key` and `instance.names`; the file removals of `instance.destroy` and `instance.clear_base` |
 | `file.line.ensure` | One line or one marked block of lines in a file | Planned | The `/etc/hosts` and NSS edits of `instance.start` and `instance.prepare` |
 | `file.read` | The content of one small file, read only | Planned | The seed manifest and seed take reads of `instance.clone` and `instance.prepare` |
 | `dotenv.ensure` | Keys of one dotenv file | Built | The `APP_URL` edit of `route.publish_site`; the `.env` merge of `instance.checkout` |
@@ -222,7 +222,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 
 | Primitive | Input | Work |
 | --- | --- | --- |
-| `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
+| `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file takes exactly one of `content` (a blob) and `source_path` (an absolute path on the Node), and may carry `from_sha256`; with `source_path` it may carry `source_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
 | `posix.acl.ensure` | One path, subject user, `rwx` permissions, `default`, `optional`, and the account `setfacl` runs as; send one order per path | Reads the path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; nothing below the path changes |
 | `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and runs the plain updater after a change |
@@ -231,6 +231,10 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
+
+A `file.ensure` file with `source_path` copies a file that is already on the Node, such as a key that never leaves it. The destination is the one resource it changes; it only reads the source, and opens it without following a link.
+
+Each of these refuses with its own code. A missing source answers `file.source_missing`, a link `file.source_link`, and a folder or any other file that is not plain `file.source_not_file`. The destination itself under any name answers `file.source_alias`: the opened destination is compared with the source by device and inode before any change and at the read-back. Bytes that do not hash to `source_sha256` answer `file.source_mismatch`. A source it cannot read answers `file.ensure_failed`, never missing.
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
 
