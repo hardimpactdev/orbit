@@ -97,7 +97,7 @@ pub fn device_ensure(raw: &Value) -> Result<u32, Failure> {
         Some(config) => devices.insert(input.device.clone(), config.clone()),
         None => devices.remove(&input.device),
     };
-    client.change("PUT", &path, &Value::Object(body), etag.as_deref())?;
+    client.change("PUT", &path, Some(&Value::Object(body)), etag.as_deref())?;
     let (instance, _) = read()?;
     if instance["devices"].get(&input.device) == desired.as_ref() {
         Ok(1)

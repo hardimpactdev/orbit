@@ -114,7 +114,7 @@ pub fn acl_ensure(raw: &Value) -> Result<u32, Failure> {
                     format!("{} is used by {}", input.name, acl["used_by"]),
                 ));
             }
-            client.change("DELETE", &path, &Value::Null, None)?;
+            client.change("DELETE", &path, None, None)?;
             match client.get(&path)? {
                 None => Ok(1),
                 Some(_) => Err(not_converged(&input.name)),
@@ -124,14 +124,14 @@ pub fn acl_ensure(raw: &Value) -> Result<u32, Failure> {
             let desired = desired(&input);
             let change = match &found {
                 Some((acl, _)) if same(acl, &desired) => return Ok(0),
-                Some((_, etag)) => client.change("PUT", &path, &desired, etag.as_deref()),
+                Some((_, etag)) => client.change("PUT", &path, Some(&desired), etag.as_deref()),
                 None => {
                     let mut create = desired.clone();
                     create["name"] = json!(input.name);
                     client.change(
                         "POST",
                         &format!("/1.0/network-acls?project={}", input.project),
-                        &create,
+                        Some(&create),
                         None,
                     )
                 }

@@ -92,7 +92,7 @@ fn absent(input: &Input, path: &str) -> Result<u32, Failure> {
             format!("{} is used by {}", input.name, volume["used_by"]),
         ));
     }
-    client.change("DELETE", path, &Value::Null, None)?;
+    client.change("DELETE", path, None, None)?;
     match client.get(path)? {
         None => Ok(1),
         Some(_) => Err(not_converged(&input.name)),
@@ -153,7 +153,7 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
         return Ok(changes);
     }
     // A PATCH merges the given keys into the volume's configuration and leaves every other key as it is.
-    client.change("PATCH", path, &json!({"config": differs}), None)?;
+    client.change("PATCH", path, Some(&json!({"config": differs})), None)?;
     let (volume, _) = client
         .get(path)?
         .ok_or_else(|| not_converged(&input.name))?;
@@ -187,5 +187,5 @@ fn create(client: &Client, input: &Input, source: &Source, project: &str, record
         "config": config,
         "source": {"type": "copy", "pool": source.pool, "name": name, "project": project, "volume_only": true},
     });
-    client.change("POST", &format!("/1.0/storage-pools/{}/volumes/custom?project={}", input.pool, input.project), &create, None)
+    client.change("POST", &format!("/1.0/storage-pools/{}/volumes/custom?project={}", input.pool, input.project), Some(&create), None)
 }

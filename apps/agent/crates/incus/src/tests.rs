@@ -12,12 +12,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
-/// One request the fake saw: method, path, `If-Match` and JSON body.
+/// One request the fake saw: method, path, `If-Match`, the body's length and the body as JSON.
 #[derive(Debug, Clone)]
 struct Seen {
     method: String,
     path: String,
     if_match: Option<String>,
+    length: usize,
     body: Value,
 }
 
@@ -81,6 +82,7 @@ impl Fake {
                     method,
                     path,
                     if_match,
+                    length,
                     body,
                 });
                 let mut stream = stream;
@@ -220,6 +222,8 @@ fn acl_absent_deletes_only_an_unused_acl() {
         (fake.seen()[1].method.as_str(), fake.seen()[1].path.as_str()),
         ("DELETE", "/1.0/network-acls/a1?project=p1")
     );
+    // A DELETE carries no body: Incus answers without reading one, and an unread body resets the connection.
+    assert_eq!(fake.seen()[1].length, 0);
 
     let fake = Fake::new(vec![missing()]);
     assert_eq!(acl_ensure(&acl(&fake, "absent")), Ok(0));
@@ -531,6 +535,7 @@ fn volume_absent_deletes_exactly_that_unused_volume() {
             "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"
         )
     );
+    assert_eq!(fake.seen()[1].length, 0);
 
     let fake = Fake::new(vec![missing()]);
     assert_eq!(volume_ensure(&volume(&fake, "absent")), Ok(0));

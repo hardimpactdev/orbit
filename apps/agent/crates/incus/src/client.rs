@@ -96,15 +96,10 @@ impl Client {
         Ok(Some((metadata, answer.etag)))
     }
 
-    /// Sends one change and, when Incus runs it in the background, waits for its operation within the deadline.
-    pub(crate) fn change(
-        &self,
-        method: &str,
-        path: &str,
-        body: &Value,
-        if_match: Option<&str>,
-    ) -> Result<(), Failure> {
-        let answer = self.request(method, path, Some(body), if_match)?;
+    /// Sends one change and, when Incus runs it in the background, waits for its operation within the deadline. A `DELETE`
+    /// carries no body: Incus answers it without reading one, and unread bytes would reset the connection before the answer.
+    pub(crate) fn change(&self, method: &str, path: &str, body: Option<&Value>, if_match: Option<&str>) -> Result<(), Failure> {
+        let answer = self.request(method, path, body, if_match)?;
         match answer.body["type"].as_str() {
             Some("sync") if answer.status < 300 => Ok(()),
             Some("async") if answer.status < 300 => {
