@@ -232,7 +232,9 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 
-A `file.ensure` file with `source_path` copies a file that is already on the Node, such as a key that never leaves it. The destination is the one resource it changes; it only reads the source, and opens it without following a link. It refuses before any write. A missing source answers `file.source_missing`, a link `file.source_link`, and a folder or any other file that is not plain `file.source_not_file`. The destination itself under any name, compared by device and inode, answers `file.source_alias`. Bytes that do not hash to `source_sha256` answer `file.source_mismatch`. A source it cannot read answers `file.ensure_failed`, never missing.
+A `file.ensure` file with `source_path` copies a file that is already on the Node, such as a key that never leaves it. The destination is the one resource it changes; it only reads the source, and opens it without following a link.
+
+Each of these refuses with its own code. A missing source answers `file.source_missing`, a link `file.source_link`, and a folder or any other file that is not plain `file.source_not_file`. The destination itself under any name answers `file.source_alias`: the opened destination is compared with the source by device and inode before any change and at the read-back. Bytes that do not hash to `source_sha256` answer `file.source_mismatch`. A source it cannot read answers `file.ensure_failed`, never missing.
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
 

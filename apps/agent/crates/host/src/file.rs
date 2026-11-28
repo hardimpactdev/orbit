@@ -62,17 +62,20 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
                 return Err(invalid("file"));
             }
             let dest = system.path(&path);
-            let bytes = match (content, source_path) {
-                (Some(content), None) if source_sha256.is_none() => content.bytes(system)?,
+            // A source is a file this order must never change: `apart` keeps the destination from being it.
+            let (bytes, apart) = match (content, source_path) {
+                (Some(content), None) if source_sha256.is_none() => (content.bytes(system)?, None),
                 (None, Some(source_path)) if absolute(&source_path) => {
-                    let bytes = source(&system.path(&source_path), &dest, &source_path)?;
+                    let (bytes, identity) = source(&system.path(&source_path), &source_path)?;
                     if source_sha256.as_ref().is_some_and(|expected| sha256(&bytes) != *expected) {
                         return Err(Failure::new("file.source_mismatch", format!("{source_path} does not hash to source_sha256")));
                     }
-                    bytes
+                    (bytes, Some(identity))
                 }
                 _ => return Err(invalid("file content: exactly one of content and source_path")),
             };
+            let alias = || Failure::new("file.source_alias", format!("{path} is the source file"));
+            let failed_or_alias = |error: std::io::Error| if fs::Alias::is(&error) { alias() } else { failed(error.to_string()) };
             let ids = owner.ids(system, "file.ensure_failed")?;
             if let Some(from) = &from_sha256 {
                 let live = fs::read(&dest).map_err(|error| failed(error.to_string()))?;
@@ -81,9 +84,11 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
                     return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this render")));
                 }
             }
-            let changed = fs::ensure(&dest, &bytes, ids).map_err(|error| failed(error.to_string()))?;
-            if fs::read(&dest).map_err(|error| failed(error.to_string()))?.is_none_or(|(current, held)| current != bytes || held != ids) {
-                return Err(failed(format!("{path} read-back")));
+            let changed = fs::ensure_apart(&dest, &bytes, ids, apart).map_err(failed_or_alias)?;
+            match fs::read_held(&dest).map_err(|error| failed(error.to_string()))? {
+                Some((_, _, identity)) if apart == Some(identity) => return Err(alias()),
+                Some((current, held, _)) if current == bytes && held == ids => {}
+                _ => return Err(failed(format!("{path} read-back"))),
             }
             Ok(u32::from(changed))
         }
@@ -150,9 +155,9 @@ pub fn file_ensure(system: &impl System, input: &serde_json::Value) -> Result<u3
     }
 }
 
-/// The bytes of the plain file at `source`, opened without following a link, and never the file at `dest` by another
-/// name. A source that cannot be read fails; only a missing one answers `file.source_missing`.
-fn source(source: &Path, dest: &Path, shown: &str) -> Result<Vec<u8>, Failure> {
+/// The bytes and identity of the plain file at `source`, opened without following a link. A source that cannot be read
+/// fails; only a missing one answers `file.source_missing`.
+fn source(source: &Path, shown: &str) -> Result<(Vec<u8>, fs::Identity), Failure> {
     let failed = |error: std::io::Error| Failure::new("file.ensure_failed", format!("{shown}: {error}"));
     let missing = || Failure::new("file.source_missing", format!("{shown} is missing"));
     let linked = || Failure::new("file.source_link", format!("{shown} is a link"));
@@ -174,18 +179,9 @@ fn source(source: &Path, dest: &Path, shown: &str) -> Result<Vec<u8>, Failure> {
     if !held.file_type().is_file() {
         return Err(not_file());
     }
-    // One file by two names, by a hard link or the same spelling: its own copy would replace the source.
-    match stdfs::symlink_metadata(dest) {
-        Ok(meta) if (meta.dev(), meta.ino()) == (held.dev(), held.ino()) => {
-            return Err(Failure::new("file.source_alias", format!("{shown} is the destination")));
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(failed(error)),
-    }
     let mut content = Vec::new();
     stream.read_to_end(&mut content).map_err(failed)?;
-    Ok(content)
+    Ok((content, (held.dev(), held.ino())))
 }
 
 fn link(system: &impl System, dest: &Path, target: &str, uid: u32, gid: u32) -> Result<u32, String> {

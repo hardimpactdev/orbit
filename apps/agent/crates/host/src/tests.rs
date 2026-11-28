@@ -26,11 +26,14 @@ struct Fake {
     stop: RefCell<Option<&'static str>>,
     /// A program after whose run a folder turns read-only, so the next write in it fails.
     seal: RefCell<Option<(&'static str, std::path::PathBuf)>>,
+    /// A destination and a file that it becomes a hard link to on the next user lookup, which a primitive makes between
+    /// reading its input and changing the destination.
+    relink: RefCell<Option<(std::path::PathBuf, std::path::PathBuf)>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default() }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default(), relink: RefCell::default() }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -182,6 +185,10 @@ impl System for Fake {
     }
 
     fn user(&self, _name: &str) -> Result<u32, String> {
+        if let Some((dest, source)) = self.relink.borrow_mut().take() {
+            fs::remove_file(&dest).expect("remove the destination");
+            fs::hard_link(source, dest).expect("relink");
+        }
         Ok(me().0)
     }
 
@@ -420,6 +427,23 @@ fn file_ensure_refuses_a_source_that_is_the_destination() {
         assert_eq!(file_ensure(&fake, &copy(source, "/dest/leaf.key", "0600")).expect_err(source).code, "file.source_alias", "{source}");
     }
     assert_eq!(mode_of(&fake, "/dest/leaf.key"), 0o640, "nothing changed");
+}
+
+#[test]
+fn file_ensure_refuses_a_destination_that_becomes_the_source_after_the_source_is_read() {
+    // Review counterexample: the destination turns into a hard link to the source between the source's read and the
+    // destination's open. With owner or mode drift the source itself was repaired; without, the copy reported 0 changes.
+    for (source_mode, case) in [(0o644, "mode drift"), (0o600, "no drift")] {
+        let fake = Fake::new();
+        fake.write("/src/leaf.key", b"key\n");
+        fs::set_permissions(fake.path("/src/leaf.key"), fs::Permissions::from_mode(source_mode)).expect("mode");
+        fake.write("/dest/leaf.key", b"other\n");
+        *fake.relink.borrow_mut() = Some((fake.path("/dest/leaf.key"), fake.path("/src/leaf.key")));
+        assert_eq!(file_ensure(&fake, &copy("/src/leaf.key", "/dest/leaf.key", "0600")).expect_err(case).code, "file.source_alias", "{case}");
+        assert!(fake.relink.borrow().is_none(), "{case}: the destination changed between the lookups");
+        assert_eq!(mode_of(&fake, "/src/leaf.key"), source_mode, "{case}: the source is never changed");
+        assert_eq!(fake.read("/src/leaf.key"), b"key\n", "{case}");
+    }
 }
 
 #[test]
