@@ -83,6 +83,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
     private const array Labels = ['dns' => 'Remove private DNS', 'dnsread' => 'Remove private DNS', 'dnsunlink' => 'Remove private DNS',
         'grace' => 'Wait the DNS grace', 'caddyread' => 'Withdraw site, remove cert', 'guard' => 'Withdraw site, remove cert',
         'caddyunlink' => 'Withdraw site, remove cert', 'withdraw' => 'Withdraw site, remove cert', 'account' => 'Withdraw site, remove cert',
+        'identity' => 'Withdraw site, remove cert', 'caddyback' => 'Converge PHP-FPM pools',
         'poolread' => 'Withdraw site, remove cert', 'leaf' => 'Withdraw site, remove cert', 'leafhome' => 'Withdraw site, remove cert',
         'pools' => 'Converge PHP-FPM pools',
         'poll' => 'Withdraw site, remove cert', 'sibling' => 'Check nothing is left'];
@@ -135,19 +136,26 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
         if (array_diff([...$nodes, ...$vpns], RouteWriteNodes::of($operation->input ?? [])) !== []) {
             throw new EngineUnsupported('A Node outside the Route write\'s Nodes runs on Swamp.');
         }
-        $steps = $dns = [];
+        $steps = $dns = $identities = [];
+        // The accounts are read, and an absent or unreadable one refuses, before any step changes a file.
+        foreach ($nodes as $node) {
+            if (self::pools($operation, $node) !== [] || self::leaves($operation, $node) !== []) {
+                $steps[] = new StepSpec("account-{$node}", $node, 'account.read', (string) $node, budgetMs: 60_000, resendMs: 10_000);
+                $steps[] = new StepSpec($identities[] = "identity-{$node}", 0, 'route.guard', 'gateway', ["account-{$node}"], budgetMs: 30_000);
+            }
+        }
         foreach ($vpns as $index => $vpn) {
             self::digest(self::guard($operation, $vpn), 'records');
             self::digest(self::guard($operation, $vpn), 'catalog_file');
             $unlinks = [];
             foreach (['records', 'catalog'] as $file) {
                 $steps[] = new StepSpec("dnsread-{$index}-{$file}", $vpn, 'file.read', (string) $vpn, budgetMs: 60_000, resendMs: 10_000);
-                $steps[] = new StepSpec($unlinks[] = "dnsunlink-{$index}-{$file}", $vpn, 'file.ensure', (string) $vpn, ["dnsread-{$index}-{$file}"], budgetMs: 60_000, resendMs: 10_000);
+                $steps[] = new StepSpec($unlinks[] = "dnsunlink-{$index}-{$file}", $vpn, 'file.ensure', (string) $vpn, ["dnsread-{$index}-{$file}", ...$identities], budgetMs: 60_000, resendMs: 10_000);
             }
             RouteEngineFlow::fits(self::dnsInput($operation, $index, null));
             $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, $unlinks, budgetMs: 120_000, resendMs: 20_000);
         }
-        $after = [];
+        $after = $identities;
         if ($dns !== []) {
             $steps[] = new StepSpec('grace', 0, 'route.dns_grace', 'gateway', array_map(static fn (StepSpec $step): string => $step->name, $dns), budgetMs: 60_000);
             $after = ['grace'];
@@ -161,9 +169,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
             $leaves = self::leaves($operation, $node);
             $reads = ["caddyread-{$node}"];
             $steps[] = new StepSpec("caddyread-{$node}", $node, 'file.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
-            // The account's group and home, which a pool and a leaf's account copy need, as the Node resolves them (account.read).
-            if ($pools !== [] || $leaves !== []) {
-                $steps[] = new StepSpec($reads[] = "account-{$node}", $node, 'account.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
+            if (in_array("identity-{$node}", $identities, true)) {
+                $reads[] = "identity-{$node}";
             }
             foreach (array_keys($pools) as $index) {
                 $steps[] = new StepSpec($reads[] = "poolread-{$node}-{$index}", $node, 'file.read', (string) $node, $after, budgetMs: 60_000, resendMs: 10_000);
@@ -172,9 +179,14 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
             $steps[] = new StepSpec("caddyunlink-{$node}", $node, 'file.ensure', (string) $node, ["guard-{$node}"], budgetMs: 60_000, resendMs: 10_000);
             $steps[] = new StepSpec("withdraw-{$node}", $node, 'config.apply', (string) $node, ["caddyunlink-{$node}"], budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec($last = "poll-{$node}", $node, 'http.probe', (string) $node, ["withdraw-{$node}"], budgetMs: 60_000, resendMs: 10_000);
-            // The pools converge once Caddy no longer routes to the scope, as the Swamp chart's pool step follows its withdrawal.
+            // The pools converge once Caddy no longer routes to the scope, as the Swamp chart's pool step follows its withdrawal. A
+            // pool that fails its write, test or reload is put back by config.apply, and the Caddyfile the Gateway captured at
+            // admission goes back too, so the Route keeps serving as on main (`caddyback`, only after that failure).
             if ($pools !== []) {
-                $steps[] = new StepSpec($last = "pools-{$node}", $node, 'config.apply', (string) $node, [$last], budgetMs: 600_000, resendMs: 30_000);
+                self::poolForms($operation, $node);
+                $steps[] = new StepSpec("pools-{$node}", $node, 'config.apply', (string) $node, [$last], budgetMs: 600_000, resendMs: 30_000);
+                $last = "pools-{$node}";
+                $steps[] = new StepSpec("caddyback-{$node}", $node, 'config.apply', (string) $node, ["withdraw-{$node}"], budgetMs: 600_000, resendMs: 30_000, onFailure: true);
             }
             // The leaves go only once the Caddy that served them no longer names them.
             $done = [];
@@ -213,6 +225,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
             'account' => ['user' => self::account($operation, $index)],
             'poolread' => ['path' => self::pools($operation, $index)[(int) $parts[2]]['path']],
             'pools' => self::poolsInput($operation, $index, $run),
+            'caddyback' => self::caddyBack($operation, $index),
             'leaf', 'leafhome' => self::leafInput($operation, $index, (int) $parts[2], $parts[0] === 'leafhome', $run),
             'withdraw' => self::withdrawInput($operation, $index, $run),
             'poll' => ['url' => self::Admin, 'budget_ms' => self::AdminBudgetMs,
@@ -226,6 +239,9 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
     {
         $kind = explode('-', $step, 2)[0];
 
+        if ($kind === 'caddyback') {
+            return ($run->steps['pools-'.explode('-', $step)[1]] ?? null)?->status === 'failed';
+        }
         if ($kind === 'pools') {
             return self::poolsInput($operation, (int) explode('-', $step)[1], $run)['files'] !== [];
         }
@@ -240,6 +256,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
         return match ($kind) {
             'grace' => self::grace($run),
             'guard' => self::caddyGuard($operation, (int) explode('-', $step, 2)[1], $run),
+            'identity' => 'the account resolves: home '.self::identity($run, (int) explode('-', $step, 2)[1])['home'],
             'sibling' => $this->sibling($operation, (int) explode('-', $step, 2)[1]),
             default => throw new LogicException("Step [{$step}] runs on a Node."),
         };
@@ -513,11 +530,11 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
                 }
                 $known = [];
                 foreach ([$pool['from'], $pool['content']] as $text) {
-                    foreach ([(string) $identity['gid'], $identity['group']] as $group) {
-                        $known[] = hash('sha256', $render($text, $group));
+                    foreach (self::forms(str_replace(SharedPhpPoolInput::Home, $identity['home'], $text), [(string) $identity['gid'], $identity['group']]) as $form) {
+                        $known[hash('sha256', $form)] = true;
                     }
                 }
-                if (! in_array($read['sha256'], $known, true)) {
+                if (! isset($known[(string) $read['sha256']])) {
                     throw new EngineStepRefusal('owned_revision_conflict', "{$pool['path']} changed outside this Route.");
                 }
             }
@@ -531,6 +548,92 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
 
         return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/pools-{$node}",
             'files' => $files, 'validators' => $validators, 'units' => $units];
+    }
+
+    /** The most scopes a shared pool may hold on the engine: each scope's group has two forms, so the guard renders 2^n files. */
+    public const int PoolFormScopes = 8;
+
+    /** A shared pool with more scopes than the guard renders the forms of runs on Swamp. */
+    private static function poolForms(Operation $operation, int $node): void
+    {
+        foreach (self::pools($operation, $node) as $pool) {
+            foreach (array_filter([$pool['from'], $pool['content']]) as $text) {
+                if (count(self::sections($text)[1]) > self::PoolFormScopes) {
+                    throw new EngineUnsupported('A shared pool with more scopes than the guard renders runs on Swamp.');
+                }
+            }
+        }
+    }
+
+    /**
+     * Every file the pool writers produce from one render: each scope's group as the gid or the group's name, independently (Swamp's
+     * merge keeps an unchanged scope's live bytes, so a pool can mix both), and the render with or without the blank line that
+     * separated its last scope from a scope a merge removed since.
+     *
+     * @param  list<string>  $groups
+     * @return list<string>
+     */
+    public static function forms(string $text, array $groups): array
+    {
+        [$prefix, $scopes] = self::sections($text);
+        $files = [$prefix];
+        foreach ($scopes as $scope) {
+            $next = [];
+            foreach ($files as $file) {
+                foreach (array_unique($groups) as $group) {
+                    $next[] = $file.str_replace(SharedPhpPoolInput::Group, $group, $scope);
+                }
+            }
+            $files = $next;
+        }
+        $forms = [];
+        foreach ($files as $file) {
+            $bare = rtrim($file, "\n")."\n";
+            array_push($forms, $file, $bare, $bare."\n");
+        }
+
+        return array_values(array_unique($forms));
+    }
+
+    /**
+     * A pool file as its text before the first scope and each `[scope]` section with its lines, as the writers split it.
+     *
+     * @return array{string, list<string>}
+     */
+    private static function sections(string $text): array
+    {
+        $prefix = '';
+        $scopes = [];
+        foreach (preg_split('/(?<=\n)/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $line) {
+            if (str_starts_with(trim($line), '[')) {
+                $scopes[] = $line;
+            } elseif ($scopes === []) {
+                $prefix .= $line;
+            } else {
+                $scopes[array_key_last($scopes)] .= $line;
+            }
+        }
+
+        return [$prefix, $scopes];
+    }
+
+    /**
+     * The Caddyfile the Gateway captured at admission, put back after a pool failed, guarded by the withdrawal just written.
+     *
+     * @return array<string, mixed>
+     */
+    private static function caddyBack(Operation $operation, int $node): array
+    {
+        $captured = self::guard($operation, $node)['caddy_content'] ?? null;
+        if (! is_string($captured) || hash('sha256', $captured) !== self::digest(self::guard($operation, $node), 'caddy')) {
+            throw new LogicException("Node {$node} has no captured Caddyfile.");
+        }
+
+        return ['lock' => self::CaddyLock, 'recovery_dir' => self::Recovery."/operation-{$operation->id}/caddyback-{$node}",
+            'files' => [['path' => self::Caddyfile, 'content' => ['blob' => ['content' => $captured]], 'from_sha256' => hash('sha256', self::caddy($operation, $node)),
+                'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
+            'validators' => [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']],
+            'units' => [['unit' => 'caddy.service', 'load' => 'reload']]];
     }
 
     /**

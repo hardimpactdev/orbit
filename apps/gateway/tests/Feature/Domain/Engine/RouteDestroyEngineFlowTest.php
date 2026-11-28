@@ -230,8 +230,8 @@ function leafAndPoolOperation(): Operation
 const DestroyAccount = ['state' => 'present', 'user' => 'orbit', 'uid' => 1000, 'gid' => 1001, 'group' => 'staff', 'home' => '/home/orbit'];
 
 it('reads the account and each pool, then withdraws Caddy, converges the pools and removes both leaf copies', function (): void {
-    expect(array_column(destroySteps(leafAndPoolOperation()), 0))->toBe(['dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace',
-        'caddyread-3', 'account-3', 'poolread-3-0', 'guard-3', 'caddyunlink-3', 'withdraw-3', 'poll-3', 'pools-3', 'leaf-3-0', 'leafhome-3-0', 'sibling-3'])
+    expect(array_column(destroySteps(leafAndPoolOperation()), 0))->toBe(['account-3', 'identity-3', 'dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace',
+        'caddyread-3', 'poolread-3-0', 'guard-3', 'caddyunlink-3', 'withdraw-3', 'poll-3', 'pools-3', 'caddyback-3', 'leaf-3-0', 'leafhome-3-0', 'sibling-3'])
         ->and(array_column(destroySteps(leafAndPoolOperation()), 2, 0)['account-3'])->toBe('account.read')
         ->and(RouteDestroyEngineFlow::chartStep('pools-3'))->toBe('Converge PHP-FPM pools-3')
         ->and(RouteDestroyEngineFlow::chartStep('leafhome-3-0'))->toBe('Withdraw site, remove cert-3');
@@ -408,4 +408,59 @@ it('accepts on the first try a catalog in Gateway form that Swamp\'s withdrawal 
 
     expect(app(RouteDestroyEngineFlow::class)->input($operation->forceFill(['input' => $input]), 'dns-0', $run)['files'][1]['from_sha256'])
         ->toBe(hash('sha256', $fixture['written']));
+});
+
+it('accepts each pool form the writers produce from the recorded scopes, and refuses an intervening write', function (): void {
+    // Written by Swamp's mergePhp (sections.ts) from the Gateway's render.
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/PrivateDns/swamp-pool-forms.json')), true, 512, JSON_THROW_ON_ERROR);
+    foreach ($fixture['cases'] as $case) {
+        expect(RouteDestroyEngineFlow::forms($case['gateway_render'], ['1001', 'staff']))->toContain($case['written']);
+    }
+    // route.withdraw_site's output in route/src/tests.rs (a_withdrawal_keeps_a_sibling_scope_byte_for_byte_across_the_render_separator):
+    // the removed scope's separator stays after the scope that is now last.
+    expect(RouteDestroyEngineFlow::forms("[seven]\ngroup = __ORBIT_NODE_GROUP__\n", ['1001', 'staff']))->toContain("[seven]\ngroup = staff\n\n")
+        ->and(RouteDestroyEngineFlow::forms("[seven]\ngroup = __ORBIT_NODE_GROUP__\n", ['1001', 'staff']))->not->toContain("[seven]\ngroup = staff\nchanged = 1\n");
+});
+
+it('puts the captured Caddyfile back only after a pool failed, guarded by the withdrawal it wrote', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $operation = leafAndPoolOperation();
+    $input = $operation->input;
+    $input['route_guards']['3']['caddy_content'] = DestroyBefore;
+    $operation->forceFill(['input' => $input]);
+    $failed = (new OperationEngineStep)->forceFill(['name' => 'pools-3', 'status' => 'failed', 'error_code' => 'config.validate_failed', 'on_failure' => false, 'optional' => false]);
+    $done = (new OperationEngineStep)->forceFill(['name' => 'pools-3', 'status' => 'done']);
+
+    expect($flow->needed($operation, 'caddyback-3', new EngineRun(51, ['pools-3' => $failed], 0, null)))->toBeTrue()
+        ->and($flow->needed($operation, 'caddyback-3', new EngineRun(51, ['pools-3' => $done], 0, null)))->toBeFalse()
+        ->and($flow->input($operation, 'caddyback-3', new EngineRun(51, ['pools-3' => $failed], 0, null))['files'])->toBe([[
+            'path' => '/etc/caddy/Caddyfile', 'content' => ['blob' => ['content' => DestroyBefore]], 'from_sha256' => hash('sha256', DestroyAfter),
+            'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]])
+        // The Operation fails as on main: the pool step's code and label, never the restore's.
+        ->and(RouteDestroyEngineFlow::chartStep('pools-3'))->toBe('Converge PHP-FPM pools-3')
+        ->and(collect(app(RouteDestroyEngineFlow::class)->steps($operation))->firstWhere('name', 'caddyback-3')->onFailure)->toBeTrue();
+});
+
+it('reads the account and refuses an absent one before any step that changes a file', function (): void {
+    $steps = collect(app(RouteDestroyEngineFlow::class)->steps(leafAndPoolOperation()))->keyBy('name');
+    // Every step each write waits for, directly or through others.
+    $waits = [];
+    foreach ($steps as $name => $step) {
+        $seen = [];
+        $queue = $step->after;
+        while ($queue !== []) {
+            $dependency = array_shift($queue);
+            if (! isset($seen[$dependency])) {
+                $seen[$dependency] = true;
+                array_push($queue, ...$steps[$dependency]->after);
+            }
+        }
+        $waits[$name] = array_keys($seen);
+    }
+    $writes = $steps->filter(static fn ($step): bool => in_array($step->action, ['file.ensure', 'config.apply'], true) && ! $step->onFailure)->keys();
+
+    expect($writes->all())->toContain('dnsunlink-0-records', 'dns-0', 'withdraw-3', 'pools-3', 'leaf-3-0')
+        ->and($writes->reject(static fn (string $name): bool => in_array('identity-3', $waits[$name], true))->values()->all())->toBe([])
+        ->and(fn () => app(RouteDestroyEngineFlow::class)->local(leafAndPoolOperation(), 'identity-3', destroyRun(['account-3' => ['state' => 'absent']])))
+        ->toThrow(EngineStepRefusal::class);
 });

@@ -256,8 +256,8 @@ it('records the whole-file digests the engine guards with, and builds its steps 
         'output' => json_encode(['state' => 'present', 'user' => 'orbit', 'uid' => 1000, 'gid' => 1000, 'group' => 'orbit', 'home' => '/home/orbit'])]);
     $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read, "account-{$node->id}" => $account], 0, null);
     // The real capture removes the Route's leaf, so the Node's account is read first (account.read).
-    expect($steps)->toBe(['dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace', "caddyread-{$node->id}",
-        "account-{$node->id}", "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "leaf-{$node->id}-0", "leafhome-{$node->id}-0", "leaf-{$node->id}-1", "leafhome-{$node->id}-1", "sibling-{$node->id}"])
+    expect($steps)->toBe(["account-{$node->id}", "identity-{$node->id}", 'dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace',
+        "caddyread-{$node->id}", "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "leaf-{$node->id}-0", "leafhome-{$node->id}-0", "leaf-{$node->id}-1", "leafhome-{$node->id}-1", "sibling-{$node->id}"])
         ->and($flow->local($operation, "guard-{$node->id}", $run))->toBeString()
         ->and($flow->input($operation, "withdraw-{$node->id}", $run)['files'][0]['from_sha256'])->toBe(hash('sha256', $before['caddy']['content']));
 });
