@@ -25,6 +25,7 @@ orbit-executor-dns = { path = "../dns" }
 orbit-executor-instance = { path = "../instance" }
 orbit-executor-process = { path = "../process" }
 orbit-executor-host = { path = "../host" }
+orbit-executor-incus = { path = "../incus" }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 base64 = "0.22"
