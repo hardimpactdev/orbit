@@ -103,14 +103,14 @@ impl Client {
         }
     }
 
-    /// The operations still running in a project that name the given resource path, such as a volume being copied.
-    pub(crate) fn running(&self, project: &str, resource: &str) -> Result<Vec<String>, Failure> {
+    /// The volume copies still running in a project. Incus names no resource on a copy's operation, so every running copy
+    /// in the project counts.
+    pub(crate) fn copies(&self, project: &str) -> Result<Vec<String>, Failure> {
         let path = format!("/1.0/operations?project={project}&recursion=1");
         let (operations, _) = self.get(&path)?.ok_or_else(|| Failure::new("incus.api_failed", "no operations list"))?;
         let mut found = Vec::new();
         for operation in operations["running"].as_array().into_iter().flatten() {
-            let names = operation["resources"].as_object().into_iter().flat_map(|kinds| kinds.values()).filter_map(Value::as_array).flatten();
-            if names.filter_map(Value::as_str).any(|name| name.split('?').next() == Some(resource)) {
+            if operation["description"] == "Copying storage volume" {
                 let id = operation["id"].as_str().filter(|id| NAME.is_match(id)).ok_or_else(|| Failure::new("incus.api_failed", "an operation without an id"))?;
                 found.push(format!("/1.0/operations/{id}"));
             }

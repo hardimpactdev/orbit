@@ -11,6 +11,9 @@ use crate::{connect, input, not_converged, plain, Failure, State, NAME};
 
 /// The volume key that records what a volume was copied from: `<project>/<pool>/<volume>[/<snapshot>]`.
 pub(crate) const SOURCE_KEY: &str = "user.source";
+/// The volume key that marks a copy whose success no order has seen yet. The create sets it, and the order that sees the
+/// copy's operation succeed removes it.
+pub(crate) const COPYING_KEY: &str = "user.source.copying";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,6 +56,7 @@ struct Source {
 pub fn volume_ensure(raw: &Value) -> Result<u32, Failure> {
     let input: Input = input(raw)?;
     if input.config.contains_key(SOURCE_KEY)
+        || input.config.contains_key(COPYING_KEY)
         || input.config.keys().any(|key| key.starts_with("volatile."))
     {
         return Err(Failure::new(
@@ -78,8 +82,8 @@ fn absent(input: &Input, path: &str) -> Result<u32, Failure> {
     let client = connect(input.socket.as_deref(), input.timeout_ms, &[&input.project, &input.pool, &input.name])?;
     owns_storage(&client, &input.project)?;
     let Some((volume, _)) = client.get(path)? else { return Ok(0) };
-    if !client.running(&input.project, &resource(&input.pool, &input.name))?.is_empty() {
-        return Err(Failure::new("incus.copy_in_progress", format!("{} is still being written", input.name)));
+    if volume["config"].get(COPYING_KEY).is_some() && !client.copies(&input.project)?.is_empty() {
+        return Err(Failure::new("incus.copy_in_progress", format!("{} may still be being copied", input.name)));
     }
     if volume["used_by"].as_array().is_none_or(|used| !used.is_empty()) {
         return Err(Failure::new("incus.volume_in_use", format!("{} is used by {}", input.name, volume["used_by"])));
@@ -97,11 +101,6 @@ fn absent(input: &Input, path: &str) -> Result<u32, Failure> {
         None => Ok(1),
         Some(_) => Err(not_converged(&input.name)),
     }
-}
-
-/// The volume's path as Incus names it in an operation's resources.
-fn resource(pool: &str, name: &str) -> String {
-    format!("/1.0/storage-pools/{pool}/volumes/custom/{name}")
 }
 
 /// Refuses a project whose custom volumes Incus keeps in `default` (`features.storage.volumes` off), so every read and write
@@ -136,25 +135,36 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
         Some(snapshot) => format!("{project}/{}/{}/{snapshot}", source.pool, source.volume),
         None => format!("{project}/{}/{}", source.pool, source.volume),
     };
-    // A copy that an earlier order started may still run: its volume exists before its data does. Wait for it, within the
-    // deadline, before the volume counts.
-    for operation in client.running(&input.project, &resource(&input.pool, &input.name))? {
-        client.wait(&operation).map_err(|failure| {
-            if failure.code == "incus.timeout" {
-                Failure::new("incus.copy_in_progress", format!("{} is still being copied", input.name))
-            } else {
-                failure
-            }
-        })?;
-    }
     let mut changes = 0;
-    let (found, etag) = if let Some(found) = client.get(path)? {
+    let (mut found, mut etag) = if let Some(found) = client.get(path)? {
         found
     } else {
         create(&client, input, source, project, &record)?;
         changes += 1;
         client.get(path)?.ok_or_else(|| not_converged(&input.name))?
     };
+    if found["config"].get(COPYING_KEY).is_some() {
+        if changes == 0 {
+            // An earlier order started this copy and never saw it end: wait for the project's running copies within the
+            // deadline. A copy that fails is removed by Incus, so a volume still there afterwards holds the whole copy.
+            for operation in client.copies(&input.project)? {
+                client.wait(&operation).map_err(|failure| {
+                    if failure.code == "incus.timeout" {
+                        Failure::new("incus.copy_in_progress", format!("{} may still be being copied", input.name))
+                    } else {
+                        failure
+                    }
+                })?;
+            }
+            (found, etag) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
+        }
+        put(&client, path, &found, etag.as_deref(), &BTreeMap::new())?;
+        changes = 1;
+        (found, etag) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
+        if found["config"].get(COPYING_KEY).is_some() {
+            return Err(not_converged(&input.name));
+        }
+    }
     if found["config"][SOURCE_KEY] != json!(record) {
         return Err(Failure::new(
             "incus.volume_source_conflict",
@@ -164,14 +174,7 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
     if input.config.iter().all(|(key, value)| found["config"][key.as_str()] == json!(value)) {
         return Ok(changes);
     }
-    // A PUT replaces the writable state, so it carries the description and every other key as read, under the ETag read.
-    let mut config = found["config"].as_object().cloned().unwrap_or_default();
-    config.retain(|key, _| !key.starts_with("volatile."));
-    for (key, value) in &input.config {
-        config.insert(key.clone(), json!(value));
-    }
-    let body = json!({"config": config, "description": found["description"].as_str().unwrap_or("")});
-    client.change("PUT", path, Some(&body), etag.as_deref())?;
+    put(&client, path, &found, etag.as_deref(), &input.config)?;
     let (volume, _) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
     if input.config.iter().all(|(key, value)| volume["config"][key.as_str()] == json!(value))
         && volume["config"][SOURCE_KEY] == json!(record)
@@ -181,6 +184,18 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
     } else {
         Err(not_converged(&input.name))
     }
+}
+
+/// Writes the volume's configuration as read, without its volatile keys and the copy mark, with the given keys set, and
+/// keeps its description. A PUT replaces the writable state, so it carries it whole, under the `ETag` read.
+fn put(client: &Client, path: &str, found: &Value, etag: Option<&str>, keys: &BTreeMap<String, String>) -> Result<(), Failure> {
+    let mut config = found["config"].as_object().cloned().unwrap_or_default();
+    config.retain(|key, _| !key.starts_with("volatile.") && key != COPYING_KEY);
+    for (key, value) in keys {
+        config.insert(key.clone(), json!(value));
+    }
+    let body = json!({"config": config, "description": found["description"].as_str().unwrap_or("")});
+    client.change("PUT", path, Some(&body), etag)
 }
 
 /// Copies the volume, without its snapshots, from a source that must exist. It keeps the source's settings, apart from its
@@ -194,11 +209,12 @@ fn create(client: &Client, input: &Input, source: &Source, project: &str, record
         return Err(Failure::new("incus.volume_source_missing", record.to_owned()));
     };
     let mut config = found["config"].as_object().cloned().unwrap_or_default();
-    config.retain(|key, _| !key.starts_with("volatile.") && key != SOURCE_KEY);
+    config.retain(|key, _| !key.starts_with("volatile.") && key != SOURCE_KEY && key != COPYING_KEY);
     for (key, value) in &input.config {
         config.insert(key.clone(), json!(value));
     }
     config.insert(SOURCE_KEY.to_owned(), json!(record));
+    config.insert(COPYING_KEY.to_owned(), json!("true"));
     let name = source.snapshot.as_ref().map_or_else(|| source.volume.clone(), |snapshot| format!("{}/{snapshot}", source.volume));
     let create = json!({
         "name": input.name,
