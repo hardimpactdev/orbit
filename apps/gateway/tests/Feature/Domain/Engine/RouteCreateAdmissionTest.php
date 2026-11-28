@@ -145,5 +145,5 @@ it('persists main\'s chart step code for a failed step, a guard conflict include
     'a guarded catalog' => ['dns-0', 'owned_revision_conflict', 'private_dns.publication_failed'],
     'a request' => ['csr-0', 'app-dev.certificate_request_failed', 'app-dev.certificate_request_failed'],
     'an account lookup error' => ['site-3-account-0', 'account.read_failed', 'route.publish_failed'],
-    'an absent account' => ['site-3-key-0', 'engine.order_invalid', 'route.publish_failed'],
+    'an absent account' => ['site-3-accounts', 'route.account_missing', 'route.publish_failed'],
 ]);

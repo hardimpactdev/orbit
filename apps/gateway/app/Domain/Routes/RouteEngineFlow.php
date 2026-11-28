@@ -10,6 +10,7 @@ use App\Domain\Engine\EngineAdmission;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineSkip;
+use App\Domain\Engine\EngineStepRefusal;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
@@ -66,7 +67,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     private const int OrderOverhead = 400;
 
     /** An account answer as the shape check reads it: the longest names, so each order is sized as at run time. */
-    private const string PlannedAccount = '{"state":"present","uid":4294967294,"gid":4294967294,"group":"abcdefghijklmnopqrstuvwxyzabcdef","home":"/home/abcdefghijklmnopqrstuvwxyzabcdef"}';
+    private const string PlannedAccount = '{"state":"present","user":"abcdefghijklmnopqrstuvwxyzabcdef","uid":4294967294,"gid":4294967294,"group":"abcdefghijklmnopqrstuvwxyzabcdef","home":"/home/abcdefghijklmnopqrstuvwxyzabcdef"}';
 
     /** The host primitives route.create sends: a Node reports the `host` family (agent 0.36.0) when it lists each. */
     private const array HostFamily = ['account.read', 'config.apply', 'file.read', 'file.ensure', 'dotenv.ensure', 'systemd.unit.ensure', 'ca.trust.ensure'];
@@ -83,10 +84,21 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             }
         }
         $steps = $signs = [];
+        // Every account the Route writes for is read first, on each site Node: an account NSS does not resolve now refuses at the
+        // first request, before any step has changed anything.
+        $checks = [];
+        foreach (ValidatedData::integerList($plan['site_nodes']) as $node) {
+            $reads = [];
+            foreach (array_keys(self::users($plan, $node)) as $index) {
+                $steps[] = new StepSpec($reads[] = "site-{$node}-account-{$index}", $node, 'account.read', (string) $node, budgetMs: 30_000, resendMs: 10_000);
+            }
+            // The Gateway checks the answers as the Node's site step: an absent account fails it with main's code, `route.publish_failed`.
+            $steps[] = new StepSpec($checks[] = "site-{$node}-accounts", 0, 'account.check', 'gateway', $reads, budgetMs: 10_000);
+        }
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             $node = ValidatedData::integer($leaf['node_id']);
             self::csrInput($leaf);
-            $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000, features: [self::CsrFeature]);
+            $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, $checks, budgetMs: 60_000, resendMs: 15_000, features: [self::CsrFeature]);
             $steps[] = $signs[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000);
         }
         $signed = array_map(static fn (StepSpec $step): string => $step->name, $signs);
@@ -187,10 +199,6 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     {
         $mine = self::mine($plan, $node);
         $parts = [];
-        // Each account the Node's steps write for, read first: its home, primary group and gid come from the Node, never a guess.
-        foreach (array_keys(self::users($plan, $node)) as $index) {
-            $parts[] = ["account-{$index}", 'account.read', [], 30_000];
-        }
         foreach (array_keys(RouteHostSteps::access(array_map(self::access(...), $mine('acl')))) as $index) {
             $parts[] = ["acl-{$index}", 'posix.acl.ensure', [], 150_000];
         }
@@ -259,6 +267,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         return match ($kind) {
             'sign' => $this->sign($operation, RouteExecutionProof::objects($plan['leaves'])[(int) $index], $run->output("csr-{$index}") ?? '', $run),
             'probe' => $this->probe(RouteExecutionProof::objects($plan['probes'])[(int) $index]),
+            'site' => self::accounts($plan, (int) $index, $run),
             default => throw new LogicException("Step [{$step}] runs on a Node."),
         };
     }
@@ -373,10 +382,30 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * An account as its recorded `account.read` answered it: `[group, home, gid]`, the primary group by NSS on the Node. An absent
-     * account fails the step that needs it, which records `route.publish_failed`, as `route.publish_site` did.
+     * Checks that every account a Node's steps write for answered a resolvable account. An absent one refuses here, before the
+     * first request, so nothing has changed; the step is the Node's site step, so the Route records `route.publish_failed`.
      *
-     * @return array{string, string, int}
+     * @param  array<string, mixed>  $plan
+     */
+    private static function accounts(array $plan, int $node, EngineRun $run): string
+    {
+        foreach (self::users($plan, $node) as $index => $user) {
+            try {
+                self::owner($run->output("site-{$node}-account-{$index}"));
+            } catch (RuntimeException $failure) {
+                throw new EngineStepRefusal($failure->getMessage(), "Account {$user} on Node {$node} is not resolvable.", $failure);
+            }
+        }
+
+        return "accounts resolved on node {$node}";
+    }
+
+    /**
+     * An account as its recorded `account.read` answered it: `[group, home, gid, user]`, the primary group by NSS on the Node and
+     * the canonical name NSS answered, which owns the account's files. `absent` means NSS does not resolve it now
+     * (RouteEngineFlow::accounts refuses before anything changed).
+     *
+     * @return array{string, string, int, string}
      */
     public static function owner(?string $read): array
     {
@@ -387,12 +416,13 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         $group = $answer['group'] ?? null;
         $home = $answer['home'] ?? null;
         $gid = $answer['gid'] ?? null;
-        if (($answer['state'] ?? null) !== 'present' || ! is_string($group) || preg_match(self::Name, $group) !== 1 || ! is_string($home)
+        $user = $answer['user'] ?? null;
+        if (($answer['state'] ?? null) !== 'present' || ! is_string($user) || preg_match(self::Name, $user) !== 1 || ! is_string($group) || preg_match(self::Name, $group) !== 1 || ! is_string($home)
             || ! str_starts_with($home, '/') || str_contains($home, "\n") || ! is_int($gid)) {
             throw new RuntimeException('route.account_invalid');
         }
 
-        return [$group, rtrim($home, '/') === '' ? '/' : rtrim($home, '/'), $gid];
+        return [$group, rtrim($home, '/') === '' ? '/' : rtrim($home, '/'), $gid, $user];
     }
 
     /**
@@ -442,7 +472,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'account' => ['user' => $users[$index]],
             // A link belongs to its owner and the owner's primary group, as its account read answered them.
             'link' => RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']),
-                ValidatedData::string($mine('links')[$index]['owner']), $who(ValidatedData::string($mine('links')[$index]['owner']))[0]),
+                $who(ValidatedData::string($mine('links')[$index]['owner']))[3], $who(ValidatedData::string($mine('links')[$index]['owner']))[0]),
             'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, 'pool-install', $pools()['files'], $pools()['validators']),
             'unit' => RouteHostSteps::running($pools()['units'][$index]),
             // The reload writes nothing: each file's guard is the bytes the install left, so a change since then refuses.
@@ -453,9 +483,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'current' => RouteHostSteps::link($leaf()[3], $leaf()[1], 'root', 'root'),
             // `install -D` made the account copy's folders as root, 0755.
             'folder' => RouteHostSteps::directory($copies().$leaf()[0].'/'.$leaf()[1], 'root', 'root', '0755'),
-            'key' => RouteHostSteps::copy($copies().$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $account, $who($account)[0], '0600'),
-            'copy' => RouteHostSteps::plain($copies().$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $account, $who($account)[0], '0600'),
-            'copylink' => RouteHostSteps::link($copies().$leaf()[0].'/current', $leaf()[1], $account, $who($account)[0]),
+            'key' => RouteHostSteps::copy($copies().$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $who($account)[3], $who($account)[0], '0600'),
+            'copy' => RouteHostSteps::plain($copies().$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $who($account)[3], $who($account)[0], '0600'),
+            'copylink' => RouteHostSteps::link($copies().$leaf()[0].'/current', $leaf()[1], $who($account)[3], $who($account)[0]),
             'trust' => ['state' => 'present', 'name' => RouteHostSteps::trustName(ValidatedData::string($plan['root_certificate'])), 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
             'unlink' => RouteHostSteps::absent(ValidatedData::string($this->hostInput($plan, $node, 'read-'.substr($part, strlen('unlink-')), $output)['path'])),

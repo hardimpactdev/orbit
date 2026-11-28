@@ -60,7 +60,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | --- | --- | --- |
 | `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
 | `link-<k>` | `file.ensure` | Places a release link |
-| `account-<k>` | `account.read` | Reads the home, primary group and gid of an account the Node's steps write for |
+| `account-<k>`, `accounts` | `account.read`, Gateway check | Reads each account the Node's steps write for, first, then checks every answer |
 | `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
 | `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
 | `unit-<k>` | `systemd.unit.ensure` | Enables and starts a pool unit |
@@ -74,7 +74,7 @@ The Gateway renders every file whole and sends each Caddyfile, pool, records and
 
 The pool reload rewrites nothing: each file's guard is the digest of the bytes the install left. The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, and the records and the catalog `/run/lock/orbit-dnsmasq.lock`. Each `config.apply` step has its own `recovery_dir` under `/var/lib/orbit/executor/config-recovery`: `pool-install`, `pool-reload`, `caddy` and `dns`. Each input comes from the plan and the recorded reads, so a resend carries the same bytes. The trust source is named after the root's fingerprint, so a new root gets its own name and subject-hash link.
 
-Each account the Node's steps write for is read first with `account.read`: the Node's account for the leaf copies and the pools, and each other link owner. Its recorded answer gives the home and primary group, so a retry sends the same bytes. An absent account fails the step that needs it with `route.publish_failed`, as `route.publish_site` did.
+Each account the Node's steps write for is read first, before any request, with `account.read`: the Node's account for the leaf copies and the pools, and each other link owner. Its recorded answer gives the home, the primary group and the canonical name that owns the files, so a retry sends the same bytes. The Gateway step `site-<node>-accounts` then checks the answers. An account NSS does not resolve now refuses there, before anything changed, and the Route records `route.publish_failed`, as `route.publish_site` did.
 
 The publication hold covers every Node of the plan: site and leaf Nodes, and each VPN Node with DNS work. A failed step records main's code for its chart step: `route.publish_failed` for `Install cert, publish site-<node>` and `private_dns.publication_failed` for `Publish private DNS-<i>`. A guard refusal records its chart step's code too, as main maps it.
 

@@ -175,10 +175,10 @@ it('marks a Node step the kind skips done without an order, and the run goes on'
 
 it('records an account.read receipt in the executor\'s shape as the answer the next steps render from', function (): void {
     // A5 `account.read`: `Outcome::Output { stdout }`, the account as JSON, its primary group by NSS on the Node.
-    $stdout = '{"state":"present","uid":1000,"gid":2000,"group":"staff","home":"/srv/orbit"}';
+    $stdout = '{"state":"present","user":"orbit","uid":1000,"gid":2000,"group":"staff","home":"/srv/orbit"}';
     ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => $stdout]);
 
     $read = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', 'csr-0')->firstOrFail();
     expect($read->output)->toBe($stdout)
-        ->and(RouteEngineFlow::owner($read->output))->toBe(['staff', '/srv/orbit', 2000]);
+        ->and(RouteEngineFlow::owner($read->output))->toBe(['staff', '/srv/orbit', 2000, 'orbit']);
 });

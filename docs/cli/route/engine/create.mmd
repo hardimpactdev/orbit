@@ -28,12 +28,14 @@ sequenceDiagram
     %%> - production never moves: a site or leaf Node that is not an app-dev Node (app-prod, unclassified, no role), a DNS Node without the vpn role, a target Instance outside development, or an intent with a production placement or `production_control` keeps the whole Operation on Swamp
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     GW-->>CLI: 202 Accepted<br/>task ID
+    EN->>N: Read each account<br/>account.read · account-k
+    %%> First, on each site Node: the Node's account (leaf copies, pools) and each other link owner; the recorded answer keeps a retry byte for byte, and its canonical `user` owns the account's files
+    Note over EN: Check the accounts<br/>Gateway step · accounts
+    %%> An account NSS does not resolve now (`absent`) refuses here, before any request, so nothing has changed; the step is the Node's site step, so the Route records `route.publish_failed`
     EN->>N: Make a CSR on the Node<br/>tls.ensure_csr · csr-i
     %%> The Gateway sends the folder, its root:caddy owner, modes 0750 and 0640, and the subject; the key never leaves the Node
     Note over EN: Sign the CSR<br/>Gateway step · sign-i
     %%> As `operation:direct:certificate-sign`; a pending cancel refuses
-    EN->>N: Read each account<br/>account.read · account-k
-    %%> The Node's account (leaf copies, pools) and each other link owner; the recorded answer keeps a retry byte for byte; an absent account fails the next step that needs it (`route.publish_failed`)
     EN->>N: Set APP_URL and links<br/>dotenv.ensure · file.ensure
     %%> `site-node-url-k`: the last `APP_URL=` line of an existing `.env` that the account owns, replaced or appended; `site-node-link-k`: a release link owned by its account
     EN->>N: Read each pool file<br/>file.read · read-pool-k
