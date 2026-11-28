@@ -95,6 +95,21 @@ it('keeps a Route on Swamp when one condition fails', function (Closure $operati
     }],
 ]);
 
+it('runs a Route with Caddy access rows on the engine only when its Node takes posix.acl.ensure with scope tree', function (array $features, bool $engine): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'account.read', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure',
+        'ca.trust.ensure', 'posix.acl.ensure']);
+    $bus->shouldReceive('nodeFeatures')->andReturn($features);
+    $this->app->instance(MachineBus::class, $bus);
+    $acl = RouteWebRootCommands::access(3, ['user' => 'orbit', 'sites' => [['checkout' => '/home/orbit/apps/shop', 'relative_root' => 'public',
+        'application' => '/home/orbit/apps/shop']]], (new Instance)->forceFill(['source_is_laravel' => true]));
+
+    expect(($this->routes)(admissionOperation(admissionPlan(['acl' => $acl]))))->toBe($engine);
+})->with([
+    'with posix.acl.tree' => [['tls.csr_input', 'posix.acl.tree'], true],
+    'without it' => [['tls.csr_input'], false],
+]);
+
 it('keeps a Route to an Instance outside development on Swamp', function (): void {
     $prod = admissionNode(4, [RoleName::AppProd]);
     $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/shop.git',

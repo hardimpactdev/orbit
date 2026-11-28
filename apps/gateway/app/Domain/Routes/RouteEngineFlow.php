@@ -136,7 +136,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
      * family (each host primitive the flow sends), and whose every leaf Node also reports `tls.csr_input`. The `host` family comes
      * with agent 0.36.0 (NodeExecutorInput::FamilySince), which every build after file.ensure `source_path` carries, so it also
      * stands for the key copy; that input has no feature of its own. Any other route.create runs on Swamp, as a whole. Caddy
-     * access waits on a tree scope for posix.acl.ensure (Nick's decision, RouteHostSteps::access), so a Route with access rows
+     * access runs only on a Node that takes posix.acl.ensure with `scope: tree` (A4, `posix.acl.tree`), so a Route with access rows
      * never reaches it on the engine.
      */
     public function admit(Operation $operation): void
@@ -152,7 +152,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             }
         }
         if (($plan['acl'] ?? []) !== []) {
-            throw new EngineUnsupported('A Route with Caddy access rows runs on Swamp until posix.acl.ensure takes a tree scope.');
+            foreach (array_unique(array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), RouteExecutionProof::objects($plan['acl']))) as $node) {
+                if (! in_array(RouteHostSteps::AclTreeFeature, $this->bus->nodeFeatures($node), true)) {
+                    throw new EngineUnsupported('A Route with Caddy access rows runs on Swamp until its Node takes posix.acl.ensure with scope tree.');
+                }
+            }
         }
         $leaves = array_map(static fn (array $leaf): int => ValidatedData::integer($leaf['node_id']), RouteExecutionProof::objects($plan['leaves']));
         $nodes = array_values(array_unique([...ValidatedData::integerList($plan['site_nodes']), ...$leaves,
@@ -191,8 +195,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         foreach (array_keys(self::users($plan, $node)) as $index) {
             $parts[] = ["account-{$index}", 'account.read', [], 30_000];
         }
-        foreach (array_keys(RouteHostSteps::access($mine('acl'))) as $index) {
-            $parts[] = ["acl-{$index}", 'posix.acl.ensure', [], 150_000];
+        // Caddy's access, one entry per row and path; only a Node whose executor takes `scope: tree` runs it.
+        foreach (array_keys(RouteHostSteps::access(array_map(self::access(...), $mine('acl')))) as $index) {
+            $parts[] = ["acl-{$index}", 'posix.acl.ensure', [RouteHostSteps::AclTreeFeature], 150_000];
         }
         foreach (array_keys($mine('url_lines')) as $index) {
             $parts[] = ["url-{$index}", 'dotenv.ensure', [], 60_000];
@@ -440,6 +445,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
                 return ['path' => $path, 'user' => $named(ValidatedData::string($row['owner'])), 'values' => [['key' => 'APP_URL', 'value' => substr($line, 8)]]];
             })($mine('url_lines')[$index]),
             'account' => ['user' => $users[$index]],
+            'acl' => RouteHostSteps::access(array_map(self::access(...), $mine('acl')))[$index],
             // A link belongs to its owner and the owner's primary group, as its account read answered them.
             'link' => RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']),
                 ValidatedData::string($mine('links')[$index]['owner']), $who(ValidatedData::string($mine('links')[$index]['owner']))[0]),

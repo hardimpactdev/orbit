@@ -60,6 +60,7 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | --- | --- | --- |
 | `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
 | `link-<k>` | `file.ensure` | Places a release link |
+| `acl-<k>` | `posix.acl.ensure` | Sets Caddy's entry for one admitted row and path; a recursive row takes `scope: tree` |
 | `account-<k>` | `account.read` | Reads the home, primary group and gid of an account the Node's steps write for |
 | `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
 | `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
@@ -80,7 +81,7 @@ The publication hold covers every Node of the plan: site and leaf Nodes, and eac
 
 Admission runs `route.create` on the engine only when all of these hold:
 
-- The Route has no Caddy access rows. Their recursive work stays on Swamp until `posix.acl.ensure` takes a tree scope, which Nick decides.
+- A Route with Caddy access rows needs `posix.acl.tree` on its Node: the `scope: tree` input of `posix.acl.ensure`.
 - Each site or leaf Node is an app-dev Node, and each Node with DNS work alone has the vpn role.
 - No target Instance lies outside development, and the intent has no production placement and no `production_control`.
 - Every Node with work reports the `host` family with `account.read` (agent 0.37.0), which also brings `file.read` and the `source_path` input of `file.ensure`.

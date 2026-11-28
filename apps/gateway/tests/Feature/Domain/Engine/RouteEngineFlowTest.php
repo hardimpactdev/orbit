@@ -224,9 +224,25 @@ it('names every site step of a Node as the chart\'s iteration of its Node', func
     ['dns-0-read-catalog', 'Publish private DNS-0'], ['csr-0', 'Make a CSR on the Node-0'], ['sign-1', 'Sign the CSR-1'], ['probe-0', 'Probe the site over TLS-0'],
 ]);
 
-it('leaves a Route with Caddy access to Swamp until posix.acl.ensure takes a tree scope', function (): void {
-    app(RouteEngineFlow::class)->steps(routeOperation(routePlan(['acl' => routeAccess()])));
-})->throws(EngineUnsupported::class, 'tree scope');
+it('sends Caddy access as one posix.acl.ensure entry per row and path, with scope tree for the recursive rows, only to a Node that takes it', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $plan = routePlan(['acl' => routeAccess()]);
+    $acl = array_values(array_filter($flow->steps(routeOperation($plan)), static fn ($step): bool => $step->action === 'posix.acl.ensure'));
+    $input = static fn (int $index): array => $flow->input(routeOperation($plan), "site-3-acl-{$index}", routeRun());
+
+    expect(array_map(static fn ($step): array => [$step->name, $step->features], $acl))->toBe(array_map(static fn (int $i): array => ["site-3-acl-{$i}", ['posix.acl.tree']], array_keys($acl)))
+        ->and($acl[0]->after)->toBe(['site-3-account-0'])
+        ->and($input(0))->toBe(['path' => '/home/orbit/apps/shop', 'user' => 'caddy', 'perms' => '---', 'default' => true, 'scope' => 'tree', 'run_as' => 'orbit', 'optional' => false])
+        ->and($input(1))->toBe(['path' => '/home/orbit/apps/shop', 'user' => 'caddy', 'perms' => '---', 'default' => false, 'scope' => 'tree', 'run_as' => 'orbit', 'optional' => false]);
+    $passage = array_values(array_filter(array_map($input, array_keys($acl)), static fn (array $order): bool => $order['perms'] === '--x'));
+    $grants = array_values(array_filter(array_map($input, array_keys($acl)), static fn (array $order): bool => $order['perms'] === 'r-X'));
+
+    // The passage through the folders above a served root is one path's access entry, run as root; a grant is recursive.
+    expect($passage)->not->toBeEmpty()
+        ->and(array_column($passage, 'scope'))->toBe([])->and(array_column($passage, 'run_as'))->toBe([])
+        ->and(array_unique(array_column($grants, 'scope')))->toBe(['tree'])
+        ->and(array_column(array_filter($grants, static fn (array $order): bool => $order['optional']), 'path'))->toContain('/home/orbit/apps/shop/storage/app/public');
+});
 
 it('leaves a Route that needs a part the engine does not run to Swamp', function (string $list, array $row): void {
     app(RouteEngineFlow::class)->steps(routeOperation(routePlan([$list => [$row]])));
