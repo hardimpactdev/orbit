@@ -143,7 +143,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `systemd.unit.ensure` | One unit: enabled, running or stopped | Built | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
 | `systemd.unit.restart`, `systemd.unit.signal` | One run of one unit, restarted or signalled at most once per order | Planned | `process.read_instance` and `process.restart` for units; the reload of `instance.names` |
 | `docker.container.ensure`, `docker.container.restart` | One Docker container | Planned | The container branches of the process family |
-| `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Planned | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
+| `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Built; [its contract](#the-incus-family) | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
 | `incus.instance.read` | The state, configuration and snapshots of one Incus instance, read only | Planned | The seed choice of `instance.clone`; the machine id read of `instance.prepare` |
 | `incus.acl.ensure`, `incus.device.ensure`, `incus.volume.ensure` | One network ACL, one device, one storage volume | Planned | The rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, their removal in `instance.destroy` |
 | `git.fetch` | One ref fetched into one repository | Planned | `instance.fetch_branch`; the bundle transfer of `instance.checkout` and `instance.sync_base` |
@@ -314,6 +314,35 @@ An executor with the `route` family reports the `tls.csr_input` feature. With it
 It keeps a key that `openssl pkey` reads as PEM or DER, and puts its owner and mode right. A file that is decisively not a key (empty, or holding no PEM block of any kind and failing DER) is replaced once, as on main, and the request goes on.
 
 Deviation from main, for safety: a file with a PEM block openssl cannot read (encrypted, a certificate only, other), or an inspection that times out or cannot start, fails the request with `app-dev.certificate_request_failed` and keeps the file. Main replaced these; Orbit never writes such keys. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
+
+### The incus family
+
+The `incus` family (`crates/incus`) holds the Incus primitives of the [catalogue](#the-catalogue). App-dev enables it from agent 0.39.0 (`NodeExecutorInput::FamilySince`), because its Incus holds the instances; vpn and the Gateway's Node hold none. No flow sends it yet. Each primitive talks to the Incus REST API over its unix socket, one HTTP/1.0 request per connection, and never runs the `incus` command. It targets the Node, because the instance may not exist yet, and its receipt is fenced like the host primitives that change a resource.
+
+| Action | Input | What it does |
+| --- | --- | --- |
+| `incus.instance.ensure` | `project`, `name`, `state` (`running`, `stopped` or `absent`), `timeout_seconds` (1 to 600), and optionally `source` (`project`, `instance`, `snapshot`) with `profiles`, `force` and `socket` | Converges one instance to the state, copying it from the snapshot first when it is missing, reads it back, and answers its changes (`applied`). |
+
+The input refuses an unknown field, so it carries no command and no argument list. Every name is one Incus name with no wildcard or separator: an instance is `[A-Za-z][A-Za-z0-9-]{0,62}`, a project, snapshot or profile `[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`. `source` needs at least one profile and is refused with `absent`. `socket` is an absolute path, and the Incus default `/var/lib/incus/unix.socket` without it. Anything else fails `incus.input_invalid` before any request.
+
+It reads `GET /1.0/instances/<name>?project=<project>`; a 404 is a missing instance.
+
+| Found | Ordered | Change |
+| --- | --- | --- |
+| Missing, with `source` | `running` or `stopped` | Checks the snapshot (`incus.source_missing` when Incus lacks it), then `POST /1.0/instances` with `source.type: copy`, the source instance's type, the order's profiles and `user.source_snapshot: <project>/<instance>/<snapshot>`; then starts it for `running` |
+| Missing, without `source` | `running` or `stopped` | Refuses `incus.instance_missing` |
+| Present, with `source` | `running` or `stopped` | Refuses `incus.source_conflict` unless `user.source_snapshot` names that same snapshot, so a copy never replaces an instance from another source |
+| `Stopped` or `Running` | the other state | `PUT …/state`: `start`; `stop` with the time left as its clean-shutdown timeout, or a forced stop with `force` |
+| Present, not `Stopped` | `absent` | Refuses `incus.instance_running` without `force`; with it, a forced stop, then the delete |
+| `Stopped` | `absent` | `DELETE /1.0/instances/<name>?project=<project>`, exactly that instance with its snapshots |
+| Missing | `absent` | Nothing: 0 changes |
+| Any other status, such as `Frozen` | any | Refuses `incus.instance_state_unsupported` |
+
+A repeat changes nothing and answers 0. Each background operation is awaited with `GET /1.0/operations/<uuid>/wait?timeout=<seconds left>`, and every socket read is bounded by the time left, all within `timeout_seconds`. An operation still running at the deadline fails `incus.operation_timeout` and is left to Incus. A failed or cancelled operation fails `incus.operation_failed`. An Incus error, an unreachable socket or an answer that is not an Incus envelope fails `incus.api_failed`. A final read that is not the ordered state fails `incus.readback_mismatch`.
+
+It does not yet hold the id-map shift of the root filesystem or the ZFS dataset repair that the [catalogue's notes](#the-catalogue) give it; they join before a flow starts or removes an instance with it.
+
+It meets the [five conditions](#what-a-primitive-may-be): one Incus instance; no Orbit name or path, the socket being the Incus default; every project, instance, snapshot and profile name from the order; desired state with read-back and 0 changes on a repeat; typed input with no command, and requests fixed in the Rust code. An executor reports it in its actions from agent 0.39.0, so the Gateway admits a flow that uses it only on Nodes that report it.
 
 ### The instance family
 
