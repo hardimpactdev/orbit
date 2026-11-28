@@ -1,6 +1,6 @@
 /**
- * Tool Manager setup installs only missing prerequisites (docs/reference/tools.md#where-tools-run-and-tool-managers): apt skips an installed one, held or
- * not, instead of moving it to a newer candidate.
+ * Tool Manager setup installs only missing prerequisites (docs/reference/tools.md#where-tools-run-and-tool-managers): apt never upgrades an installed
+ * prerequisite and never moves a held package, though it may upgrade an unheld dependency that a missing prerequisite needs.
  */
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
