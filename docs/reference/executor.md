@@ -295,24 +295,24 @@ Each changed path holds one descriptor until the order ends, so one order can ch
 
 `systemd.unit.restart` and `systemd.unit.signal` act on one run of one unit. A restart or a signal is not a desired state, so each is bound to its order: it acts at most once per order.
 
-The executor's open journal record for the order marks it as spent. A resend after the `done` record gets the recorded result and never acts again, as for every fenced action.
+The executor's open journal record for the order marks it as spent. For these two actions, the executor syncs that record to disk before the first `systemctl` call, so it survives a power loss. A journal that holds only the order's accept record proves that it never acted.
+
+A resend after the `done` record gets the recorded result and never acts again, as for every fenced action. When the `done` record cannot be written, the order still fails `journal_write_failed`, but the executor keeps its result in memory. A resend, also with a fresh nonce, gets that result and never acts again.
 
 Start-up recovery never runs an open order of either action again, because it may already have acted. It ends the order `executor.run_interrupted` (`Action::at_most_once`). The Gateway then reads the unit to learn what happened.
 
-The journal stays in the page cache until its once-a-second sync. A Node that loses power before the sync can forget the order, but its reboot restarts every unit anyway.
-
 The input refuses an unknown field. `unit` is one systemd unit name: name characters `[A-Za-z0-9_.:\-]`, at most 255 bytes, and a type `service`, `socket`, `target`, `timer`, `path`, `mount`, `swap` or `scope`. A leading `-` or `.`, a `/`, a space and a bare template (`name@.service`) fail `host.input_invalid`. A template instance such as `worker@1.service` passes only with `"template": true`. `signal` is one of `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGTERM`, `SIGKILL`, `SIGUSR1` and `SIGUSR2`.
 
-Every call is a fixed argv with `--` before the unit, run through `timeout` with an empty environment, and bounded by what is left of the absolute deadline that `budget_ms` sets at the order's start:
+Every call is a fixed argv with `--` before the unit, run through `timeout` with an empty environment. `budget_ms` sets an absolute deadline at the order's start. Each call may take exactly what is left of it, in whole milliseconds rounded down. An answer that comes back at or after the deadline is not used:
 
 | Action | Calls |
 | --- | --- |
 | `systemd.unit.restart` | `systemctl show --property=LoadState,ActiveState,InvocationID,ActiveEnterTimestampMonotonic,MainPID -- <unit>`, then `systemctl restart --no-block -- <unit>`, then the same `show` every 250 ms |
 | `systemd.unit.signal` | The same `show`, then `systemctl kill --kill-who=main --signal=<signal> -- <unit>` |
 
-A restart succeeds once the unit is `active` in a new run: its `InvocationID` differs from the one before, or, when either run has none, its `ActiveEnterTimestampMonotonic` is later. It answers `{"state": "restarted", "invocation_id", "active_enter_timestamp_monotonic"}`. A new run that ends `failed` fails `unit.restart_failed`, and no new active run by the deadline fails `unit.restart_timeout`. It never restarts twice.
+A restart succeeds once the unit is `active` in a new run: its `InvocationID` differs from the one before, or, when either run has none, its `ActiveEnterTimestampMonotonic` is later. It answers `{"state": "restarted", "invocation_id", "active_enter_timestamp_monotonic"}`. A new run that ends `failed` fails `unit.restart_failed`, and no new active run by the deadline fails `unit.restart_timeout`, as does a `show` or `restart` that answers only at or after it. It never restarts twice.
 
-A signal answers `{"state": "delivered", "signal", "main_pid"}` once systemd has delivered it to the main process it read. A unit with no main process (`MainPID=0`) fails `unit.not_running`, and a failed `kill` fails `unit.signal_failed`.
+A signal answers `{"state": "delivered", "signal", "main_pid"}` once systemd has delivered it to the main process it read. A unit with no main process (`MainPID=0`) fails `unit.not_running`, and a failed `kill` fails `unit.signal_failed`. A `show` or `kill` that answers at or after the deadline fails `unit.signal_timeout`.
 
 Both fail `unit.not_loaded` when the `LoadState` is not `loaded`, before they act, and their read fails `unit.restart_failed` or `unit.signal_failed`.
 

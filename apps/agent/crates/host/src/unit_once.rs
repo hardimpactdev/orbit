@@ -92,6 +92,25 @@ struct Run {
     main_pid: u64,
 }
 
+/// Why a `systemctl` call gave no answer in time to count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Call {
+    /// The budget ended before the call could start, or before its answer came back: a late answer is not used.
+    Late,
+    /// The call failed within the budget.
+    Failed(String),
+}
+
+impl Call {
+    /// The failure for this call: `late` when the budget ended, else `failed` with the call's error.
+    fn into_failure(self, failed: &'static str, late: &'static str, unit: &str) -> Failure {
+        match self {
+            Self::Late => Failure::new(late, format!("{unit}: budget ended")),
+            Self::Failed(detail) => Failure::new(failed, detail),
+        }
+    }
+}
+
 /// One unit's `systemctl` calls, each bounded by what is left of the order's budget and run with a clean environment.
 struct Unit<'a, S: System> {
     system: &'a S,
@@ -104,21 +123,27 @@ impl<S: System> Unit<'_, S> {
         self.deadline.saturating_duration_since(self.system.now())
     }
 
-    /// `systemctl <args> -- <unit>`: the `--` ends the options, so the unit is only ever a unit.
-    fn systemctl(&self, args: &[&str]) -> Result<String, String> {
-        let left = self.left();
+    /// `systemctl <args> -- <unit>`: the `--` ends the options, so the unit is only ever a unit. The call may take exactly
+    /// what is left of the budget, in whole milliseconds rounded down, and an answer that comes back at or after the deadline is
+    /// [`Call::Late`], never a result.
+    fn systemctl(&self, args: &[&str]) -> Result<String, Call> {
+        let left = Duration::from_millis(u64::try_from(self.left().as_millis()).unwrap_or(u64::MAX));
         if left.is_zero() {
-            return Err("budget spent".to_owned());
+            return Err(Call::Late);
         }
-        let seconds = u32::try_from(left.as_secs() + u64::from(left.subsec_nanos() > 0)).unwrap_or(u32::MAX).max(1);
-        self.system.run_clean(seconds, &[strings(&[SYSTEMCTL]), strings(args), strings(&["--", self.name])].concat())
+        let answer = self.system.run_clean(left, &[strings(&[SYSTEMCTL]), strings(args), strings(&["--", self.name])].concat());
+        // `timeout` ends a call at the deadline; an answer at or past it came too late to count.
+        if self.system.now() >= self.deadline {
+            return Err(Call::Late);
+        }
+        answer.map_err(Call::Failed)
     }
 
-    fn read(&self) -> Result<Run, String> {
+    fn read(&self) -> Result<Run, Call> {
         let shown = self.systemctl(&["show", "--property=LoadState,ActiveState,InvocationID,ActiveEnterTimestampMonotonic,MainPID"])?;
         let value = |name: &str| shown.lines().find_map(|line| line.strip_prefix(name).and_then(|rest| rest.strip_prefix('='))).map(str::trim);
         let (Some(load), Some(active)) = (value("LoadState"), value("ActiveState")) else {
-            return Err("systemd gave no state".to_owned());
+            return Err(Call::Failed("systemd gave no state".to_owned()));
         };
         Ok(Run {
             load: load.to_owned(),
@@ -130,8 +155,8 @@ impl<S: System> Unit<'_, S> {
     }
 
     /// The unit's run, refused with `unit.not_loaded` unless systemd has loaded it.
-    fn loaded(&self, code: &'static str) -> Result<Run, Failure> {
-        let run = self.read().map_err(|detail| Failure::new(code, detail))?;
+    fn loaded(&self, failed: &'static str, late: &'static str) -> Result<Run, Failure> {
+        let run = self.read().map_err(|call| call.into_failure(failed, late, self.name))?;
         if run.load != "loaded" {
             return Err(Failure::new("unit.not_loaded", format!("{} load state {}", self.name, run.load)));
         }
@@ -165,19 +190,20 @@ fn unit<'a, S: System>(system: &'a S, name: &'a str, names: Names, budget_ms: u6
 ///
 /// `host.input_invalid` for a unit name or budget outside the admitted shape, `unit.not_loaded` for a unit systemd has not
 /// loaded, `unit.restart_failed` for a failed read or restart or a new run that failed, and `unit.restart_timeout` when no
-/// new active run shows within the budget.
+/// new active run shows within the budget, a read answers only after it, or the budget ends before the restart call answers.
 pub fn unit_restart(system: &impl System, input: &serde_json::Value) -> Result<String, Failure> {
     let input: RestartInput = parse(input)?;
     let unit = unit(system, &input.unit, if input.template { Names::Templates } else { Names::Plain }, input.budget_ms)?;
     let failed = |detail: String| Failure::new("unit.restart_failed", detail);
-    let before = unit.loaded("unit.restart_failed")?;
+    let call = |call: Call| call.into_failure("unit.restart_failed", "unit.restart_timeout", &input.unit);
+    let before = unit.loaded("unit.restart_failed", "unit.restart_timeout")?;
     // `--no-block` queues the restart, so the budget, not systemctl, bounds the wait for the new run.
-    unit.systemctl(&["restart", "--no-block"]).map_err(failed)?;
+    unit.systemctl(&["restart", "--no-block"]).map_err(call)?;
     loop {
         let now = match unit.read() {
             Ok(now) => now,
-            Err(_) if unit.left().is_zero() => break,
-            Err(detail) => return Err(failed(detail)),
+            Err(Call::Late) => break,
+            Err(other) => return Err(call(other)),
         };
         let new = if before.invocation.is_empty() || now.invocation.is_empty() {
             now.entered_us > before.entered_us
@@ -209,16 +235,17 @@ pub fn unit_restart(system: &impl System, input: &serde_json::Value) -> Result<S
 /// # Errors
 ///
 /// `host.input_invalid` for a unit name, signal or budget outside the admitted shape, `unit.not_loaded` for a unit systemd
-/// has not loaded, `unit.not_running` for a unit with no main process, and `unit.signal_failed` for a failed read or a
-/// signal systemd did not deliver, including one cut off by the budget.
+/// has not loaded, `unit.not_running` for a unit with no main process, `unit.signal_failed` for a failed read or a signal
+/// systemd did not deliver, and `unit.signal_timeout` when the budget ends before a call answers.
 pub fn unit_signal(system: &impl System, input: &serde_json::Value) -> Result<String, Failure> {
     let input: SignalInput = parse(input)?;
     let unit = unit(system, &input.unit, if input.template { Names::Templates } else { Names::Plain }, input.budget_ms)?;
-    let before = unit.loaded("unit.signal_failed")?;
+    let call = |call: Call| call.into_failure("unit.signal_failed", "unit.signal_timeout", &input.unit);
+    let before = unit.loaded("unit.signal_failed", "unit.signal_timeout")?;
     if before.main_pid == 0 {
         return Err(Failure::new("unit.not_running", format!("{} has no main process", input.unit)));
     }
     let signal = format!("--signal={}", input.signal.name());
-    unit.systemctl(&["kill", "--kill-who=main", &signal]).map_err(|detail| Failure::new("unit.signal_failed", detail))?;
+    unit.systemctl(&["kill", "--kill-who=main", &signal]).map_err(call)?;
     Ok(serde_json::json!({"state": "delivered", "signal": input.signal.name(), "main_pid": before.main_pid}).to_string())
 }

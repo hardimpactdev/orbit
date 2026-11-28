@@ -94,12 +94,13 @@ pub trait System {
     /// A message when the command cannot start.
     fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
 
-    /// Runs a command as [`System::run`] does, with an empty environment, so nothing the executor inherited reaches it.
+    /// Runs a command as [`System::run`] does, with an empty environment, so nothing the executor inherited reaches it, and a
+    /// time limit in milliseconds. A zero limit is the caller's to refuse: `timeout 0` would wait forever.
     ///
     /// # Errors
     ///
     /// The command's standard error when it fails or cannot start.
-    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
+    fn run_clean(&self, limit: Duration, argv: &[String]) -> Result<String, String>;
 
     /// A user's id by name.
     ///
@@ -203,8 +204,10 @@ impl System for NodeSystem {
         Ok((output.status.code(), output.stdout))
     }
 
-    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
-        let output = Command::new(TIMEOUT).env_clear().arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
+    fn run_clean(&self, limit: Duration, argv: &[String]) -> Result<String, String> {
+        let millis = limit.as_millis();
+        let limit = format!("{}.{:03}", millis / 1000, millis % 1000);
+        let output = Command::new(TIMEOUT).env_clear().arg(limit).args(argv).output().map_err(|error| error.to_string())?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())
         } else {

@@ -210,8 +210,8 @@ impl System for Fake {
         Ok(self.getent.borrow().get(&format!("{database} {key}")).cloned().unwrap_or((Some(2), Vec::new())))
     }
 
-    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
-        self.run(seconds, argv)
+    fn run_clean(&self, limit: std::time::Duration, argv: &[String]) -> Result<String, String> {
+        self.run(u32::try_from(limit.as_secs()).unwrap_or(u32::MAX), argv)
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -708,8 +708,8 @@ impl System for Late {
         self.fake.status(seconds, argv)
     }
 
-    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
-        self.run(seconds, argv)
+    fn run_clean(&self, limit: std::time::Duration, argv: &[String]) -> Result<String, String> {
+        self.run(u32::try_from(limit.as_secs()).unwrap_or(u32::MAX), argv)
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -1558,12 +1558,18 @@ struct Systemd {
     settles_as: &'static str,
     pending: RefCell<Option<u32>>,
     calls: RefCell<Vec<Vec<String>>>,
+    /// The time limit each call was given.
+    limits: RefCell<Vec<std::time::Duration>>,
+    /// How long each call takes on the test's clock.
+    cost: std::time::Duration,
+    /// Each call answers after its full cost, past its time limit, as a command `timeout` could not end at once.
+    overrun: bool,
     clock: RefCell<std::time::Instant>,
 }
 
 impl Systemd {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), load: "loaded", active: RefCell::new("active"), invocation: RefCell::new(1), entered: RefCell::new(100), main_pid: RefCell::new(42), settle: RefCell::new(Some(2)), settles_as: "active", pending: RefCell::default(), calls: RefCell::default(), clock: RefCell::new(std::time::Instant::now()) }
+        Self { root: tempfile::tempdir().expect("a scratch root"), load: "loaded", active: RefCell::new("active"), invocation: RefCell::new(1), entered: RefCell::new(100), main_pid: RefCell::new(42), settle: RefCell::new(Some(2)), settles_as: "active", pending: RefCell::default(), calls: RefCell::default(), limits: RefCell::default(), cost: std::time::Duration::ZERO, overrun: false, clock: RefCell::new(std::time::Instant::now()) }
     }
 
     fn verbs(&self, verb: &str) -> usize {
@@ -1584,8 +1590,13 @@ impl System for Systemd {
         Err("no status".to_owned())
     }
 
-    fn run_clean(&self, _seconds: u32, argv: &[String]) -> Result<String, String> {
+    fn run_clean(&self, limit: std::time::Duration, argv: &[String]) -> Result<String, String> {
         self.calls.borrow_mut().push(argv.to_vec());
+        self.limits.borrow_mut().push(limit);
+        *self.clock.borrow_mut() += if self.overrun { self.cost } else { self.cost.min(limit) };
+        if self.cost > limit && !self.overrun {
+            return Err("timeout ended the call".to_owned());
+        }
         if argv[0] != "/usr/bin/systemctl" || argv.iter().position(|arg| arg == "--") != Some(argv.len() - 2) {
             return Err(format!("not a fixed systemctl argv with the unit as the one operand after --: {argv:?}"));
         }
@@ -1701,4 +1712,39 @@ fn unit_restart_and_signal_refuse_names_signals_and_budgets_outside_their_shape(
     assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000, "argv": ["x"]})).expect_err("unknown field").code, "host.input_invalid");
     assert_eq!(unit_signal(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("no signal").code, "host.input_invalid");
     assert_eq!(systemd.verbs("restart") + systemd.verbs("kill"), 1, "only the admitted template restarted");
+}
+
+#[test]
+fn unit_restart_and_signal_give_each_call_exactly_the_budget_left_and_never_count_a_late_answer() {
+    use std::time::Duration;
+    // Each call takes 300 ms of a 1,000 ms budget: the read, the restart and the first read-back get 1000, 700 and 400 ms.
+    let systemd = Systemd { cost: Duration::from_millis(300), ..Systemd::new() };
+    *systemd.settle.borrow_mut() = Some(0);
+    let answer = unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect("in time");
+    assert!(answer.contains("restarted"));
+    assert_eq!(*systemd.limits.borrow(), [1000, 700, 400].map(Duration::from_millis));
+
+    // At 450 ms a call, the third call has 100 ms left and `timeout` ends it at the deadline: no answer, so no restart counts.
+    let systemd = Systemd { cost: Duration::from_millis(450), ..Systemd::new() };
+    *systemd.settle.borrow_mut() = Some(0);
+    let failure = unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("late");
+    assert_eq!(failure.code, "unit.restart_timeout");
+    assert_eq!(*systemd.limits.borrow(), [1000, 550, 100].map(Duration::from_millis), "never rounded up to a whole second");
+    assert_eq!(systemd.verbs("restart"), 1);
+
+    // A call that answers past the deadline anyway: the new active run it reports at 1,350 ms is no timely restart.
+    let systemd = Systemd { cost: Duration::from_millis(450), overrun: true, ..Systemd::new() };
+    *systemd.settle.borrow_mut() = Some(0);
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("late answer").code, "unit.restart_timeout");
+
+    // A read that answers after the deadline refuses before any restart.
+    let systemd = Systemd { cost: Duration::from_millis(1001), ..Systemd::new() };
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("late read").code, "unit.restart_timeout");
+    assert_eq!(systemd.verbs("restart"), 0);
+
+    // A kill that answers after the deadline is no delivered signal.
+    let systemd = Systemd { cost: Duration::from_millis(600), ..Systemd::new() };
+    let failure = unit_signal(&systemd, &json!({"unit": "web.service", "signal": "SIGHUP", "budget_ms": 1000})).expect_err("late kill");
+    assert_eq!(failure.code, "unit.signal_timeout");
+    assert_eq!(*systemd.limits.borrow(), [1000, 400].map(Duration::from_millis));
 }
