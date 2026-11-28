@@ -5,6 +5,8 @@ use std::process::Command;
 
 use serde_json::json;
 
+use std::os::unix::ffi::OsStrExt as _;
+
 use super::*;
 
 struct Scratch {
@@ -487,56 +489,86 @@ fn ref_ensure_refuses_bad_input() {
         .is_none());
 }
 
+/// Every file below a folder with its modification time and length, to prove a read wrote nothing.
+fn snapshot(folder: &Path) -> Vec<(PathBuf, std::time::SystemTime, u64)> {
+    let mut found = Vec::new();
+    let mut pending = vec![folder.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in std::fs::read_dir(&next).expect("folder").flatten() {
+            let meta = entry.metadata().expect("meta");
+            found.push((entry.path(), meta.modified().expect("mtime"), meta.len()));
+            if meta.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
 #[test]
-fn worktree_read_counts_changes_and_ahead_behind_and_writes_nothing() {
+fn worktree_read_counts_changes_heads_stashes_and_ahead_behind_and_writes_nothing() {
     let s = scratch();
     let (tree, first, second) = work(&s);
     git(&tree, &["update-ref", "refs/remotes/origin/main", &first]);
+    git(&tree, &["branch", "side", &first]);
+    std::fs::write(tree.join("a.txt"), "stashed\n").expect("stash");
+    git(&tree, &["stash", "--quiet"]);
     std::fs::write(tree.join("a.txt"), "changed\n").expect("unstaged");
     std::fs::write(tree.join("b.txt"), "b\n").expect("staged");
     git(&tree, &["add", "b.txt"]);
     std::fs::write(tree.join("c.txt"), "c\n").expect("untracked");
-    let index = std::fs::read(tree.join(".git/index")).expect("index");
+    std::fs::write(tree.join(std::ffi::OsStr::from_bytes(b"raw-\xff")), "x")
+        .expect("a name that is not UTF-8");
+    let before = snapshot(&tree.join(".git"));
+    std::thread::sleep(std::time::Duration::from_millis(20));
 
     let read = worktree_read(
         &s.system,
         &json!({"worktree": tree, "against": "refs/remotes/origin/main"}),
     )
     .expect("read");
+    let read::Worktree::Present {
+        head,
+        branch,
+        staged,
+        unstaged,
+        unmerged,
+        modified,
+        untracked,
+        stashes,
+        heads,
+        ahead,
+        behind,
+    } = read
+    else {
+        panic!("present")
+    };
     assert_eq!(
-        read,
-        read::Worktree::Present {
-            head: Some(second),
-            branch: Some("main".to_owned()),
-            staged: 1,
-            unstaged: 1,
-            unmerged: 0,
-            untracked: 1,
-            ahead: Some(1),
-            behind: Some(0)
-        }
+        (head.as_deref(), branch.as_deref()),
+        (Some(second.as_str()), Some("main"))
     );
     assert_eq!(
-        std::fs::read(tree.join(".git/index")).expect("index"),
-        index,
-        "the read wrote nothing"
+        (staged, unstaged, unmerged, modified.count, untracked.count),
+        (1, 1, 0, 2, 2)
     );
+    assert!(
+        untracked.names.contains(&"c.txt".to_owned())
+            && untracked.names.iter().any(|name| name.starts_with("raw-")),
+        "{untracked:?}"
+    );
+    assert_eq!(stashes, 1);
+    assert_eq!(heads.get("side"), Some(&first));
+    assert_eq!(heads.get("main"), Some(&second));
+    assert_eq!((ahead, behind), (Some(1), Some(0)));
     assert_eq!(
-        serde_json::to_value(worktree_read(&s.system, &json!({"worktree": tree})).expect("read"))
-            .expect("json")["state"],
-        "present"
+        snapshot(&tree.join(".git")),
+        before,
+        "the read wrote nothing under .git"
     );
-    assert!(serde_json::to_value(
-        worktree_read(&s.system, &json!({"worktree": tree})).expect("read")
-    )
-    .expect("json")
-    .get("ahead")
-    .is_none());
 
-    assert_eq!(
-        worktree_read(&s.system, &json!({"worktree": s.at("none")})),
-        Ok(read::Worktree::Absent)
-    );
+    let clean = worktree_read(&s.system, &json!({"worktree": s.at("none")})).expect("absent");
+    assert_eq!(clean, read::Worktree::Absent);
     std::fs::create_dir(tree.join("sub")).expect("sub");
     assert_eq!(
         code(worktree_read(
@@ -552,5 +584,348 @@ fn worktree_read_counts_changes_and_ahead_behind_and_writes_nothing() {
             &json!({"worktree": tree, "against": "--all"})
         )),
         "git.input_invalid"
+    );
+}
+
+#[test]
+fn worktree_read_refuses_a_split_index_and_symbolic_branches() {
+    let s = scratch();
+    let (tree, _, _) = work(&s);
+    git(
+        &tree,
+        &["symbolic-ref", "refs/heads/alias", "refs/heads/main"],
+    );
+    assert_eq!(
+        code(worktree_read(&s.system, &json!({"worktree": tree}))),
+        "git.ref_symbolic"
+    );
+    git(&tree, &["symbolic-ref", "--delete", "refs/heads/alias"]);
+    git(&tree, &["update-index", "--split-index"]);
+    assert_eq!(
+        code(worktree_read(&s.system, &json!({"worktree": tree}))),
+        "git.repository_refused",
+        "a shared index file refuses"
+    );
+}
+
+#[test]
+fn repositories_whose_configuration_can_redirect_or_run_a_program_refuse() {
+    for (key, value) in [
+        (
+            "url.https://evil.example/.insteadOf",
+            "https://example.com/",
+        ),
+        ("protocol.ext.allow", "always"),
+        ("filter.x.smudge", "touch /tmp/pwned"),
+        ("core.sshCommand", "touch /tmp/pwned"),
+        ("core.fsmonitor", "touch /tmp/pwned"),
+        ("diff.external", "touch /tmp/pwned"),
+        ("credential.helper", "!touch /tmp/pwned"),
+        ("include.path", "/tmp/other"),
+    ] {
+        let s = scratch();
+        let (tree, first, _) = work(&s);
+        git(&tree, &["config", key, value]);
+        assert_eq!(
+            code(worktree_read(&s.system, &json!({"worktree": tree}))),
+            "git.repository_refused",
+            "{key}"
+        );
+        assert_eq!(
+            code(checkout(
+                &s.system,
+                &json!({"worktree": tree, "branch": "main"})
+            )),
+            "git.repository_refused",
+            "{key}"
+        );
+        assert_eq!(
+            code(ref_ensure(
+                &s.system,
+                &json!({"repository": tree, "ref": "refs/x", "state": "present", "commit": first, "expect": null})
+            )),
+            "git.repository_refused",
+            "{key}"
+        );
+    }
+}
+
+#[test]
+fn ref_ensure_refuses_the_null_id_and_symbolic_refs() {
+    let s = scratch();
+    let (tree, first, _) = work(&s);
+    for zero in ["0".repeat(40), "0".repeat(64)] {
+        assert_eq!(
+            code(ref_ensure(
+                &s.system,
+                &json!({"repository": tree, "ref": "refs/x", "state": "present", "commit": zero, "expect": null})
+            )),
+            "git.input_invalid"
+        );
+        assert_eq!(
+            code(ref_ensure(
+                &s.system,
+                &json!({"repository": tree, "ref": "refs/heads/main", "state": "absent", "expect": zero})
+            )),
+            "git.input_invalid",
+            "the null id is no expect"
+        );
+    }
+    git(
+        &tree,
+        &["symbolic-ref", "refs/heads/alias", "refs/heads/main"],
+    );
+    let main = git(&tree, &["rev-parse", "refs/heads/main"]);
+    assert_eq!(
+        code(ref_ensure(
+            &s.system,
+            &json!({"repository": tree, "ref": "refs/heads/alias", "state": "present", "commit": first, "expect": main})
+        )),
+        "git.ref_symbolic"
+    );
+    assert_eq!(
+        code(ref_ensure(
+            &s.system,
+            &json!({"repository": tree, "ref": "refs/heads/alias", "state": "absent", "expect": main})
+        )),
+        "git.ref_symbolic"
+    );
+    assert_eq!(
+        git(&tree, &["rev-parse", "refs/heads/main"]),
+        main,
+        "the referent never moved"
+    );
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "alias"})
+        )),
+        "git.ref_symbolic"
+    );
+    let bundle = s.at("b.bundle");
+    git(
+        &tree,
+        &[
+            "bundle",
+            "create",
+            "--quiet",
+            bundle.to_str().expect("path"),
+            "main",
+        ],
+    );
+    let into = json!({"repository": tree, "source": {"bundle": {"path": bundle}}, "ref": "refs/heads/main", "into": "refs/heads/alias"});
+    assert_eq!(code(fetch(&s.system, &into)), "git.ref_symbolic");
+}
+
+#[test]
+fn checkout_never_overwrites_ignored_or_untracked_paths_nor_removes_a_nested_repository() {
+    let s = scratch();
+    let (tree, first, second) = work(&s);
+    // The other branch tracks `build.log`, which is an ignored local file on main.
+    git(&tree, &["switch", "--quiet", "-c", "other"]);
+    std::fs::write(tree.join("build.log"), "tracked\n").expect("tracked");
+    git(&tree, &["add", "build.log"]);
+    git(&tree, &["commit", "--quiet", "-m", "log"]);
+    git(&tree, &["switch", "--quiet", "main"]);
+    std::fs::write(tree.join(".git/info/exclude"), "build.log\n").expect("exclude");
+    std::fs::write(tree.join("build.log"), "mine\n").expect("ignored");
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "other"})
+        )),
+        "git.checkout_refused"
+    );
+    assert_eq!(
+        std::fs::read_to_string(tree.join("build.log")).expect("kept"),
+        "mine\n"
+    );
+    let other = git(&tree, &["rev-parse", "other"]);
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "main", "reset": other, "destructive": true})
+        )),
+        "git.checkout_refused",
+        "reset over an ignored file"
+    );
+    std::fs::remove_file(tree.join("build.log")).expect("gone");
+
+    // A nested repository: never removed by clean, and a reset whose tree needs its place refuses.
+    let nested = tree.join("vendor");
+    std::fs::create_dir(&nested).expect("nested");
+    git(&nested, &["init", "--quiet"]);
+    std::fs::write(nested.join("keep"), "x").expect("nested file");
+    let cleaned = checkout(
+        &s.system,
+        &json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true}),
+    )
+    .expect("clean");
+    assert_eq!(
+        cleaned.changes, 0,
+        "a nested repository is not untracked work that clean converges"
+    );
+    assert!(nested.join("keep").exists(), "the nested repository stays");
+    assert_eq!(first.len(), second.len());
+}
+
+#[test]
+fn checkout_reset_refuses_submodules_and_skip_worktree_and_an_unborn_branch() {
+    let s = scratch();
+    let (tree, first, _) = work(&s);
+    git(&tree, &["update-index", "--skip-worktree", "a.txt"]);
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "main", "reset": first, "destructive": true})
+        )),
+        "git.checkout_refused"
+    );
+    git(&tree, &["update-index", "--no-skip-worktree", "a.txt"]);
+    git(&tree, &["update-index", "--assume-unchanged", "a.txt"]);
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "main", "clean": true, "destructive": true})
+        )),
+        "git.checkout_refused"
+    );
+    git(&tree, &["update-index", "--no-assume-unchanged", "a.txt"]);
+    git(
+        &tree,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{first},sub"),
+        ],
+    );
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": tree, "branch": "main", "reset": first, "destructive": true})
+        )),
+        "git.checkout_refused",
+        "a submodule"
+    );
+
+    let empty = s.at("empty");
+    std::fs::create_dir(&empty).expect("empty");
+    git(&empty, &["init", "--quiet"]);
+    assert_eq!(
+        code(checkout(
+            &s.system,
+            &json!({"worktree": empty, "branch": "main"})
+        )),
+        "git.checkout_refused",
+        "HEAD names an unborn branch"
+    );
+}
+
+#[test]
+fn a_fetch_reads_the_source_first_and_makes_its_repository_in_the_source_format() {
+    let s = scratch();
+    let source = s.at("sha256");
+    std::fs::create_dir(&source).expect("source");
+    git(&source, &["init", "--quiet", "--object-format=sha256"]);
+    git(
+        &source,
+        &["commit", "--quiet", "--allow-empty", "-m", "one"],
+    );
+    let bundle = s.at("sha256.bundle");
+    git(
+        &source,
+        &[
+            "bundle",
+            "create",
+            "--quiet",
+            bundle.to_str().expect("path"),
+            "main",
+        ],
+    );
+    let repository = s.at("mirror.git");
+
+    let lacking = json!({"repository": repository, "create": true, "source": {"bundle": {"path": bundle}}, "ref": "refs/heads/gone", "into": "refs/heads/gone"});
+    assert_eq!(
+        fetch(&s.system, &lacking),
+        Ok(fetch::Fetched {
+            commit: None,
+            changes: 0
+        })
+    );
+    assert!(
+        !repository.exists(),
+        "a source without the ref leaves no repository"
+    );
+
+    let wanted = json!({"repository": repository, "create": true, "source": {"bundle": {"path": bundle}}, "ref": "refs/heads/main", "into": "refs/heads/main"});
+    let fetched = fetch(&s.system, &wanted).expect("fetched");
+    assert_eq!(
+        (fetched.commit.as_deref().map(str::len), fetched.changes),
+        (Some(64), 2)
+    );
+    assert_eq!(
+        git(&repository, &["rev-parse", "--show-object-format"]),
+        "sha256"
+    );
+}
+
+#[test]
+fn credentials_never_reach_a_file_an_error_or_a_url() {
+    let s = scratch();
+    let (tree, _, _) = work(&s);
+    let line = b"https://x-access-token:hunter2secret@127.0.0.1:9\n";
+    let digest = {
+        use sha2::Digest as _;
+        sha2::Sha256::digest(line)
+            .iter()
+            .fold(String::new(), |mut hex, byte| {
+                let _ = std::fmt::Write::write_fmt(&mut hex, format_args!("{byte:02x}"));
+                hex
+            })
+    };
+    std::fs::write(s.at("blobs").join(&digest), line).expect("blob");
+    let before = snapshot(&tree);
+    let order = json!({"repository": tree, "source": {"url": {"url": "https://127.0.0.1:9/r.git", "credential": {"blob": {"sha256": digest}}}}, "ref": "refs/heads/main", "into": "refs/heads/x"});
+    let failure = fetch(&s.system, &order).expect_err("unreachable");
+    assert_eq!(failure.code, "git.fetch_failed");
+    assert!(
+        !failure.detail.contains("hunter2secret"),
+        "{}",
+        failure.detail
+    );
+    assert_eq!(
+        snapshot(&tree),
+        before,
+        "no credential file in the repository"
+    );
+
+    let other = json!({"repository": tree, "source": {"url": {"url": "https://example.com/r.git", "credential": {"blob": {"sha256": digest}}}}, "ref": "refs/heads/main", "into": "refs/heads/x"});
+    assert_eq!(
+        code(fetch(&s.system, &other)),
+        "git.input_invalid",
+        "a credential for another host refuses"
+    );
+    for url in [
+        "https://example.com/r.git?token=secret",
+        "https://example.com/r.git#x",
+        "https://u@example.com/r.git",
+        "https://example.com/%2e%2e/r.git",
+    ] {
+        let order = json!({"repository": tree, "source": {"url": {"url": url}}, "ref": "refs/heads/main", "into": "refs/heads/x"});
+        let failure = fetch(&s.system, &order).expect_err("refused");
+        assert_eq!(failure.code, "git.input_invalid", "{url}");
+        assert!(!failure.detail.contains("secret"), "{}", failure.detail);
+    }
+    let inline = json!({"repository": tree, "source": {"url": {"url": "https://example.com/r.git", "credential": "https://u:inlinesecret@example.com"}}, "ref": "refs/heads/main", "into": "refs/heads/x"});
+    let failure = fetch(&s.system, &inline).expect_err("refused");
+    assert!(
+        !failure.detail.contains("inlinesecret"),
+        "serde's echo is dropped: {}",
+        failure.detail
+    );
+    assert_eq!(
+        redact("fatal: https://u:tok@host/x and tok", &["tok"]),
+        "fatal: https://***@host/x and ***"
     );
 }

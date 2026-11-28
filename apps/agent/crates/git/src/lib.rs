@@ -6,8 +6,9 @@
 //! - [`worktree_read`] (`git.worktree.read`): the state of one work tree, read only.
 //!
 //! Every path, ref, URL and credential reference comes from the order; none is an Orbit name. Git runs as
-//! `/usr/bin/git` with an argument list fixed here, in a cleared environment, and with `--` or `--end-of-options` before
-//! each operand where Git takes it. Every operand is checked first, so none can read as an option.
+//! `/usr/bin/git` with an argument list fixed here, never through a shell, in a cleared environment, and with `--` or
+//! `--end-of-options` before each operand where Git takes it. Every operand is checked first, so none can read as an option.
+//! A repository whose own configuration could redirect a transport or run a program is refused before anything runs.
 
 mod checkout;
 mod fetch;
@@ -16,6 +17,7 @@ mod reference;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -37,7 +39,7 @@ const REMOTE_SECONDS: u32 = 120;
 pub struct Failure {
     /// The stable failure code.
     pub code: &'static str,
-    /// What went wrong, for the log only. It never holds a credential.
+    /// What went wrong, for the log only. It never holds a credential: URL user information is masked.
     pub detail: String,
 }
 
@@ -45,9 +47,38 @@ impl Failure {
     pub(crate) fn new(code: &'static str, detail: impl Into<String>) -> Self {
         Self {
             code,
-            detail: detail.into(),
+            detail: redact(&detail.into(), &[]),
         }
     }
+
+    /// The same failure with every given secret masked in its detail.
+    pub(crate) fn without(mut self, secrets: &[&str]) -> Self {
+        self.detail = redact(&self.detail, secrets);
+        self
+    }
+}
+
+/// Masks each secret and the user information of every URL in a text.
+pub(crate) fn redact(text: &str, secrets: &[&str]) -> String {
+    let mut text = text.to_owned();
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        text = text.replace(secret, "***");
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find("://") {
+        out.push_str(&rest[..at + 3]);
+        rest = &rest[at + 3..];
+        let end = rest
+            .find(|c: char| c == '/' || c.is_whitespace() || c == '\'' || c == '"')
+            .unwrap_or(rest.len());
+        if let Some(user) = rest[..end].rfind('@') {
+            out.push_str("***");
+            rest = &rest[user..];
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 pub(crate) fn invalid(detail: impl Into<String>) -> Failure {
@@ -58,6 +89,32 @@ pub(crate) fn invalid(detail: impl Into<String>) -> Failure {
 #[derive(Debug, Clone)]
 pub struct NodeSystem {
     blobs: PathBuf,
+}
+
+/// Settings every call takes: no hook, no filesystem monitor, no program Git could start for a credential, diff, pager or
+/// SSH, no untracked cache or split index to write, and no remote protocol unless a fetch allows one.
+const FIXED: [&str; 13] = [
+    "core.hooksPath=/dev/null",
+    "core.fsmonitor=false",
+    "core.untrackedCache=false",
+    "core.splitIndex=false",
+    "core.pager=cat",
+    "core.sshCommand=/bin/false",
+    "core.askPass=/bin/false",
+    "diff.external=",
+    "credential.helper=",
+    "protocol.allow=never",
+    "http.followRedirects=false",
+    "submodule.recurse=false",
+    "fetch.recurseSubmodules=false",
+];
+
+/// What one Git call answered.
+#[derive(Debug)]
+pub(crate) struct Ran {
+    pub(crate) code: Option<i32>,
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: String,
 }
 
 impl NodeSystem {
@@ -73,17 +130,19 @@ impl NodeSystem {
         std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
     }
 
-    /// Runs Git on one repository or work tree with the fixed settings, a cleared environment and a time limit.
-    /// Answers the exit code (`None` for a signal), standard output and standard error.
+    /// Runs Git on one folder with the fixed settings, a cleared environment and a time limit. `secret` settings travel in
+    /// Git's own `GIT_CONFIG_COUNT` environment, never in the argument list that other users can read. Answers the exit
+    /// code (`None` for a signal), standard output as bytes and standard error.
     #[expect(
         clippy::unused_self,
         reason = "Git runs on the host this system stands for, beside its blob cache"
     )]
-    pub(crate) fn git(
+    pub(crate) fn run(
         &self,
         seconds: u32,
         at: &Path,
         settings: &[String],
+        secret: &[(String, String)],
         args: &[&str],
     ) -> Result<Ran, Failure> {
         // Discovery stops at the named folder, so a path that is no repository never resolves to one above it.
@@ -98,7 +157,16 @@ impl NodeSystem {
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_ASKPASS", "/bin/false")
-            .env("GIT_CEILING_DIRECTORIES", ceiling)
+            .env("GIT_CEILING_DIRECTORIES", ceiling);
+        if !secret.is_empty() {
+            command.env("GIT_CONFIG_COUNT", secret.len().to_string());
+            for (index, (key, value)) in secret.iter().enumerate() {
+                command
+                    .env(format!("GIT_CONFIG_KEY_{index}"), key)
+                    .env(format!("GIT_CONFIG_VALUE_{index}"), value);
+            }
+        }
+        command
             .arg(seconds.to_string())
             .arg(GIT)
             .arg("--no-optional-locks");
@@ -122,44 +190,38 @@ impl NodeSystem {
         })
     }
 
-    /// Runs Git and answers its standard output as text, failing with `code` on any exit but 0.
-    pub(crate) fn git_ok(
+    /// Runs Git with no extra settings.
+    pub(crate) fn git(&self, seconds: u32, at: &Path, args: &[&str]) -> Result<Ran, Failure> {
+        self.run(seconds, at, &[], &[], args)
+    }
+
+    /// Runs Git and answers its standard output as bytes, failing with `code` on any exit but 0.
+    pub(crate) fn bytes(
         &self,
         code: &'static str,
-        seconds: u32,
         at: &Path,
-        settings: &[String],
         args: &[&str],
-    ) -> Result<String, Failure> {
-        let ran = self.git(seconds, at, settings, args)?;
+    ) -> Result<Vec<u8>, Failure> {
+        let ran = self.git(LOCAL_SECONDS, at, args)?;
         if ran.code != Some(0) {
             return Err(Failure::new(
                 code,
                 format!("git {}: {}", args.first().unwrap_or(&""), ran.stderr.trim()),
             ));
         }
-        String::from_utf8(ran.stdout)
+        Ok(ran.stdout)
+    }
+
+    /// Runs Git and answers its standard output as text, failing with `code` on any exit but 0 or on bytes that are not UTF-8.
+    pub(crate) fn text(
+        &self,
+        code: &'static str,
+        at: &Path,
+        args: &[&str],
+    ) -> Result<String, Failure> {
+        String::from_utf8(self.bytes(code, at, args)?)
             .map_err(|_| Failure::new(code, "git answered bytes that are not UTF-8"))
     }
-}
-
-/// Settings every call takes: no hook, no filesystem monitor, no pager, no remote protocol unless a fetch allows one.
-const FIXED: [&str; 7] = [
-    "core.hooksPath=/dev/null",
-    "core.fsmonitor=false",
-    "core.pager=cat",
-    "credential.helper=",
-    "protocol.allow=never",
-    "http.followRedirects=false",
-    "submodule.recurse=false",
-];
-
-/// What one Git call answered.
-#[derive(Debug)]
-pub(crate) struct Ran {
-    pub(crate) code: Option<i32>,
-    pub(crate) stdout: Vec<u8>,
-    pub(crate) stderr: String,
 }
 
 /// A blob reference in an order: `{"blob": {"sha256": "…"}}`. The executor fetched and hash-checked it before the run.
@@ -187,9 +249,12 @@ impl BlobRef {
         {
             return Err(invalid("blob reference"));
         }
-        let bytes = system
-            .blob(&self.blob.sha256)
-            .map_err(|detail| Failure::new("git.credential_missing", detail))?;
+        let bytes = system.blob(&self.blob.sha256).map_err(|_| {
+            Failure::new(
+                "git.credential_missing",
+                "the credential blob is not cached",
+            )
+        })?;
         let digest = sha2::Sha256::digest(&bytes)
             .iter()
             .fold(String::new(), |mut hex, byte| {
@@ -206,11 +271,13 @@ impl BlobRef {
     }
 }
 
-/// Parses an order's input into its typed form; an unknown field refuses.
+/// Parses an order's input into its typed form; an unknown field refuses. Serde's message is dropped: it can echo a value,
+/// and a value may be a secret someone put in the wrong field.
 pub(crate) fn parse<T: serde::de::DeserializeOwned>(
     input: &serde_json::Value,
 ) -> Result<T, Failure> {
-    serde_json::from_value(input.clone()).map_err(|error| invalid(error.to_string()))
+    serde_json::from_value(input.clone())
+        .map_err(|_| invalid("the input does not match the action's typed shape"))
 }
 
 /// An absolute, normal path: no `.` or `..` part, no empty part, no control byte, no trailing slash.
@@ -269,30 +336,51 @@ pub(crate) fn branch(value: &str) -> Result<&str, Failure> {
     }
 }
 
-/// A full object id: 40 (SHA-1) or 64 (SHA-256) lowercase hex digits.
+/// A full object id: 40 (SHA-1) or 64 (SHA-256) lowercase hex digits, never the null id.
 pub(crate) fn commit(value: &str) -> Result<&str, Failure> {
     if matches!(value.len(), 40 | 64)
         && value
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        && value.bytes().any(|byte| byte != b'0')
     {
         Ok(value)
     } else {
-        Err(invalid("commit is not a full object id"))
+        Err(invalid("commit is not a full, non-null object id"))
     }
 }
 
-/// The object a full ref names, or `None` when the repository has no such ref. Any other error fails with `code`.
+/// The object a full ref names, or `None` when the repository has no such ref. A symbolic ref refuses
+/// (`git.ref_symbolic`): no primitive acts on, or answers for, the ref it points to. Any other error fails with `code`.
 pub(crate) fn resolve(
     system: &NodeSystem,
     code: &'static str,
     at: &Path,
     reference: &str,
 ) -> Result<Option<String>, Failure> {
+    let symbolic = system.git(
+        LOCAL_SECONDS,
+        at,
+        &["symbolic-ref", "--quiet", "--", reference],
+    )?;
+    match symbolic.code {
+        Some(0) => {
+            return Err(Failure::new(
+                "git.ref_symbolic",
+                format!("{reference} is a symbolic ref"),
+            ))
+        }
+        Some(1) => {}
+        _ => {
+            return Err(Failure::new(
+                code,
+                format!("symbolic-ref: {}", symbolic.stderr.trim()),
+            ))
+        }
+    }
     let ran = system.git(
         LOCAL_SECONDS,
         at,
-        &[],
         &["show-ref", "--verify", "--hash", "--", reference],
     )?;
     match ran.code {
@@ -314,7 +402,36 @@ pub(crate) enum Kind {
     Repository,
 }
 
-/// The repository's own top folder: the named path must be the work tree (or the bare repository) itself.
+/// Configuration a repository may not hold, by lowercase key prefix and suffix: each can redirect a transport, start a
+/// program, or make a read write. Git applies the repository's own value where no fixed `-c` covers every name (a
+/// `protocol.<name>.allow`, a `url.<base>.insteadOf`, a filter or merge driver), so such a repository is refused instead.
+const REFUSED: [(&str, &str); 22] = [
+    ("url.", ".insteadof"),
+    ("url.", ".pushinsteadof"),
+    ("protocol.", ""),
+    ("credential.", ""),
+    ("http.", ""),
+    ("filter.", ""),
+    ("merge.", ".driver"),
+    ("diff.", ".command"),
+    ("diff.", ".textconv"),
+    ("diff.external", ""),
+    ("remote.", ".uploadpack"),
+    ("remote.", ".receivepack"),
+    ("remote.", ".proxy"),
+    ("core.fsmonitor", ""),
+    ("core.hookspath", ""),
+    ("core.sshcommand", ""),
+    ("core.askpass", ""),
+    ("core.gitproxy", ""),
+    ("core.worktree", ""),
+    ("core.splitindex", ""),
+    ("include", ""),
+    ("uploadpack.", ""),
+];
+
+/// The repository's own top folder: the named path must be the work tree (or the bare repository) itself, and its own
+/// configuration must hold no refused key.
 pub(crate) fn require_repository(
     system: &NodeSystem,
     code: &'static str,
@@ -327,18 +444,11 @@ pub(crate) fn require_repository(
     } else {
         "--absolute-git-dir"
     };
-    let top = system.git_ok(code, LOCAL_SECONDS, at, &[], &["rev-parse", flag])?;
-    let top = PathBuf::from(top.trim());
+    let top = PathBuf::from(system.text(code, at, &["rev-parse", flag])?.trim());
     let named = std::fs::canonicalize(at).map_err(|error| Failure::new(code, error.to_string()))?;
     let bare = !work_tree
         && system
-            .git_ok(
-                code,
-                LOCAL_SECONDS,
-                at,
-                &[],
-                &["rev-parse", "--is-bare-repository"],
-            )?
+            .text(code, at, &["rev-parse", "--is-bare-repository"])?
             .trim()
             == "true";
     let held = if work_tree || bare {
@@ -346,12 +456,86 @@ pub(crate) fn require_repository(
     } else {
         top == named.join(".git")
     };
-    if held {
-        Ok(())
-    } else {
-        Err(Failure::new(
+    if !held {
+        return Err(Failure::new(
             code,
             format!("{} is not a repository's own folder", at.display()),
-        ))
+        ));
     }
+    let listed = system.bytes(
+        code,
+        at,
+        &["config", "--list", "--null", "--show-scope", "--includes"],
+    )?;
+    let mut fields = listed.split(|byte| *byte == 0);
+    while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
+        if scope == b"command" {
+            continue;
+        }
+        let key = entry
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let key = String::from_utf8_lossy(&key);
+        if REFUSED
+            .iter()
+            .any(|(prefix, suffix)| key.starts_with(prefix) && key.ends_with(suffix))
+        {
+            return Err(Failure::new(
+                "git.repository_refused",
+                format!("the repository's configuration sets {key}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Paths a NUL-separated Git listing names, as raw bytes; a trailing `/` (a folder Git collapsed) is kept.
+pub(crate) fn entries(listing: &[u8]) -> impl Iterator<Item = &[u8]> {
+    listing
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+}
+
+/// The untracked and ignored paths of a work tree that a tree's checkout would overwrite or need gone: a path the tree
+/// holds, a folder the tree needs where the path is, or a path below a file of the tree. Nested repositories count too.
+pub(crate) fn obstructions(
+    system: &NodeSystem,
+    code: &'static str,
+    tree: &Path,
+    target: &str,
+) -> Result<usize, Failure> {
+    let wanted = system.bytes(
+        code,
+        tree,
+        &[
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            "--full-tree",
+            "--end-of-options",
+            target,
+        ],
+    )?;
+    let files: HashSet<&[u8]> = entries(&wanted).collect();
+    let folders: HashSet<&[u8]> = files.iter().flat_map(|file| ancestors(file)).collect();
+    let others = system.bytes(code, tree, &["ls-files", "-z", "--others", "--directory"])?;
+    Ok(entries(&others)
+        .map(|entry| entry.strip_suffix(b"/").unwrap_or(entry))
+        .filter(|entry| {
+            files.contains(entry)
+                || folders.contains(entry)
+                || ancestors(entry).any(|above| files.contains(above))
+        })
+        .count())
+}
+
+/// Every folder above a relative path, nearest last.
+fn ancestors(path: &[u8]) -> impl Iterator<Item = &[u8]> {
+    path.iter()
+        .enumerate()
+        .filter(|(_, byte)| **byte == b'/')
+        .map(move |(at, _)| &path[..at])
 }

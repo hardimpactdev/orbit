@@ -24,7 +24,7 @@ struct RefInput {
     #[serde(rename = "ref")]
     reference: String,
     state: State,
-    /// The object the ref must name; only with `present`.
+    /// The object the ref must name; only with `present`, and never the null id.
     #[serde(default)]
     commit: Option<String>,
     /// The object the ref must name before the change, `null` for a ref that must not exist yet. Required.
@@ -41,12 +41,13 @@ pub struct RefEnsured {
 }
 
 /// Brings one ref to its desired state. A ref that already holds it answers 0 changes. Otherwise the ref must hold `expect`,
-/// and Git's own compare-and-swap (`update-ref <ref> <new> <old>`, or `-d <ref> <old>`) makes the change, so a ref another
-/// writer moved in between refuses too.
+/// and Git's own compare-and-swap (`update-ref --no-deref <ref> <new> <old>`, or `-d <ref> <old>`) makes the change, so a
+/// ref another writer moved in between refuses too. A symbolic ref refuses: its referent is never touched.
 ///
 /// # Errors
 ///
-/// `git.input_invalid`, `git.ref_conflict` when the ref holds neither the desired nor the expected value, or `git.ref_failed`.
+/// `git.input_invalid`, `git.ref_symbolic`, `git.repository_refused`, `git.ref_conflict` when the ref holds neither the
+/// desired nor the expected value, or `git.ref_failed`.
 pub fn ref_ensure(system: &NodeSystem, input: &Value) -> Result<RefEnsured, Failure> {
     if input.get("expect").is_none() {
         return Err(invalid(
@@ -83,7 +84,6 @@ pub fn ref_ensure(system: &NodeSystem, input: &Value) -> Result<RefEnsured, Fail
         Some(new) => system.git(
             LOCAL_SECONDS,
             &repository,
-            &[],
             &[
                 "update-ref",
                 "--no-deref",
@@ -96,7 +96,6 @@ pub fn ref_ensure(system: &NodeSystem, input: &Value) -> Result<RefEnsured, Fail
         None => system.git(
             LOCAL_SECONDS,
             &repository,
-            &[],
             &[
                 "update-ref",
                 "--no-deref",

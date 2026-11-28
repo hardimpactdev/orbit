@@ -6,11 +6,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    branch, commit, full_ref, invalid, parse, path, require_repository, resolve, Failure,
-    NodeSystem, LOCAL_SECONDS,
+    branch, commit, entries, full_ref, invalid, obstructions, parse, path, require_repository,
+    resolve, Failure, NodeSystem, LOCAL_SECONDS,
 };
 
 const CODE: &str = "git.checkout_failed";
+const REFUSED: &str = "git.checkout_refused";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,7 +28,7 @@ struct CheckoutInput {
     /// The commit the branch and every tracked file must hold; it discards local changes, so it needs `destructive`.
     #[serde(default)]
     reset: Option<String>,
-    /// Removes the files Git does not track (ignored ones stay); it needs `destructive`.
+    /// Removes the files Git does not track (ignored ones and nested repositories stay); it needs `destructive`.
     #[serde(default)]
     clean: bool,
     /// Allows `reset` and `clean`, which discard work inside this work tree.
@@ -47,16 +48,17 @@ pub struct CheckedOut {
 }
 
 /// Puts one work tree on its branch: renamed from `rename_from`, switched to an existing branch, or made at `start`. Then,
-/// when asked and allowed, resets it hard to `reset` and removes untracked files. Each step runs only when the work tree
-/// differs, and the result is read back.
+/// when asked and allowed, resets it hard to `reset` and removes untracked files. Each step measures the same state before
+/// and after it, runs only when the work tree differs, and is read back.
+///
+/// A switch or reset that would overwrite or remove an untracked or ignored path, a nested repository included, refuses
+/// with `git.checkout_refused`: no step passes an overwrite flag, and no step deletes another repository. A work tree with
+/// submodules, or with assume-unchanged or skip-worktree entries, refuses a reset and a clean.
 ///
 /// # Errors
 ///
-/// `git.input_invalid`, `git.destructive_not_allowed` or `git.checkout_failed`.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one desired state read, changed and read back in order: branch, reset, clean"
-)]
+/// `git.input_invalid`, `git.destructive_not_allowed`, `git.checkout_refused`, `git.ref_symbolic`,
+/// `git.repository_refused` or `git.checkout_failed`.
 pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failure> {
     let input: CheckoutInput = parse(input)?;
     let tree = path(&input.worktree, "worktree")?;
@@ -84,92 +86,40 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
         return Err(invalid("rename_from is the branch itself"));
     }
     require_repository(system, CODE, &tree, crate::Kind::WorkTree)?;
-    let mut changes = 0;
-    let current = current_branch(system, &tree)?;
-    if current.as_deref() != Some(wanted) {
-        let exists = resolve(system, CODE, &tree, &format!("refs/heads/{wanted}"))?.is_some();
-        if !exists && rename_from.is_some() && current.as_deref() == rename_from {
-            system.git_ok(
-                CODE,
-                LOCAL_SECONDS,
-                &tree,
-                &[],
-                &[
-                    "branch",
-                    "--move",
-                    "--",
-                    rename_from.unwrap_or_default(),
-                    wanted,
-                ],
-            )?;
-        } else if exists {
-            system.git_ok(
-                CODE,
-                LOCAL_SECONDS,
-                &tree,
-                &[],
-                &[
-                    "switch",
-                    "--quiet",
-                    "--no-guess",
-                    "--end-of-options",
-                    wanted,
-                ],
-            )?;
-        } else {
-            let start = start
-                .ok_or_else(|| Failure::new(CODE, "the branch is missing and no start is given"))?;
-            system.git_ok(
-                CODE,
-                LOCAL_SECONDS,
-                &tree,
-                &[],
-                &[
-                    "switch",
-                    "--quiet",
-                    "--no-guess",
-                    "--no-track",
-                    "--create",
-                    wanted,
-                    "--end-of-options",
-                    start,
-                ],
-            )?;
-        }
-        changes += 1;
+    let mut changes = switch(system, &tree, wanted, start, rename_from)?;
+    if reset.is_some() || input.clean {
+        guard_discard(system, &tree)?;
     }
     if let Some(reset) = reset {
-        let head = head(system, &tree)?;
-        let dirty = !system
-            .git_ok(
+        if head(system, &tree)?.as_deref() != Some(reset) || dirty(system, &tree)? {
+            if obstructions(system, CODE, &tree, reset)? > 0 {
+                return Err(Failure::new(
+                    REFUSED,
+                    "the reset would overwrite untracked or ignored paths",
+                ));
+            }
+            system.text(
                 CODE,
-                LOCAL_SECONDS,
                 &tree,
-                &[],
-                &["status", "--porcelain=v1", "-z", "--untracked-files=no"],
-            )?
-            .is_empty();
-        if head.as_deref() != Some(reset) || dirty {
-            system.git_ok(
-                CODE,
-                LOCAL_SECONDS,
-                &tree,
-                &[],
-                &["reset", "--quiet", "--hard", "--end-of-options", reset],
+                &[
+                    "reset",
+                    "--quiet",
+                    "--hard",
+                    "--no-recurse-submodules",
+                    "--end-of-options",
+                    reset,
+                ],
             )?;
             changes += 1;
         }
+        if dirty(system, &tree)? {
+            return Err(Failure::new(CODE, "tracked files differ after the reset"));
+        }
     }
-    if input.clean && !untracked(system, &tree)?.is_empty() {
-        // Only inside this work tree: Git leaves a nested repository and every ignored file.
-        system.git_ok(
-            CODE,
-            LOCAL_SECONDS,
-            &tree,
-            &[],
-            &["clean", "--quiet", "--force", "-d", "--"],
-        )?;
-        if !untracked(system, &tree)?.is_empty() {
+    if input.clean && untracked(system, &tree)? > 0 {
+        // Without -x and a second -f, Git keeps ignored files and every nested repository.
+        system.text(CODE, &tree, &["clean", "--quiet", "--force", "-d", "--"])?;
+        if untracked(system, &tree)? > 0 {
             return Err(Failure::new(CODE, "untracked files remain after clean"));
         }
         changes += 1;
@@ -177,7 +127,11 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
     let after = current_branch(system, &tree)?;
     let head =
         head(system, &tree)?.ok_or_else(|| Failure::new(CODE, "the branch has no commit"))?;
-    if after.as_deref() != Some(wanted) || reset.is_some_and(|reset| reset != head) {
+    if after.as_deref() != Some(wanted)
+        || resolve(system, CODE, &tree, &format!("refs/heads/{wanted}"))?.as_deref()
+            != Some(head.as_str())
+        || reset.is_some_and(|reset| reset != head)
+    {
         return Err(Failure::new(
             CODE,
             "the work tree does not read back as asked",
@@ -190,14 +144,149 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
     })
 }
 
+/// Puts `HEAD` on the branch; answers 1 when it moved. The branch must exist as a ref, not only as `HEAD`'s name.
+fn switch(
+    system: &NodeSystem,
+    tree: &Path,
+    wanted: &str,
+    start: Option<&str>,
+    rename_from: Option<&str>,
+) -> Result<u32, Failure> {
+    let current = current_branch(system, tree)?;
+    let exists = resolve(system, CODE, tree, &format!("refs/heads/{wanted}"))?.is_some();
+    if current.as_deref() == Some(wanted) {
+        return if exists {
+            Ok(0)
+        } else {
+            Err(Failure::new(
+                REFUSED,
+                "HEAD names the branch, but the branch has no commit",
+            ))
+        };
+    }
+    if let (Some(from), false) = (rename_from, exists) {
+        if current.as_deref() == Some(from)
+            && resolve(system, CODE, tree, &format!("refs/heads/{from}"))?.is_some()
+        {
+            system.text(CODE, tree, &["branch", "--move", "--", from, wanted])?;
+            return Ok(1);
+        }
+    }
+    let target = if exists {
+        format!("refs/heads/{wanted}")
+    } else {
+        start
+            .ok_or_else(|| Failure::new(CODE, "the branch is missing and no start is given"))?
+            .to_owned()
+    };
+    if start.is_some_and(|start| start.starts_with("refs/")) && !exists {
+        resolve(system, CODE, tree, &target)?
+            .ok_or_else(|| Failure::new(CODE, "start names no ref"))?;
+    }
+    if obstructions(system, CODE, tree, &target)? > 0 {
+        return Err(Failure::new(
+            REFUSED,
+            "the switch would overwrite untracked or ignored paths",
+        ));
+    }
+    if exists {
+        system.text(
+            CODE,
+            tree,
+            &[
+                "switch",
+                "--quiet",
+                "--no-guess",
+                "--end-of-options",
+                wanted,
+            ],
+        )?;
+    } else {
+        system.text(
+            CODE,
+            tree,
+            &[
+                "switch",
+                "--quiet",
+                "--no-guess",
+                "--no-track",
+                "--create",
+                wanted,
+                "--end-of-options",
+                &target,
+            ],
+        )?;
+    }
+    Ok(1)
+}
+
+/// A reset or clean refuses a work tree whose state the dirt count could not measure: submodules, and entries marked
+/// assume-unchanged or skip-worktree.
+fn guard_discard(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
+    let staged = system.bytes(CODE, tree, &["ls-files", "-z", "--stage"])?;
+    if entries(&staged).any(|entry| entry.starts_with(b"160000 ")) {
+        return Err(Failure::new(REFUSED, "the work tree has submodules"));
+    }
+    let tagged = system.bytes(CODE, tree, &["ls-files", "-z", "-v"])?;
+    if entries(&tagged).any(|entry| {
+        entry
+            .first()
+            .is_some_and(|tag| tag.is_ascii_lowercase() || *tag == b'S')
+    }) {
+        return Err(Failure::new(
+            REFUSED,
+            "the work tree has assume-unchanged or skip-worktree entries",
+        ));
+    }
+    Ok(())
+}
+
+/// Whether a tracked file differs from `HEAD`, in the index or the work tree. Submodules are not part of it.
+fn dirty(system: &NodeSystem, tree: &Path) -> Result<bool, Failure> {
+    let status = system.bytes(
+        CODE,
+        tree,
+        &[
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--untracked-files=no",
+            "--ignore-submodules=all",
+            "--no-renames",
+        ],
+    )?;
+    let dirty = entries(&status).next().is_some();
+    Ok(dirty)
+}
+
+/// Untracked files that are not ignored, nested repositories left out: the count `clean` brings to 0.
+fn untracked(system: &NodeSystem, tree: &Path) -> Result<usize, Failure> {
+    let listed = system.bytes(
+        CODE,
+        tree,
+        &[
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+        ],
+    )?;
+    Ok(entries(&listed)
+        .filter(|entry| {
+            !(entry.ends_with(b"/")
+                && tree
+                    .join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(entry))
+                    .join(".git")
+                    .exists())
+        })
+        .count())
+}
+
 /// The branch `HEAD` names, or `None` when it is detached.
 fn current_branch(system: &NodeSystem, tree: &Path) -> Result<Option<String>, Failure> {
-    let ran = system.git(
-        LOCAL_SECONDS,
-        tree,
-        &[],
-        &["symbolic-ref", "--quiet", "HEAD"],
-    )?;
+    let ran = system.git(LOCAL_SECONDS, tree, &["symbolic-ref", "--quiet", "HEAD"])?;
     match ran.code {
         Some(0) => Ok(String::from_utf8_lossy(&ran.stdout)
             .trim()
@@ -216,7 +305,6 @@ fn head(system: &NodeSystem, tree: &Path) -> Result<Option<String>, Failure> {
     let ran = system.git(
         LOCAL_SECONDS,
         tree,
-        &[],
         &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
     )?;
     match ran.code {
@@ -227,21 +315,4 @@ fn head(system: &NodeSystem, tree: &Path) -> Result<Option<String>, Failure> {
             format!("rev-parse: {}", ran.stderr.trim()),
         )),
     }
-}
-
-fn untracked(system: &NodeSystem, tree: &Path) -> Result<String, Failure> {
-    system.git_ok(
-        CODE,
-        LOCAL_SECONDS,
-        tree,
-        &[],
-        &[
-            "ls-files",
-            "-z",
-            "--others",
-            "--exclude-standard",
-            "--directory",
-            "--no-empty-directory",
-        ],
-    )
 }
