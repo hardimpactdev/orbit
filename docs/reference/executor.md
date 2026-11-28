@@ -146,10 +146,10 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Built; [its contract](#the-incus-family) | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
 | `incus.instance.read` | The state, configuration and snapshots of one Incus instance, read only | Planned | The seed choice of `instance.clone`; the machine id read of `instance.prepare` |
 | `incus.acl.ensure`, `incus.device.ensure`, `incus.volume.ensure` | One network ACL, one device, one storage volume | Built; [the incus family](#the-incus-family) | The rest of `instance.clone`, `instance.copy_volume`, `instance.spare_volume`, their removal in `instance.destroy` |
-| `git.fetch` | One ref fetched into one repository | Planned | `instance.fetch_branch`; the bundle transfer of `instance.checkout` and `instance.sync_base` |
-| `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Planned | `instance.checkout`, the branch rename of `instance.names` |
-| `git.ref.ensure` | One ref, set only from an expected old value, or absent | Planned | The ref moves of `instance.sync_base` and `instance.clear_base` |
-| `git.worktree.read` | The state of one work tree, read only | Planned | `instance.work_read`, the evidence reads of `instance.sync_base` |
+| `git.fetch` | One ref fetched into one repository, from an https remote or a bundle file | Built ([the git family](#the-git-family)) | `instance.fetch_branch`; the bundle transfer of `instance.checkout` and `instance.sync_base` |
+| `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Built | `instance.checkout`, the branch rename of `instance.names` |
+| `git.ref.ensure` | One ref, set only from an expected old value, or absent | Built | The ref moves of `instance.sync_base` and `instance.clear_base` |
+| `git.worktree.read` | The state of one work tree, read only | Built | `instance.work_read`, the evidence reads of `instance.sync_base` |
 | `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Planned | `instance.t3`, whose T3 names go with it |
 
 Three notes apply to every row.
@@ -315,6 +315,72 @@ It keeps a key that `openssl pkey` reads as PEM or DER, and puts its owner and m
 
 Deviation from main, for safety: a file with a PEM block openssl cannot read (encrypted, a certificate only, other), or an inspection that times out or cannot start, fails the request with `app-dev.certificate_request_failed` and keeps the file. Main replaced these; Orbit never writes such keys. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
 
+### The git family
+
+The `git` family (`crates/git`, agent 0.41.0, app-dev Nodes) holds the Git primitives of the [catalogue](#the-catalogue). Each acts on one repository, one work tree or one ref on the Node, and every path, ref, URL and credential reference comes from the order. Each answers JSON in the receipt's `output`; `git.worktree.read` reads only, outside the journal, and the three others are receipt-fenced like the actions they replace.
+
+| Action | Input | Answer |
+| --- | --- | --- |
+| `git.fetch` | `repository`, `ref`, `into`, `source`, `create` | `{"commit", "changes"}` |
+| `git.checkout` | `worktree`, `branch`, optional `start`, `rename_from`, `reset`, `clean`, `destructive` | `{"branch", "head", "changes"}` |
+| `git.ref.ensure` | `repository`, `ref`, `state`, `commit` with `present`, and the required `expect` | `{"commit", "changes"}` |
+| `git.worktree.read` | `worktree`, optional `against` | `{"state": "absent"}`, or the state of the work tree |
+
+`git.fetch` fetches `+<ref>:<into>`, both full refs, from a `source` that is either `{"url": {"url", "credential"}}`, with the credential optional, or `{"bundle": {"path"}}`. It reads the source's ref first, with `ls-remote` or `bundle list-heads`. A source that lacks `ref` answers `commit: null`, changes nothing and makes no repository.
+
+An existing repository is checked before that first call. A missing one is read for and made from a private empty folder under the system temporary folder, so no other repository's configuration applies. `create` makes it bare, in the source's object format (SHA-1 or SHA-256, by the length of the id the source answers), and a repository this order made is removed again when its fetch fails. Without `create`, a missing repository fails `git.repository_missing`.
+
+`git.checkout` puts `HEAD` on `branch`, which must exist as `refs/heads/<branch>`: a `HEAD` that names an unborn branch refuses `git.checkout_refused`. It reads the branch `HEAD` names itself, one level (`symbolic-ref --no-recurse`), so a `HEAD` on an alias refuses `git.ref_symbolic` and the alias's referent is never certified, reset or renamed. It renames `rename_from` when the work tree is on it and `branch` does not exist yet. Otherwise it switches to an existing `branch`, or makes it at `start`, an object id or a full ref.
+
+`reset`, an object id, resets hard, and `clean` removes untracked files that are not ignored. Each runs only when the work tree differs, and both need `destructive: true`, else `git.destructive_not_allowed`. A clean is an order of its own, on the branch `HEAD` is already on: with `reset`, `start` or `rename_from`, or on another branch, it fails `git.input_invalid`. So the flow sends it after the switch or reset, and its candidates follow the tree's current ignore rules. A repeat answers 0 changes.
+
+`git.checkout` refuses every state it cannot prove safe with `git.checkout_refused`, before anything changes, and passes no `--force` or `--discard-changes`.
+
+Before a switch or a reset it checks the target tree and the index against the disk. Each of these refuses:
+
+- a folder at a path the index or the target holds;
+- a file the index lacks at a path of the target;
+- an untracked file where the target needs a folder;
+- a submodule in the target or the index.
+
+Paths that only share a folder are no collision.
+
+Before any switch, reset or clean, `git.checkout` walks the whole work tree on disk, tracked, untracked and ignored paths alike. It refuses `git.nested_repository` when any folder below the root holds a `.git` entry of any type, or a plain `HEAD` with `objects` and `refs` folders, as a bare repository does. The walk never follows a link, skips only the root's own `.git`, and refuses a tree of more than 1,000,000 entries. So no step removes or overwrites another repository.
+
+A reset or clean also refuses a work tree with assume-unchanged or skip-worktree entries. The check before a reset, the reset and the read-back measure the same tracked state: `status --untracked-files=no --ignore-submodules=all`. A supported repeat answers 0 changes.
+
+`git.ref.ensure` takes `state` `present` with `commit`, or `absent`. `expect` is the object id the ref must hold first, or `null` for a ref that must not exist. Every object id must be 40 or 64 lowercase hex digits and is never the null id, so only `absent` deletes. A ref that already holds the desired state answers 0 changes.
+
+Otherwise `git.ref.ensure` runs `update-ref --no-deref <ref> <new> <old>` or `update-ref --no-deref -d <ref> <old>`, Git's compare-and-swap under the ref's lock. A ref that holds neither value fails `git.ref_conflict` and stays as it is.
+
+No primitive acts through a symbolic ref. Each ref it reads is checked with `symbolic-ref --quiet` first: `into`, a branch, `HEAD`'s branch, `against`, every local branch and the ref of `git.ref.ensure`. A symbolic one refuses `git.ref_symbolic`, and its referent is never touched or certified.
+
+`git.worktree.read` answers `{"state": "present", "head", "branch", "staged", "unstaged", "unmerged", "modified", "untracked", "stashes", "heads"}`. `ahead` and `behind`, against the full ref `against`, are added when asked. `modified` and `untracked` each hold the full `count`, the `paths` exactly as Git names them in Git's order, and `truncated`. The paths stop where the answer, as the receipt embeds it in a JSON string, would pass 48 KiB, which leaves 16 KiB of the relay's 64 KiB. `stashes` lists each stash entry newest first, with its `commit` and its reflog `label`. `heads` maps every ref under `refs/heads/` by its full name to its commit, so no two branches share a key. The Gateway compares these with its recorded baseline and decides whether the work is dirty or published.
+
+The read parses Git's NUL-separated output as bytes. A path or a branch name that is not UTF-8 fails `git.read_failed` instead of being changed. Every call runs with `--no-optional-locks` and `core.untrackedCache=false`. A work tree whose index is split refuses. The read finds it in the index file itself, read in Rust: a `link` extension whose shared index id is not null. It runs no Git command for it, so the read writes no file under `.git`. A leftover `sharedindex.*` file or `core.splitIndex=false` alone does not refuse.
+
+Git always runs as `/usr/bin/git` with an argument list fixed in Rust, through `timeout`, never through a shell. The environment is cleared and then set to a fixed `PATH`, `HOME=/nonexistent`, `LC_ALL=C`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0` and `GIT_ASKPASS=/bin/false`. `GIT_CEILING_DIRECTORIES` is the named folder's parent, and the folder must be the repository's or work tree's own top, so a path inside another repository never resolves to it.
+
+Every call sets these on the command line: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, `core.sshCommand=/bin/false`, `core.askPass=/bin/false`, an empty `diff.external` and `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and no submodule recursion. A URL fetch allows only `https`, and a bundle fetch only the `file` transport that reads the bundle, after the path is checked to be a plain file. So `ext::`, `file://` and `ssh` URLs never run.
+
+A repository's own configuration can name keys that no fixed setting covers for every name. So before any other call, the primitive reads the repository's configuration with its includes. It refuses the repository with `git.repository_refused` when that configuration sets any of these keys:
+
+- `url.*.insteadOf` or `pushInsteadOf`, `protocol.*`, `credential.*`, `http.*`;
+- `filter.*`, `merge.*.driver`, `diff.*.command`, `diff.*.textconv`, `diff.external`;
+- `remote.*.uploadpack`, `receivepack` or `proxy`, and `uploadpack.*`;
+- `core.fsmonitor`, `hooksPath`, `sshCommand`, `askPass`, `gitProxy` or `worktree`;
+- an `include` or `includeIf`.
+
+Every operand is checked before anything runs or changes. Paths are absolute and normal. A ref is a full name under `refs/` that `check-ref-format` accepts, and a branch is a name that cannot start with `-`. A URL is `https://` with a host and no user information, query, fragment, percent sign, space or control byte. Operands follow `--` or `--end-of-options`. An unknown field fails `git.input_invalid`, and the message never echoes a value from the input.
+
+A URL fetch's credential is a blob reference to a `store` credential line, `https://<user>:<password>@<host>`, never an inline value. The executor fetches the blob and checks it by its SHA-256, as for `instance.fetch_branch`. The line must name the URL's own host.
+
+Git's askpass is the fixed `/usr/bin/printenv`, and the answers sit in two environment entries named exactly as Git's prompts, `Username for 'https://<host>': ` and `Password for 'https://<user>@<host>': `. So Git sends the credential only when the server asks for it, never as a header up front. Nothing reaches the argument list or a file. A credentialed call keeps none of Git's own messages, and every failure detail masks the password, its encoded form and all URL user information.
+
+Git refuses a repository that the executor's user does not own (`safe.directory`), and the family never relaxes that, so a repository or work tree it acts on belongs to root. A work tree inside an Incus instance is not covered yet. The bundle transfer covered is the import of a bundle file that is already on the Node.
+
+An executor reports the git actions from agent 0.41.0, and the Gateway enables the family on app-dev Nodes from that version (`NodeExecutorInput::FamilySince`).
+
 ### The incus family
 
 The `incus` family (`crates/incus`) holds the Incus primitives of the [catalogue](#the-catalogue). App-dev enables it from agent 0.39.0 (`NodeExecutorInput::FamilySince`), because its Incus holds the instances; vpn and the Gateway's Node hold none. No flow sends it yet. Each primitive talks to the Incus REST API over its unix socket, one HTTP/1.0 request per connection, and never runs the `incus` command. It targets the Node, because the instance may not exist yet, and its receipt is fenced like the host primitives that change a resource.
@@ -441,7 +507,7 @@ A unit in an Instance container is not covered: Swamp first moves the container'
 
 ### Signed reads
 
-A read-only action (today `instance.work_read`, `http.probe`, `file.read` and `account.read`) needs no Operation, stream or receipt. When the Node enables such an action, the executor also subscribes to `orbit.node.<id>.reads` on core NATS. The Gateway sends one signed order there as a request (`ExecutorOrderSigner::signRead`: `operation` `read:<target>`, expiry the request's remaining budget, at most 4 s) and waits for the reply. The executor checks the order exactly as it checks every order, fetches the content it names, runs it and answers its result line as the reply. It answers no other action there, so a change always takes the durable order stream.
+A read-only action (today `instance.work_read`, `http.probe`, `file.read`, `account.read` and `git.worktree.read`) needs no Operation, stream or receipt. When the Node enables such an action, the executor also subscribes to `orbit.node.<id>.reads` on core NATS. The Gateway sends one signed order there as a request (`ExecutorOrderSigner::signRead`: `operation` `read:<target>`, expiry the request's remaining budget, at most 4 s) and waits for the reply. The executor checks the order exactly as it checks every order, fetches the content it names, runs it and answers its result line as the reply. It answers no other action there, so a change always takes the durable order stream.
 
 A copy that does not run is `asleep` or `stopped` by the Node's asleep marker, and is never woken. A read writes no journal record, waits for no target lock and stores no result: a lost reply is read again with a fresh nonce, and the second read is fresh. The nonce map still refuses the same order twice, and an order that expired before it ran answers `executor.order_expired`.
 

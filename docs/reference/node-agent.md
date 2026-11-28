@@ -23,7 +23,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
-Recent agent versions changed the executor as follows. This tree builds agent `0.40.0` before the pin moves.
+Recent agent versions changed the executor as follows. This tree builds agent `0.41.0` before the pin moves.
 
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
@@ -32,7 +32,11 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
 - **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
 - **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
+
+The Incus and Git families follow, each on app-dev Nodes only.
+
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
+- **Git primitives:** Agent `0.41.0` adds the [git family](/reference/executor#the-git-family) with `git.fetch`, `git.checkout`, `git.ref.ensure` and `git.worktree.read` on app-dev Nodes.
 
 Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
 
