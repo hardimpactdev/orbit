@@ -37,9 +37,6 @@ final readonly class RouteHostSteps
     /** Where Caddy's trust of the Orbit root lives, as `route.publish_site` placed it. */
     public const string TrustName = 'orbit-managed-root-ca.crt';
 
-    /** The file.ensure input that copies a host file (ORB-6360, primitives PR A2). A Node without it runs the Route on Swamp. */
-    public const string SourcePathFeature = 'file.source_path';
-
     /** The configuration dnsmasq.service loads: Debian's unit reads the folder without its package leftovers. */
     private const array DnsmasqSkip = ['.dpkg-dist', '.dpkg-old', '.dpkg-new'];
 
@@ -138,7 +135,7 @@ final readonly class RouteHostSteps
     }
 
     /**
-     * A copy of a host file, made on the Node: its bytes never reach the Gateway (file.ensure `source_path`, ORB-6360).
+     * A copy of a host file, made on the Node: its bytes never reach the Gateway (file.ensure `source_path`).
      *
      * @return array<string, mixed>
      */

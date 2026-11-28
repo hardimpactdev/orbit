@@ -21,9 +21,9 @@ sequenceDiagram
   %%> The plan also carries each Node's account group and home (`accounts`) and the digest of each file the create replaces, rendered from the sites at admission (`guards`: Caddyfile, shared pools, records and catalog, raw bytes); a waiting create renders them again with its Caddyfiles
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
-    %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node and `file.source_path` on the Node of an account copy
+    %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family from agent 0.36.0), with `tls.csr_input` on the leaf Node; every build with the host family has file.ensure `source_path`, so the key copy needs no feature
     %%> - the flow accepts the plan shape; an Ingress edge, a LAN rule, a production `.env`, awake markers, Caddy access rows, or a pool outside the two pool kinds throws `EngineUnsupported`
-    %%> - the kind's own admission (RouteEngineFlow::admit) also refuses a Route with Caddy access rows, and a Node with work that lacks one host primitive, or a leaf Node that lacks `tls.csr_input` or `file.source_path`
+    %%> - the kind's own admission (RouteEngineFlow::admit) also refuses a Route with Caddy access rows, and a Node with work that lacks one host primitive, or a leaf Node that lacks `tls.csr_input`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Make a CSR on the Node<br/>tls.ensure_csr · csr-i

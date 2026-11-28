@@ -108,9 +108,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
     /**
      * route.create runs on the engine only for a Route without Caddy access rows, whose every Node with work reports the `host`
-     * family (each host primitive the flow sends), and whose every leaf Node also reports `tls.csr_input` and file.ensure
-     * `source_path`. Any other route.create runs on Swamp, as a whole. Caddy access waits on a tree scope for posix.acl.ensure
-     * (Nick's decision, RouteHostSteps::access), so a Route with access rows never reaches it on the engine.
+     * family (each host primitive the flow sends), and whose every leaf Node also reports `tls.csr_input`. The `host` family comes
+     * with agent 0.36.0 (NodeExecutorInput::FamilySince), which every build after file.ensure `source_path` carries, so it also
+     * stands for the key copy; that input has no feature of its own. Any other route.create runs on Swamp, as a whole. Caddy
+     * access waits on a tree scope for posix.acl.ensure (Nick's decision, RouteHostSteps::access), so a Route with access rows
+     * never reaches it on the engine.
      */
     public function admit(Operation $operation): void
     {
@@ -125,8 +127,8 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             if (array_diff(self::HostFamily, $this->bus->nodeActions($node)) !== []) {
                 throw new EngineUnsupported("Node {$node} lacks the host family; the Route runs on Swamp.");
             }
-            if (in_array($node, $leaves, true) && array_diff([self::CsrFeature, RouteHostSteps::SourcePathFeature], $this->bus->nodeFeatures($node)) !== []) {
-                throw new EngineUnsupported("Node {$node} lacks tls.csr_input or file.ensure source_path; the Route runs on Swamp.");
+            if (in_array($node, $leaves, true) && ! in_array(self::CsrFeature, $this->bus->nodeFeatures($node), true)) {
+                throw new EngineUnsupported("Node {$node} lacks tls.csr_input; the Route runs on Swamp.");
             }
         }
     }
@@ -161,7 +163,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             if (ValidatedData::integer($leaf['node_id']) === $node) {
                 $parts = [...$parts, ["cert-{$index}", 'file.ensure', [], 60_000], ["current-{$index}", 'file.ensure', [], 60_000],
-                    ["folder-{$index}", 'file.ensure', [], 60_000], ["key-{$index}", 'file.ensure', [RouteHostSteps::SourcePathFeature], 60_000],
+                    ["folder-{$index}", 'file.ensure', [], 60_000], ["key-{$index}", 'file.ensure', [], 60_000],
                     ["copy-{$index}", 'file.ensure', [], 60_000], ["copylink-{$index}", 'file.ensure', [], 60_000]];
             }
         }

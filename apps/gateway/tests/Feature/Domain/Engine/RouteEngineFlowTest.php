@@ -79,7 +79,7 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['probe-0', 0, 'route.probe', ['site-3-caddy']],
     ])
         ->and(array_values(array_filter(array_map(static fn ($step): ?array => $step->features === [] ? null : [$step->name, $step->features], $steps))))
-        ->toBe([['csr-0', ['tls.csr_input']], ['site-3-key-0', ['file.source_path']]]);
+        ->toBe([['csr-0', ['tls.csr_input']]]);
 });
 
 it('asks for the request with its folder owner, modes and subject, only from a Node that reports that input', function (): void {
@@ -280,7 +280,7 @@ it('leaves a Route to Swamp when a leaf or account is outside the executor\'s sh
     'a pool without its unit' => [['php_reloads' => []]],
 ]);
 
-it('runs route.create on the engine only without access rows, on Nodes with the host family, the request input and the host file copy', function (array $plan, array $actions, array $features, bool $engine): void {
+it('runs route.create on the engine only without access rows, on Nodes with the host family and the request input', function (array $plan, array $actions, array $features, bool $engine): void {
     config(['orbit.engine.kinds' => ['route.create']]);
     $bus = Mockery::mock(MachineBus::class);
     $bus->shouldReceive('nodeActions')->andReturn($actions);
@@ -290,19 +290,19 @@ it('runs route.create on the engine only without access rows, on Nodes with the 
     expect(app(EngineKinds::class)->routes(routeOperation(routePlan($plan))))->toBe($engine);
 })->with([
     'every condition' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'],
-        ['tls.csr_input', 'file.source_path'], true],
+        ['tls.csr_input'], true],
     'Caddy access rows' => [['acl' => routeAccess()], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure', 'posix.acl.ensure'],
-        ['tls.csr_input', 'file.source_path'], false],
-    'no host family' => [[], ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records'], ['tls.csr_input', 'file.source_path'], false],
-    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], ['file.source_path'], false],
-    'no host file copy' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], ['tls.csr_input'], false],
+        ['tls.csr_input'], false],
+    'no host family' => [[], ['tls.ensure_csr', 'route.publish_site', 'dns.publish_records'], ['tls.csr_input'], false],
+    'no request input' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure'], [], false],
+    'one host primitive missing' => [[], ['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure'], ['tls.csr_input'], false],
 ]);
 
 it('refuses a VPN Node without the host family in the kind\'s own admission', function (): void {
     $bus = Mockery::mock(MachineBus::class);
     $bus->shouldReceive('nodeActions')->with(3)->andReturn(['tls.ensure_csr', 'dotenv.ensure', 'file.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
     $bus->shouldReceive('nodeActions')->with(1)->andReturn(['dns.publish_records']);
-    $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input', 'file.source_path']);
+    $bus->shouldReceive('nodeFeatures')->andReturn(['tls.csr_input']);
     $this->app->instance(MachineBus::class, $bus);
 
     app(RouteEngineFlow::class)->admit(routeOperation(routePlan(['dns' => [['node_id' => 1, 'records' => "r\n", 'catalog' => "{}\n"]]])));
