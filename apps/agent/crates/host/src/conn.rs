@@ -20,7 +20,7 @@ use rustix::fs::{FileType, Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{absolute, invalid, parse, strings, Failure, System, NAME};
+use crate::{absolute, invalid, strings, Failure, System, NAME};
 
 const SETPRIV: &str = "/usr/bin/setpriv";
 /// The only file name a Conn Server binary may have.
@@ -29,7 +29,7 @@ const BINARY_NAME: &str = "conn-server";
 const SECONDS: u32 = 15;
 /// `timeout`'s exit code when the time limit ended the command.
 const TIMED_OUT: i32 = 124;
-/// The longest lifetime the server keeps: it stores a longer one, and `until-revoked`, as 3660 days.
+/// The longest lifetime the server keeps: it stores a longer one, and `until-revoked`, as 3660 days, so both are refused.
 const MAX_TTL_SECONDS: u64 = 3660 * 86_400;
 /// The lifetime of the session a device redeems with a link from `auth pairing create`: the CLI takes no value for it.
 const PAIRED_SESSION_TTL: &str = "30d";
@@ -110,14 +110,14 @@ pub struct IssuedPairing {
 /// session with this subject, so a retried order never makes a second one; `conn.session_failed` when the server cannot be
 /// run, times out, refuses or answers no token.
 pub fn session_issue(system: &impl System, input: &Value) -> Result<IssuedSession, Failure> {
-    let input: SessionInput = parse(input)?;
+    let input: SessionInput = typed(input)?;
     checked_server(&input.server)?;
     if !label(&input.label) || !value(&input.subject) || !scopes(&input.scopes) || !ttl(&input.ttl) || !recipient(&input.seal_to) {
         return Err(invalid("label, subject, scopes, ttl or seal_to"));
     }
     let code = "conn.session_failed";
     let server = Run::open(system, &input.server, code)?;
-    let list = server.json(&["auth", "session", "list", "--json"])?;
+    let list = server.json("conn.session.list", &["auth", "session", "list", "--json"])?;
     if entries(&list, code)?.iter().any(|session| session.get("subject").and_then(Value::as_str) == Some(input.subject.as_str())) {
         return Err(Failure::new("conn.session_issued", "a session with this subject exists"));
     }
@@ -126,9 +126,9 @@ pub fn session_issue(system: &impl System, input: &Value) -> Result<IssuedSessio
         args.extend(["--scope", scope.as_str()]);
     }
     args.push("--json");
-    let answer = server.json(&args)?;
+    let answer = server.json("conn.session.issue", &args)?;
     let (Some(session_id), Some(token)) = (text(&answer, "sessionId"), text(&answer, "token")) else {
-        return Err(Failure::new(code, "auth session issue answered no session"));
+        return Err(Failure::new(code, "conn.session.issue answered no session"));
     };
     let granted = answer.get("scopes").and_then(Value::as_array).map(|list| list.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
     let sealed = seal(&input.seal_to, &serde_json::json!({"token": token}), code)?;
@@ -146,14 +146,14 @@ pub fn session_issue(system: &impl System, input: &Value) -> Result<IssuedSessio
 /// `host.input_invalid`, before anything runs; `conn.binary_untrusted`; or `conn.project_failed` when the list cannot be read,
 /// `project add` fails, or the read-back lacks the project.
 pub fn project_ensure(system: &impl System, input: &Value) -> Result<u32, Failure> {
-    let input: ProjectInput = parse(input)?;
+    let input: ProjectInput = typed(input)?;
     checked_server(&input.server)?;
     if !absolute(&input.workspace) || !label(&input.title) || input.title.trim() != input.title || input.title.contains('\u{feff}') {
         return Err(invalid("workspace or title"));
     }
     let real = std::fs::canonicalize(system.path(&input.workspace)).ok();
     let expected = std::fs::canonicalize(system.root()).ok().map(|root| root.join(input.workspace.trim_start_matches('/')));
-    if real.is_none() || real != expected {
+    if real.is_none() || real != expected || !real.as_deref().is_some_and(Path::is_dir) {
         return Err(invalid("workspace is not a folder at its real path"));
     }
     let code = "conn.project_failed";
@@ -161,9 +161,9 @@ pub fn project_ensure(system: &impl System, input: &Value) -> Result<u32, Failur
     if listed(system, &input.server, &input.workspace, &input.title)? {
         return Ok(0);
     }
-    server.status(&["project", "add", &input.workspace, "--title", &input.title])?;
+    server.status("conn.project.add", &["project", "add", &input.workspace, "--title", &input.title])?;
     if !listed(system, &input.server, &input.workspace, &input.title)? {
-        return Err(Failure::new(code, "the project is not listed after project add"));
+        return Err(Failure::new(code, "conn.project.add left the project unlisted"));
     }
     Ok(1)
 }
@@ -176,26 +176,26 @@ pub fn project_ensure(system: &impl System, input: &Value) -> Result<u32, Failur
 /// `host.input_invalid`, before anything runs; `conn.binary_untrusted`; `conn.pairing_issued` when the server already holds
 /// a link with this label, or a session a device redeemed with it; `conn.pairing_failed` when the server cannot be run, times out, refuses or answers no code.
 pub fn pairing_issue(system: &impl System, input: &Value) -> Result<IssuedPairing, Failure> {
-    let input: PairingInput = parse(input)?;
+    let input: PairingInput = typed(input)?;
     checked_server(&input.server)?;
     if !label(&input.label) || !scopes(&input.scopes) || !ttl(&input.ttl) || input.session_ttl != PAIRED_SESSION_TTL || !recipient(&input.seal_to) {
         return Err(invalid("label, scopes, ttl, session_ttl or seal_to"));
     }
     let code = "conn.pairing_failed";
     let server = Run::open(system, &input.server, code)?;
-    let list = server.json(&["auth", "pairing", "list", "--json"])?;
+    let list = server.json("conn.pairing.list", &["auth", "pairing", "list", "--json"])?;
     if entries(&list, code)?.iter().any(|link| link.get("label").and_then(Value::as_str) == Some(input.label.as_str())) {
         return Err(Failure::new("conn.pairing_issued", "a pairing link with this label exists"));
     }
     // A redeemed link leaves the pairing list; the session a device redeemed with it carries its label.
-    let sessions = server.json(&["auth", "session", "list", "--json"])?;
+    let sessions = server.json("conn.session.list", &["auth", "session", "list", "--json"])?;
     if entries(&sessions, code)?.iter().any(|session| session.pointer("/client/label").and_then(Value::as_str) == Some(input.label.as_str())) {
         return Err(Failure::new("conn.pairing_issued", "a session redeemed with this label exists"));
     }
     let scopes = input.scopes.join(",");
-    let answer = server.json(&["auth", "pairing", "create", "--label", &input.label, "--scopes", &scopes, "--ttl", &input.ttl, "--json"])?;
+    let answer = server.json("conn.pairing.create", &["auth", "pairing", "create", "--label", &input.label, "--scopes", &scopes, "--ttl", &input.ttl, "--json"])?;
     let (Some(pairing_id), Some(credential), Some(expires_at)) = (text(&answer, "id"), text(&answer, "credential"), text(&answer, "expiresAt")) else {
-        return Err(Failure::new(code, "auth pairing create answered no link"));
+        return Err(Failure::new(code, "conn.pairing.create answered no link"));
     };
     let sealed = seal(&input.seal_to, &serde_json::json!({"credential": credential}), code)?;
     Ok(IssuedPairing { pairing_id, expires_at, sealed })
@@ -221,25 +221,26 @@ impl<'a, S: System> Run<'a, S> {
         Ok(Self { system, server, binary, ids, code })
     }
 
-    /// Runs one fixed call and answers its standard output; a failure names only the call and its exit status.
-    fn status(&self, words: &[&str]) -> Result<Vec<u8>, Failure> {
+    /// Runs one fixed call and answers its standard output; a failure names only the call's fixed operation name, such as
+    /// `conn.project.add`, and its exit status, never an argument or a path.
+    fn status(&self, op: &'static str, words: &[&str]) -> Result<Vec<u8>, Failure> {
         let (uid, gid) = (self.ids.0.to_string(), self.ids.1.to_string());
         let path = format!("/proc/self/fd/{}", self.binary.as_raw_fd());
         let mut argv = strings(&[SETPRIV, "--reuid", &uid, "--regid", &gid, "--clear-groups", "--", &path]);
         argv.extend(words.iter().map(|word| (*word).to_owned()));
         argv.extend(strings(&["--base-dir", &self.server.home]));
-        let call = words.iter().take_while(|word| !word.starts_with('-')).take(3).copied().collect::<Vec<_>>().join(" ");
-        let exit = self.system.exec(SECONDS, &argv, None).map_err(|_| Failure::new(self.code, format!("{call} could not start")))?;
+        let exit = self.system.exec(SECONDS, &argv, None).map_err(|_| Failure::new(self.code, format!("{op} could not start")))?;
         match exit.code {
             Some(0) => Ok(exit.stdout),
-            Some(TIMED_OUT) => Err(Failure::new(self.code, format!("{call} timed out"))),
-            status => Err(Failure::new(self.code, format!("{call} exited {status:?}"))),
+            Some(TIMED_OUT) => Err(Failure::new(self.code, format!("{op} timed out"))),
+            Some(status) => Err(Failure::new(self.code, format!("{op} exited {status}"))),
+            None => Err(Failure::new(self.code, format!("{op} ended by a signal"))),
         }
     }
 
-    fn json(&self, words: &[&str]) -> Result<Value, Failure> {
-        let stdout = self.status(words)?;
-        serde_json::from_slice(&stdout).map_err(|_| Failure::new(self.code, "the server answered no JSON"))
+    fn json(&self, op: &'static str, words: &[&str]) -> Result<Value, Failure> {
+        let stdout = self.status(op, words)?;
+        serde_json::from_slice(&stdout).map_err(|_| Failure::new(self.code, format!("{op} answered no JSON")))
     }
 }
 
@@ -307,9 +308,16 @@ fn seal(recipient: &str, plaintext: &Value, code: &'static str) -> Result<String
     orbit_executor_core::seal::seal(recipient, plaintext.to_string().as_bytes()).map_err(|_| Failure::new(code, "the answer cannot be sealed"))
 }
 
-/// A recipient the answer can be sealed to: checked before the server makes anything.
+/// A recipient the answer can be sealed to and that contributes to the key agreement, checked before the server makes
+/// anything: a low-order point such as all zeros would make the box's shared secret all zeros.
 fn recipient(key: &str) -> bool {
-    orbit_executor_core::seal::seal(key, b"").is_ok()
+    orbit_executor_core::seal::contributory(key)
+}
+
+/// The order's input in its typed shape, or `host.input_invalid` with a fixed detail: the parser's own message can quote
+/// the input, so it is never logged.
+fn typed<T: serde::de::DeserializeOwned>(input: &Value) -> Result<T, Failure> {
+    serde_json::from_value(input.clone()).map_err(|_| invalid("the input does not match its contract"))
 }
 
 fn checked_server(server: &Server) -> Result<(), Failure> {
@@ -336,12 +344,9 @@ fn scopes(list: &[String]) -> bool {
         && list.iter().all(|scope| !scope.is_empty() && !scope.starts_with('-') && scope.bytes().all(|b| b.is_ascii_lowercase() || b == b':' || b == b'-'))
 }
 
-/// A lifetime the server keeps as sent: `until-revoked`, or a count without a leading zero and one of `s`, `m`, `h`, `d`
-/// or `w`, from 1 second up to the server's 3660-day cap. A longer one the server would shorten without saying so.
+/// A lifetime the server keeps as sent: a count without a leading zero and one of `s`, `m`, `h`, `d` or `w`, from 1 second
+/// up to the server's 3660-day cap. A longer one, and `until-revoked`, the server would shorten to that cap without saying so.
 fn ttl(text: &str) -> bool {
-    if text == "until-revoked" {
-        return true;
-    }
     let Some((count, unit)) = text.split_at_checked(text.len().saturating_sub(1)) else {
         return false;
     };

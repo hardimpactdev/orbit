@@ -15,6 +15,11 @@ use crate::{pairing_issue, project_ensure, session_issue, Exit, System};
 
 const TOKEN: &str = "tok-SECRET-0123456789";
 const CREDENTIAL: &str = "PAIRCODE-SECRET";
+/// A point of order 8 on Curve25519 (RFC 7748's small-subgroup inputs): every shared secret with it is all zeros.
+const ORDER_EIGHT: [u8; 32] = [
+    0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae, 0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xc4, 0x6a, 0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32, 0xb1, 0xfd, 0x86,
+    0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00,
+];
 const HOME: &str = "/srv/conn/home";
 const BINARY: &str = "/opt/conn/bin/conn-server";
 const WORKSPACE: &str = "/srv/workspace";
@@ -204,6 +209,9 @@ fn a_session_input_that_is_not_typed_is_refused_before_anything_runs() {
         ("bad scope", with(session_input(), "scopes", json!(["--scope"]))),
         ("no recipient", with(session_input(), "seal_to", json!("short"))),
         ("a recipient that is not a key", with(session_input(), "seal_to", json!(STANDARD.encode([1_u8; 31])))),
+        ("an all-zero recipient", with(session_input(), "seal_to", json!(STANDARD.encode([0_u8; 32])))),
+        ("a low-order recipient", with(session_input(), "seal_to", json!(STANDARD.encode(ORDER_EIGHT)))),
+        ("until-revoked, which the server caps", with(session_input(), "ttl", json!("until-revoked"))),
         ("relative binary", relative),
         ("home with ..", dotted),
     ];
@@ -216,7 +224,7 @@ fn a_session_input_that_is_not_typed_is_refused_before_anything_runs() {
 
 #[test]
 fn a_session_lifetime_up_to_the_servers_cap_is_kept_as_sent() {
-    for ttl in ["3660d", "87840h", "until-revoked", "1s", "5m", "2w"] {
+    for ttl in ["3660d", "87840h", "1s", "5m", "2w"] {
         let server = Server::new();
         server.answer("auth session list", 0, "[]");
         server.answer("auth session issue", 0, &issued());
@@ -226,7 +234,7 @@ fn a_session_lifetime_up_to_the_servers_cap_is_kept_as_sent() {
 
 #[test]
 fn a_server_that_refuses_times_out_or_answers_no_token_fails_and_logs_only_the_call_and_its_status() {
-    for (exit, expected) in [(1, "auth session issue exited Some(1)"), (124, "auth session issue timed out")] {
+    for (exit, expected) in [(1, "conn.session.issue exited 1"), (124, "conn.session.issue timed out")] {
         let server = Server::new();
         server.answer("auth session list", 0, "[]");
         server.fails("auth session issue", exit, &format!("bad token {TOKEN}"));
@@ -237,11 +245,11 @@ fn a_server_that_refuses_times_out_or_answers_no_token_fails_and_logs_only_the_c
     let server = Server::new();
     server.answer("auth session list", 0, "[]");
     server.answer("auth session issue", 0, &json!({"sessionId": "s-1", "token": ""}).to_string());
-    assert_eq!(session_issue(&server, &session_input()).map_err(|failure| failure.detail).err().as_deref(), Some("auth session issue answered no session"));
+    assert_eq!(session_issue(&server, &session_input()).map_err(|failure| failure.detail).err().as_deref(), Some("conn.session.issue answered no session"));
 
     let server = Server::new();
     server.answer("auth session list", 0, &format!("not json {TOKEN}"));
-    assert_eq!(session_issue(&server, &session_input()).map_err(|failure| failure.detail).err().as_deref(), Some("the server answered no JSON"));
+    assert_eq!(session_issue(&server, &session_input()).map_err(|failure| failure.detail).err().as_deref(), Some("conn.session.list answered no JSON"));
 }
 
 #[test]
@@ -320,9 +328,11 @@ fn a_project_the_server_would_store_differently_is_refused_before_any_change() {
     let server = Server::new();
     std::fs::create_dir_all(server.path("/srv/real")).expect("folder");
     std::os::unix::fs::symlink(server.path("/srv/real"), server.path("/srv/linked")).expect("link");
+    std::fs::write(server.path("/srv/file"), b"not a folder").expect("file");
     for (case, input) in [
         ("relative", with(project_input(), "workspace", json!("relative"))),
         ("missing", with(project_input(), "workspace", json!("/srv/missing"))),
+        ("a file", with(project_input(), "workspace", json!("/srv/file"))),
         ("linked", with(project_input(), "workspace", json!("/srv/linked"))),
         ("below a link", with(project_input(), "workspace", json!("/srv/linked/x"))),
         ("padded", with(project_input(), "title", json!(" Orbit "))),
@@ -385,7 +395,7 @@ fn a_pairing_link_whose_label_the_server_holds_is_refused_and_not_created_again(
 
 #[test]
 fn a_refused_or_timed_out_pairing_fails_and_logs_only_the_call_and_its_status() {
-    for (exit, expected) in [(1, "auth pairing create exited Some(1)"), (124, "auth pairing create timed out")] {
+    for (exit, expected) in [(1, "conn.pairing.create exited 1"), (124, "conn.pairing.create timed out")] {
         let server = Server::new();
         server.answer("auth pairing list", 0, "[]");
         server.answer("auth session list", 0, "[]");
@@ -397,7 +407,7 @@ fn a_refused_or_timed_out_pairing_fails_and_logs_only_the_call_and_its_status() 
     server.answer("auth pairing list", 0, "[]");
     server.answer("auth session list", 0, "[]");
     server.answer("auth pairing create", 0, &json!({"id": "p-1", "expiresAt": "x"}).to_string());
-    assert_eq!(pairing_issue(&server, &pairing_input()).map_err(|failure| failure.detail).err().as_deref(), Some("auth pairing create answered no link"));
+    assert_eq!(pairing_issue(&server, &pairing_input()).map_err(|failure| failure.detail).err().as_deref(), Some("conn.pairing.create answered no link"));
 }
 
 #[test]
@@ -405,6 +415,9 @@ fn a_pairing_input_the_server_would_not_keep_as_sent_is_refused_before_anything_
     let server = Server::new();
     for (field, value) in [
         ("session_ttl", json!("until-revoked")),
+        ("ttl", json!("until-revoked")),
+        ("seal_to", json!(STANDARD.encode([0_u8; 32]))),
+        ("seal_to", json!(STANDARD.encode(ORDER_EIGHT))),
         ("session_ttl", json!("3650d")),
         ("ttl", json!("4000d")),
         ("ttl", json!("1y")),
@@ -445,4 +458,21 @@ fn exec_runs_with_an_empty_environment_and_feeds_standard_input() {
     let slow = Node.exec(1, &["/usr/bin/sleep".to_owned(), "5".to_owned()], None).expect("runs");
     assert_eq!(slow.code, Some(124), "the time limit ends it");
     assert_eq!(Node.binary_owner(), 0, "a Node trusts only root's binary");
+}
+
+#[test]
+fn a_failure_detail_is_fixed_and_names_no_argument_path_or_input() {
+    // The parser's own message would quote the unknown field; the detail names none.
+    let server = Server::new();
+    let failure = session_issue(&server, &with(session_input(), "secret_field", json!("x"))).expect_err("refused");
+    assert_eq!((failure.code, failure.detail.as_str()), ("host.input_invalid", "the input does not match its contract"));
+    let failure = project_ensure(&server, &with(project_input(), "workspace", json!(7))).expect_err("refused");
+    assert_eq!(failure.detail, "the input does not match its contract");
+
+    // A failed call names its fixed operation and status, never the folder, title or home it was given.
+    let mut fails = Server::new();
+    fails.adds = false;
+    let failure = project_ensure(&fails, &project_input()).expect_err("unlisted");
+    assert_eq!(failure.detail, "conn.project.add left the project unlisted");
+    assert!(!failure.detail.contains(WORKSPACE) && !failure.detail.contains(HOME) && !failure.detail.contains("Orbit"));
 }
