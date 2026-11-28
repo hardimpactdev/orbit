@@ -455,7 +455,21 @@ it('refuses in the Node\'s site step, before the first request, when an account 
     'no canonical name' => ['{"state":"present","uid":1000,"gid":1000,"group":"orbit","home":"/home/orbit"}', 'route.account_invalid'],
 ]);
 
-it('accepts any account NSS resolves and joins its home into one spelling', function (string $user, string $group, string $home, string $copies): void {
+it('refuses before any request when NSS answers an owner or group name the host primitives refuse', function (string $user, string $group): void {
+    $run = routeRun(['site-3-account-0' => json_encode(['state' => 'present', 'user' => $user, 'uid' => 1000, 'gid' => 2000, 'group' => $group, 'home' => '/home/orbit'])]);
+
+    try {
+        app(RouteEngineFlow::class)->local(routeOperation(routePlan()), 'site-3-accounts', $run);
+        $this->fail('The check passed.');
+    } catch (EngineStepRefusal $refusal) {
+        expect($refusal->errorCode)->toBe('route.account_invalid');
+    }
+})->with([
+    'a capitalised canonical name' => ['Orbit', 'orbit'],
+    'a dotted group' => ['orbit', 'Dev.Team'],
+]);
+
+it('joins an account\'s home into one spelling', function (string $user, string $group, string $home, string $copies): void {
     $flow = app(RouteEngineFlow::class);
     $run = routeRun(['site-3-account-0' => json_encode(['state' => 'present', 'user' => $user, 'uid' => 1000, 'gid' => 2000, 'group' => $group, 'home' => $home])]);
 
@@ -464,8 +478,6 @@ it('accepts any account NSS resolves and joins its home into one spelling', func
             'owner' => ['user' => $user, 'group' => $group, 'mode' => '0600']])
         ->and($flow->input(routeOperation(routePlan()), 'site-3-copylink-0', $run)['path'])->toBe($copies.'app-instance-7/current');
 })->with([
-    'a capitalised name' => ['Orbit', 'Orbit', '/home/Orbit', '/home/Orbit/.orbit/certificates/'],
-    'a dotted group' => ['orbit', 'Dev.Team', '/home/orbit', '/home/orbit/.orbit/certificates/'],
     'the root folder as home' => ['orbit', 'orbit', '/', '/.orbit/certificates/'],
     'repeated slashes' => ['orbit', 'orbit', '/srv//x', '/srv/x/.orbit/certificates/'],
 ]);

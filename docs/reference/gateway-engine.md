@@ -89,7 +89,10 @@ Admission runs `route.create` on the engine only when all of these hold:
 - No target Instance lies outside development, and the intent has no production placement and no `production_control`.
 - Every Node with work reports the `host` family with `account.read` (agent 0.37.0), which also brings `file.read` and the `source_path` input of `file.ensure`.
 - Every leaf Node reports `tls.csr_input`.
+- Every owner name the Gateway records fits the owner pattern of the host primitives, `^[a-z_][a-z0-9_-]{0,31}$`.
 - Each order fits the signer's limit with real 64-hex guards.
+
+The owner names the Gateway records are the Route's account and each other link owner, so a name such as `Orbit` or `Dev.Team` keeps the Route on Swamp. A name NSS answers outside the pattern refuses at `site-<node>-accounts`, before any request.
 
 Any other `route.create` runs on Swamp as a whole. Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env` or awake markers stay on Swamp in any case, as do Routes with other PHP-FPM pools.
 

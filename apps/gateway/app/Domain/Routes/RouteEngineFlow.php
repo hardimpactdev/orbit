@@ -44,7 +44,10 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
     private const array Unsupported = ['lan', 'ingress', 'ingress_ports', 'env_files', 'awake'];
 
-    /** The executor's own shape rules (orbit-executor-route), checked here first so a mismatch starts on Swamp. */
+    /**
+     * The executor's own shape rules (orbit-executor-route), checked here first so a mismatch starts on Swamp. `Name` is also the
+     * owner pattern of the host primitives (`NAME`, crates/host/src/lib.rs): an owner name outside it never reaches an order.
+     */
     public const string Name = '/\A[a-z_][a-z0-9_-]{0,31}\z/D';
 
     public const string Scope = '/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/D';
@@ -387,9 +390,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             $users[] = ValidatedData::string($link['owner']);
         }
         $users = array_values(array_unique($users));
+        // Admission gate: every owner name the Gateway records (the Route's account, each other link owner) must fit the host
+        // primitives' owner pattern, or the whole Route runs on Swamp before any step, such as `Orbit` or `Dev.Team`.
         foreach ($users as $name) {
             if (preg_match(self::Name, $name) !== 1) {
-                throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
+                throw new EngineUnsupported('An owner name outside the host primitives\' pattern runs on Swamp.');
             }
         }
 
@@ -406,9 +411,13 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     {
         foreach (self::users($plan, $node) as $index => $user) {
             try {
-                self::owner($run->output("site-{$node}-account-{$index}"));
+                [$group, , , $canonical] = self::owner($run->output("site-{$node}-account-{$index}"));
             } catch (RuntimeException $failure) {
                 throw new EngineStepRefusal($failure->getMessage(), "Account {$user} on Node {$node} is not resolvable.", $failure);
+            }
+            // The names NSS answered go to `file.ensure` as owners: one outside its pattern refuses here, before any request.
+            if (preg_match(self::Name, $canonical) !== 1 || preg_match(self::Name, $group) !== 1) {
+                throw new EngineStepRefusal('route.account_invalid', "Account {$user} on Node {$node} resolves to a name the host primitives refuse.");
             }
         }
 

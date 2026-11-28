@@ -25,6 +25,7 @@ sequenceDiagram
     %%> - `route.create` is in `ORBIT_ENGINE_KINDS`, and every Node a step touches reports each step's primitive in `$KV.NODES` (the `host` family with `account.read`, agent 0.37.0), with `tls.csr_input` on the leaf Node; every build with the host family has file.ensure `source_path`, so the key copy needs no feature
     %%> - the flow accepts the plan shape; an Ingress edge, a LAN rule, a production `.env`, awake markers, Caddy access rows, or a pool outside the two pool kinds throws `EngineUnsupported`
     %%> - the kind's own admission (RouteEngineFlow::admit) also refuses a Route with Caddy access rows, and a Node with work that lacks one host primitive, or a leaf Node that lacks `tls.csr_input`
+    %%> - an owner name outside the host primitives' pattern `^[a-z_][a-z0-9_-]{0,31}$` (the Route's account or another link owner, such as `Orbit` or `Dev.Team`) keeps the whole Operation on Swamp; a name NSS answers outside it refuses at the accounts check, before any request
     %%> - production never moves: a site or leaf Node that is not an app-dev Node (app-prod, unclassified, no role), a DNS Node without the vpn role, a target Instance outside development, or an intent with a production placement or `production_control` keeps the whole Operation on Swamp
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     GW-->>CLI: 202 Accepted<br/>task ID

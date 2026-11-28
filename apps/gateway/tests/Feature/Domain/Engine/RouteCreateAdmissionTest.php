@@ -85,6 +85,9 @@ it('keeps a Route on Swamp when one condition fails', function (Closure $operati
         'route_id' => admissionNode(6, [RoleName::AppProd])->id * 0 + 9]))],
     'a production release in the intent' => [fn () => admissionOperation(admissionPlan(), ['production_control' => ['instance_id' => 7, 'release' => 'current']])],
     'a production workload in the intent' => [fn () => admissionOperation(admissionPlan(), ['route_lifecycle' => ['effectful' => true, 'workloads' => [['node_id' => 3, 'production' => true]]]])],
+    'an account name outside the owner pattern' => [fn () => admissionOperation(admissionPlan(['nodes' => ['3' => ['account' => 'Orbit']],
+        'leaves' => [[...admissionPlan()['leaves'][0], 'user' => 'Orbit']]]))],
+    'a link owner outside the owner pattern' => [fn () => admissionOperation(admissionPlan(['links' => [['node_id' => 3, 'path' => '/home/orbit/current', 'target' => 'releases/1', 'owner' => 'Dev.Team']]]))],
     'a Node without account.read' => [function () {
         $bus = Mockery::mock(MachineBus::class);
         $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure', 'ca.trust.ensure']);
