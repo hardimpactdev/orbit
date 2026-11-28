@@ -219,6 +219,11 @@ impl Action {
         matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead | Self::AccountRead)
     }
 
+    /// Whether the action makes one new item per order, such as a session: crash recovery never runs it again.
+    pub fn issues_once(self) -> bool {
+        matches!(self, Self::ConnSessionIssue | Self::ConnPairingIssue)
+    }
+
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {

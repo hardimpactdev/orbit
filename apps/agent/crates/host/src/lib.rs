@@ -120,6 +120,11 @@ pub trait System {
         Ok(Exit { code: output.status.code(), stdout: output.stdout, stderr: output.stderr })
     }
 
+    /// The owner a Conn Server binary and every folder above it must have: root on a Node.
+    fn binary_owner(&self) -> u32 {
+        0
+    }
+
     /// A user's id by name.
     ///
     /// # Errors
@@ -236,15 +241,6 @@ pub struct Exit {
     pub stdout: Vec<u8>,
     /// Its standard error.
     pub stderr: Vec<u8>,
-}
-
-impl Exit {
-    /// Standard error as text, trimmed and cut to 512 bytes for a log line.
-    pub(crate) fn stderr_text(&self) -> String {
-        let text = String::from_utf8_lossy(&self.stderr);
-        let text = text.trim();
-        text.char_indices().take_while(|(index, _)| *index < 512).map(|(_, c)| c).collect()
-    }
 }
 
 /// A blob reference in an order: `{"blob": {"sha256": "…"}}`.
