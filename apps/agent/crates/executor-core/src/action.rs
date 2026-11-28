@@ -110,6 +110,14 @@ pub enum Action {
     FileRead,
     /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
+    /// Fetch one ref of an https remote or a bundle file into one ref of one repository (ADR 0271 N3). Its target is the Node.
+    GitFetch,
+    /// Put one work tree on its branch: checked out, renamed, reset or cleaned (ADR 0271 N3). Its target is the Node.
+    GitCheckout,
+    /// Set one ref only from its expected old value, or delete it (ADR 0271 N3). Its target is the Node.
+    GitRefEnsure,
+    /// Read the HEAD, branch and change counts of one work tree (ADR 0271 N3). Read-only. Its target is the Node.
+    GitWorktreeRead,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -124,7 +132,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 42] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -163,6 +171,10 @@ impl Action {
         Self::HttpProbe,
         Self::FileRead,
         Self::AccountRead,
+        Self::GitFetch,
+        Self::GitCheckout,
+        Self::GitRefEnsure,
+        Self::GitWorktreeRead,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -199,12 +211,13 @@ impl Action {
             | Self::HttpProbe
             | Self::FileRead
             | Self::AccountRead => Family::Host,
+            Self::GitFetch | Self::GitCheckout | Self::GitRefEnsure | Self::GitWorktreeRead => Family::Git,
         }
     }
 
     /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
     pub fn read_only(self) -> bool {
-        matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead | Self::AccountRead)
+        matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead | Self::AccountRead | Self::GitWorktreeRead)
     }
 
     /// What the action's target names.
@@ -234,7 +247,11 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => TargetKind::Node,
+            | Self::AccountRead
+            | Self::GitFetch
+            | Self::GitCheckout
+            | Self::GitRefEnsure
+            | Self::GitWorktreeRead => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -277,6 +294,9 @@ impl Action {
                 | Self::CaTrustEnsure
                 | Self::SystemdUnitEnsure
                 | Self::ConfigApply
+                | Self::GitFetch
+                | Self::GitCheckout
+                | Self::GitRefEnsure
         )
     }
 
@@ -321,6 +341,10 @@ impl Action {
             Self::HttpProbe => "http.probe",
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
+            Self::GitFetch => "git.fetch",
+            Self::GitCheckout => "git.checkout",
+            Self::GitRefEnsure => "git.ref.ensure",
+            Self::GitWorktreeRead => "git.worktree.read",
         }
     }
 }
@@ -373,6 +397,10 @@ impl FromStr for Action {
             "http.probe" => Ok(Self::HttpProbe),
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
+            "git.fetch" => Ok(Self::GitFetch),
+            "git.checkout" => Ok(Self::GitCheckout),
+            "git.ref.ensure" => Ok(Self::GitRefEnsure),
+            "git.worktree.read" => Ok(Self::GitWorktreeRead),
             _ => Err(UnknownActionError),
         }
     }
@@ -418,6 +446,8 @@ pub enum Family {
     Process,
     /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
     Host,
+    /// Git primitives: one ref fetched, one work tree's branch, one ref compared and set, one work tree read (ADR 0271 N3).
+    Git,
 }
 
 /// The family name is unknown to this executor.
@@ -439,6 +469,7 @@ impl Family {
             "instance" => Some(Self::Instance),
             "process" => Some(Self::Process),
             "host" => Some(Self::Host),
+            "git" => Some(Self::Git),
             _ => None,
         }
     }

@@ -656,10 +656,11 @@ mod tests {
             && Action::RouteWithdrawSite.receipt_fenced());
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
         // The host primitives that change a resource are fenced as the Route actions they replace; the read-only probe and reads are not.
-        for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply] {
+        for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply,
+            Action::GitFetch, Action::GitCheckout, Action::GitRefEnsure] {
             assert!(action.receipt_fenced() && !action.read_only(), "{action} is fenced");
         }
-        for action in [Action::HttpProbe, Action::FileRead, Action::AccountRead] {
+        for action in [Action::HttpProbe, Action::FileRead, Action::AccountRead, Action::GitWorktreeRead] {
             assert!(action.read_only() && !action.receipt_fenced(), "{action} reads only");
         }
     }

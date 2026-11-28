@@ -1602,7 +1602,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "orbit-agent"
-version = "0.38.0"
+version = "0.41.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1694,6 +1694,7 @@ dependencies = [
  "orbit-executor-core",
  "orbit-executor-dns",
  "orbit-executor-firewall",
+ "orbit-executor-git",
  "orbit-executor-host",
  "orbit-executor-instance",
  "orbit-executor-power",
@@ -1737,6 +1738,16 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "orbit-executor-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

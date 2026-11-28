@@ -1,7 +1,7 @@
 # One workspace (ADR 0267 P10): the observer, its contract, the executor's core crate and the executor binary.
 # The observer joins `[lints] workspace = true` in the last fix slice of B1, so CI stays green on the way.
 [workspace]
-members = [".", "crates/contract", "crates/executor-core", "crates/executor", "crates/power", "crates/firewall", "crates/route", "crates/dns", "crates/instance", "crates/process", "crates/host"]
+members = [".", "crates/contract", "crates/executor-core", "crates/executor", "crates/power", "crates/firewall", "crates/route", "crates/dns", "crates/instance", "crates/process", "crates/host", "crates/git"]
 resolver = "2"
 
 # BeautifulRust's lints/lints.toml (ADR 0267 P9). Every executor crate sets `[lints] workspace = true`.
@@ -66,7 +66,7 @@ enum_glob_use = "allow"                  # use Enum::* inside a function that ma
 
 [package]
 name = "orbit-agent"
-version = "0.38.0"
+version = "0.41.0"
 edition = "2021"
 rust-version = "1.89"
 
