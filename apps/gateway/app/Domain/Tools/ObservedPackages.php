@@ -79,6 +79,8 @@ final readonly class ObservedPackages
             $row = ValidatedData::object($row);
             $name = ValidatedData::string($row['name'] ?? '');
             $versions = array_values(array_filter(self::list($row['versions'] ?? [$row['version'] ?? null]), is_string(...)));
+            $linked = ValidatedData::nullableString($row['linked'] ?? null);
+            $version = (new ObservedPackage($name, $versions, $linked, false, null))->version();
             $dependency = match ($manager) {
                 ToolManagerName::Composer => ! in_array($name, $roots, true),
                 ToolManagerName::Brew => ($row['on_request'] ?? null) !== true,
@@ -90,10 +92,10 @@ final readonly class ObservedPackages
                 $manager === ToolManagerName::BrewCask => ToolInventoryPackage::BLOCK_ARTIFACT,
                 $dependency => ToolInventoryPackage::BLOCK_DEPENDENCY,
                 ($row['held'] ?? null) === true => ToolInventoryPackage::BLOCK_HELD,
-                count($versions) !== 1 || $versions[0] === 'latest' => ToolInventoryPackage::BLOCK_VERSION,
+                $version === null || $version === 'latest' => ToolInventoryPackage::BLOCK_VERSION,
                 default => null,
             };
-            $rows[] = new ObservedPackage($name, $versions, $dependency, $block);
+            $rows[] = new ObservedPackage($name, $versions, $linked, $dependency, $block);
         }
 
         return $rows;
