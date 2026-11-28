@@ -274,7 +274,15 @@ Each issue makes one item per order. A repeated delivery of the order answers it
 
 Other failures are `conn.session_failed`, `conn.project_failed` and `conn.pairing_failed`: a server that cannot run, the time limit, a refusal, an answer with no token or code, a local API that is not reached or answers other than 200, or a minting session that cannot be revoked.
 
-They meet the [five conditions](#what-a-primitive-may-be): one Conn Server's session, project or link; the binary, home, account, folder, labels, scopes and lifetimes all from the Gateway, with only the server's own file layout and scope names in the Rust code; desired state for the project, and one item per order for the issues; and commands fixed in the Rust code, with the order supplying only checked values. They join the host family and the Gateway's signable actions. No flow sends them yet, and none answers `conn.pairing_create`. The Gateway admits a kind only on Nodes that report it, from agent 0.42.0.
+They meet the [five conditions](#what-a-primitive-may-be):
+
+- One resource: one Conn Server's session, project or pairing link.
+- No Orbit concept: the Rust code holds only the server's own file layout and scope names.
+- Explicit input: the Gateway sends the binary, home, account, folder, labels, scopes and lifetimes.
+- Desired state: the project converges, and each issue makes one item per order.
+- Typed input: the commands are fixed in the Rust code, and the order supplies only checked values.
+
+They join the host family and the Gateway's signable actions. No flow sends them yet, and none answers `conn.pairing_create`. The Gateway admits a kind only on Nodes that report it, from agent 0.42.0.
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 

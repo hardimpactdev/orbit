@@ -32,7 +32,7 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
 - **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
 - **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
-- **Conn Server primitives:** Agent `0.42.0` adds `conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue`: one session, project or pairing link of a Conn Server, a token or code sealed to the Gateway ([the Conn Server primitives](/reference/executor#the-conn-server-primitives)).
+- **Conn Server primitives:** Agent `0.42.0` adds the [Conn Server primitives](/reference/executor#the-conn-server-primitives) `conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue`.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
