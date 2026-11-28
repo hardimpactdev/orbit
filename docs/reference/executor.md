@@ -258,7 +258,9 @@ A failed write, read-back or validation puts every file back to its recorded pri
 
 An executor with the `route` family reports the `tls.csr_input` feature. With it, `tls.ensure_csr` takes `directory`, `key`, `user`, `group`, `directory_mode`, `key_mode` and `subject`; the Gateway sends `<directory>/key.pem`, root, `caddy`, `0750`, `0640` and `/CN=Orbit`.
 
-It keeps a key that `openssl pkey` reads as PEM or DER, and puts its owner and mode right. A file that is decisively not a key (empty, or holding no PEM block of any kind and failing DER) is replaced once, as on main, and the request goes on. Deviation from main, for safety: a file with a PEM block openssl cannot read (encrypted, a certificate only, other), or an inspection that times out or cannot start, fails the request with `app-dev.certificate_request_failed` and keeps the file. Main replaced these; Orbit never writes such keys. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
+It keeps a key that `openssl pkey` reads as PEM or DER, and puts its owner and mode right. A file that is decisively not a key (empty, or holding no PEM block of any kind and failing DER) is replaced once, as on main, and the request goes on.
+
+Deviation from main, for safety: a file with a PEM block openssl cannot read (encrypted, a certificate only, other), or an inspection that times out or cannot start, fails the request with `app-dev.certificate_request_failed` and keeps the file. Main replaced these; Orbit never writes such keys. A missing key is made new through a file the action creates exclusively, never through a link. A Route whose leaf Node lacks the feature runs on Swamp.
 
 ### The instance family
 
