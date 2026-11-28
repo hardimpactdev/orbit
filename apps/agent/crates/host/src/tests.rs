@@ -368,7 +368,7 @@ fn acl_ensure_reads_first_and_sets_only_a_differing_entry() {
 }
 
 #[test]
-fn acl_ensure_compares_exact_effective_permissions_on_every_path_and_counts_them() {
+fn acl_ensure_compares_exact_effective_permissions_on_its_path() {
     let fake = Fake::new();
     fs::create_dir_all(fake.path("/srv/tree/sub")).expect("folders");
     fs::write(fake.path("/srv/tree/sub/file"), "x").expect("file");
@@ -378,13 +378,27 @@ fn acl_ensure_compares_exact_effective_permissions_on_every_path_and_counts_them
     // A mask that cuts the entry is a difference too.
     fake.acls.borrow_mut().insert("/srv/tree".to_owned(), vec!["user:web:r-x".to_owned(), "mask::r--".to_owned()]);
     assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/tree", "user": "web", "perms": "r-x"})), Ok(1));
-    // Recursive: every path is counted, `X` is search on folders only, and a repeat writes nothing.
-    let recursive = json!({"path": "/srv/tree", "user": "web", "perms": "r-X", "recursive": true});
-    assert_eq!(acl_ensure(&fake, &recursive), Ok(2), "the sub folder and the file change; the root already holds r-x");
-    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]), "the mask is written explicitly");
+    // `X` is search on a folder and nothing on a plain file; a repeat writes nothing.
+    let folder = json!({"path": "/srv/tree/sub", "user": "web", "perms": "r-X"});
+    assert_eq!(acl_ensure(&fake, &folder), Ok(1));
+    assert_eq!(fake.acls.borrow().get("/srv/tree/sub").cloned(), Some(vec!["user:web:r-x".to_owned(), "mask::r-x".to_owned()]), "the mask is written explicitly");
+    let file = json!({"path": "/srv/tree/sub/file", "user": "web", "perms": "r-X"});
+    assert_eq!(acl_ensure(&fake, &file), Ok(1));
+    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]));
     let writes = fake.ran("/usr/bin/setfacl");
-    assert_eq!(acl_ensure(&fake, &recursive), Ok(0));
+    assert_eq!(acl_ensure(&fake, &folder), Ok(0));
     assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
+}
+
+#[test]
+fn acl_ensure_acts_on_one_path_and_leaves_its_children_untouched() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path("/srv/top/child")).expect("folders");
+    fs::write(fake.path("/srv/top/child/file"), "x").expect("file");
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/top", "user": "web", "perms": "r-x"})), Ok(1));
+    assert!(fake.acls.borrow().get("/srv/top/child").is_none() && fake.acls.borrow().get("/srv/top/child/file").is_none(), "nothing below the path changes");
+    assert!(fake.ran.borrow().iter().all(|argv| !argv.iter().any(|arg| arg.starts_with(&fake.path("/srv/top/child").to_string_lossy().into_owned()) || arg.starts_with("/srv/top/child"))), "no command names a child");
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/top", "user": "web", "perms": "r-x", "recursive": true})).expect_err("no recursive input").code, "host.input_invalid");
 }
 
 #[test]

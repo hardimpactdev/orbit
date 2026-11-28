@@ -1,5 +1,6 @@
-//! `posix.acl.ensure`: one user entry of the access list of one path, or of every folder below it. Lifted from the
-//! `setfacl` calls of `route.publish_site` (`access_argv`); the subject user, the path and the permissions come from input.
+//! `posix.acl.ensure`: one user entry of the access or default list of exactly one path; the Gateway sends one order per
+//! path. Lifted from the `setfacl` calls of `route.publish_site` (`access_argv`); the subject user, the path and the
+//! permissions come from input.
 
 use std::os::unix::fs::MetadataExt as _;
 use std::sync::LazyLock;
@@ -22,9 +23,6 @@ struct Input {
     /// The default entry that new folders inherit, instead of the access entry.
     #[serde(default)]
     default: bool,
-    /// Every folder below the path too (and, for an access entry, every file).
-    #[serde(default)]
-    recursive: bool,
     /// The account that runs `setfacl`, so a path it cannot reach is never changed with root's rights.
     #[serde(default)]
     run_as: Option<String>,
@@ -33,10 +31,9 @@ struct Input {
     optional: bool,
 }
 
-/// Sets the entry where it differs and answers how many paths changed. Each affected path (the path, or with `recursive`
-/// every folder below it, and every file for an access entry; links are never followed) is read first. A path changes when
-/// its entry differs from the wanted permissions, `X` resolved per path as `setfacl` does, or when its mask cuts the entry.
-/// Every changed path is read back.
+/// Sets the entry on the one path where it differs and answers `1` on a change and `0` on a repeat. The path is read first,
+/// never through a link, and nothing below it is touched. It changes when its entry differs from the wanted permissions, `X`
+/// resolved as `setfacl` does, or when its mask cuts the entry. A change is read back.
 ///
 /// # Errors
 ///
@@ -54,7 +51,7 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32
         Err(error) => return Err(failed(error.to_string())),
         Ok(_) => {}
     }
-    // Each affected path as the order names it, with the permissions it must hold.
+    // The one path as the order names it, with the permissions it must hold.
     let mut paths: Vec<(String, String)> = Vec::new();
     collect(&root, &input.path, &input, &mut paths).map_err(|error| failed(error.to_string()))?;
     let prefix = input.run_as.as_ref().map_or_else(Vec::new, |user| strings(&["/usr/sbin/runuser", "-u", user, "--", "/usr/bin/env", "-C", "/"]));
@@ -217,8 +214,8 @@ fn unescape(name: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The affected paths below `path` (named `name`), never through a link, each with the permissions it must hold: `X` is
-/// search on a folder, and on a file only when some execute bit is set.
+/// The one path (named `name`), never through a link, with the permissions it must hold: `X` is search on a folder, and
+/// on a file only when some execute bit is set.
 fn collect(path: &std::path::Path, name: &str, input: &Input, paths: &mut Vec<(String, String)>) -> std::io::Result<()> {
     let meta = std::fs::symlink_metadata(path)?;
     let folder = meta.file_type().is_dir();
@@ -227,13 +224,5 @@ fn collect(path: &std::path::Path, name: &str, input: &Input, paths: &mut Vec<(S
     }
     let search = folder || meta.mode() & 0o111 != 0;
     paths.push((name.to_owned(), input.perms.replace('X', if search { "x" } else { "-" })));
-    if input.recursive && folder {
-        let mut children: Vec<_> = std::fs::read_dir(path)?.collect::<Result<_, _>>()?;
-        children.sort_by_key(std::fs::DirEntry::file_name);
-        for child in children {
-            let child_name = format!("{name}/{}", child.file_name().to_string_lossy());
-            collect(&child.path(), &child_name, input, paths)?;
-        }
-    }
     Ok(())
 }

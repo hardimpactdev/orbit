@@ -224,7 +224,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | --- | --- | --- |
 | `file.ensure` | `state` `file`, `directory`, `link` or `absent`, with path, owner and mode; a file may carry `from_sha256` | Writes a changed file beside its final name and moves it in place, repairs owner and mode, and reads it back |
 | `dotenv.ensure` | Path, the user who must own the file, and key/value pairs | Replaces each key's last line or appends it. The file keeps its owner and mode. A missing file, or a link to another user's file, fails. |
-| `posix.acl.ensure` | Path, subject user, `rwx` permissions, `default`, `recursive`, `optional`, and the account `setfacl` runs as | Reads each affected path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; answers the paths it changed |
+| `posix.acl.ensure` | One path, subject user, `rwx` permissions, `default`, `optional`, and the account `setfacl` runs as; send one order per path | Reads the path with `getfacl`, never through a link, and sets the entry only where it or the mask differs; nothing below the path changes |
 | `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and runs the plain updater after a change |
 | `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` from 1 s to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
 | `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
@@ -233,6 +233,8 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
+
+`posix.acl.ensure` acts on exactly one path, the access or default entry of that path only; the Gateway sends one order per path. If a recursive ACL is genuinely needed, that is a primitive-rule change for Nick.
 
 `ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Route creation needs it: it installs the managed root CA, as `route.publish_site` does today. After a change it runs the plain `update-ca-certificates`, never `--fresh`. It then checks with `openssl verify -no-CApath -no-CAstore -CAfile /etc/ssl/certs/ca-certificates.crt`, so only the named bundle counts, that the certificate is trusted and has a subject-hash link (`present`), or is not trusted (`absent`). Only a conclusive answer counts: a timeout, a command that cannot start or another failure answers `trust.ensure_failed`.
 
