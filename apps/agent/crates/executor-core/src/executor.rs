@@ -655,11 +655,13 @@ mod tests {
         assert!(Action::TlsEnsureCsr.receipt_fenced() && Action::RoutePublishSite.receipt_fenced() && Action::DnsPublishRecords.receipt_fenced()
             && Action::RouteWithdrawSite.receipt_fenced());
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
-        // The host primitives that change a resource are fenced as the Route actions they replace; the read-only probe is not.
+        // The host primitives that change a resource are fenced as the Route actions they replace; the read-only probe and read are not.
         for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply] {
             assert!(action.receipt_fenced() && !action.read_only(), "{action} is fenced");
         }
-        assert!(Action::HttpProbe.read_only() && !Action::HttpProbe.receipt_fenced());
+        for action in [Action::HttpProbe, Action::FileRead] {
+            assert!(action.read_only() && !action.receipt_fenced(), "{action} reads only");
+        }
     }
 
     #[test]

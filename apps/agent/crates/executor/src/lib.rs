@@ -152,6 +152,7 @@ impl Run for Families {
             Action::DnsPublishRecords => dns(order),
             Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
             | Action::ConfigApply | Action::HttpProbe => host(order),
+            Action::FileRead => file_read(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -378,6 +379,18 @@ fn host(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |changes| Outcome::Applied { changes },
+    )
+}
+
+/// `file.read` of the host family: what one path holds, as JSON in the receipt's output. It changes nothing.
+fn file_read(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_host::file_read(&system, order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |read| Outcome::Output { stdout: serde_json::json!(read).to_string() },
     )
 }
 

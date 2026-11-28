@@ -2,6 +2,7 @@
 //! that any Linux host can have, and the Gateway sends every path, name, owner, mode, lock, unit and digest.
 //!
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
+//! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
 //! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path.
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
@@ -20,6 +21,7 @@ mod file;
 mod fs;
 mod lock;
 mod probe;
+mod read;
 mod trust;
 mod unit;
 
@@ -39,6 +41,7 @@ pub use config::config_apply;
 pub use dotenv::dotenv_ensure;
 pub use file::file_ensure;
 pub use probe::probe;
+pub use read::{file_read, Read};
 pub use trust::trust_ensure;
 pub use unit::unit_ensure;
 

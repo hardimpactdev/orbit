@@ -316,7 +316,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::CaTrustEnsure
             | orbit_executor_core::action::Action::SystemdUnitEnsure
             | orbit_executor_core::action::Action::ConfigApply
-            | orbit_executor_core::action::Action::HttpProbe => {
+            | orbit_executor_core::action::Action::HttpProbe
+            | orbit_executor_core::action::Action::FileRead => {
                 panic!("power actions only")
             }
         }
