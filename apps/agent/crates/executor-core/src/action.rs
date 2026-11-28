@@ -121,6 +121,12 @@ pub enum Action {
     /// Converge one Incus instance: copied from a snapshot, running, stopped or absent, through the Incus API over its unix
     /// socket (ADR 0271 N3). Its target is the Node, because the instance may not exist yet.
     IncusInstanceEnsure,
+    /// Restart one run of one systemd unit at most once per order and read a new active run back (ADR 0271 N3). Its target
+    /// is the Node.
+    SystemdUnitRestart,
+    /// Send one signal from a fixed set to one systemd unit's main process at most once per order (ADR 0271 N3). Its target
+    /// is the Node.
+    SystemdUnitSignal,
     /// One network ACL in one Incus project, with its rules, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
     IncusAclEnsure,
     /// One device key of one Incus instance, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
@@ -142,7 +148,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 48] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -186,6 +192,8 @@ impl Action {
         Self::GitRefEnsure,
         Self::GitWorktreeRead,
         Self::IncusInstanceEnsure,
+        Self::SystemdUnitRestart,
+        Self::SystemdUnitSignal,
         Self::IncusAclEnsure,
         Self::IncusDeviceEnsure,
         Self::IncusVolumeEnsure,
@@ -221,6 +229,8 @@ impl Action {
             | Self::PosixAclEnsure
             | Self::CaTrustEnsure
             | Self::SystemdUnitEnsure
+            | Self::SystemdUnitRestart
+            | Self::SystemdUnitSignal
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
@@ -233,6 +243,13 @@ impl Action {
     /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
     pub fn read_only(self) -> bool {
         matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead | Self::AccountRead | Self::GitWorktreeRead)
+    }
+
+    /// Whether the action may act at most once per order, because a repeat would act again: a restart or a signal is no
+    /// desired state. Its open journal record marks it as spent, so start-up recovery never runs it again and answers
+    /// [`crate::executor::RUN_INTERRUPTED`]; a resend after its `done` record gets the recorded result.
+    pub fn at_most_once(self) -> bool {
+        matches!(self, Self::SystemdUnitRestart | Self::SystemdUnitSignal)
     }
 
     /// What the action's target names.
@@ -268,6 +285,8 @@ impl Action {
             | Self::GitRefEnsure
             | Self::GitWorktreeRead
             | Self::IncusInstanceEnsure
+            | Self::SystemdUnitRestart
+            | Self::SystemdUnitSignal
             | Self::IncusAclEnsure
             | Self::IncusDeviceEnsure
             | Self::IncusVolumeEnsure => TargetKind::Node,
@@ -317,6 +336,8 @@ impl Action {
                 | Self::GitCheckout
                 | Self::GitRefEnsure
                 | Self::IncusInstanceEnsure
+                | Self::SystemdUnitRestart
+                | Self::SystemdUnitSignal
         )
     }
 
@@ -366,6 +387,8 @@ impl Action {
             Self::GitRefEnsure => "git.ref.ensure",
             Self::GitWorktreeRead => "git.worktree.read",
             Self::IncusInstanceEnsure => "incus.instance.ensure",
+            Self::SystemdUnitRestart => "systemd.unit.restart",
+            Self::SystemdUnitSignal => "systemd.unit.signal",
             Self::IncusAclEnsure => "incus.acl.ensure",
             Self::IncusDeviceEnsure => "incus.device.ensure",
             Self::IncusVolumeEnsure => "incus.volume.ensure",
@@ -426,6 +449,8 @@ impl FromStr for Action {
             "git.ref.ensure" => Ok(Self::GitRefEnsure),
             "git.worktree.read" => Ok(Self::GitWorktreeRead),
             "incus.instance.ensure" => Ok(Self::IncusInstanceEnsure),
+            "systemd.unit.restart" => Ok(Self::SystemdUnitRestart),
+            "systemd.unit.signal" => Ok(Self::SystemdUnitSignal),
             "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
             "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
             "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
@@ -472,7 +497,7 @@ pub enum Family {
     Instance,
     /// A Process's run state and a Schedule's Node timer (ADR 0271).
     Process,
-    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
+    /// Host-resource primitives: files, dotenv keys, access lists, trust, units and their restarts and signals, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
     Host,
     /// Git primitives: one ref fetched, one work tree's branch, one ref compared and set, one work tree read (ADR 0271 N3).
     Git,
@@ -560,6 +585,10 @@ mod tests {
         assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
         assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert_eq!("systemd.unit.restart".parse(), Ok(Action::SystemdUnitRestart));
+        assert_eq!("systemd.unit.signal".parse(), Ok(Action::SystemdUnitSignal));
+        assert!(Enabled::parse("host\n").expect("valid file").allows(Action::SystemdUnitSignal));
+        assert!(Action::SystemdUnitRestart.at_most_once() && !Action::SystemdUnitEnsure.at_most_once());
         assert_eq!("incus.volume.ensure".parse(), Ok(Action::IncusVolumeEnsure));
         assert!(Enabled::parse("incus\n").expect("valid file").allows(Action::IncusAclEnsure));
         assert!(!Enabled::parse("host\n").expect("valid file").allows(Action::IncusDeviceEnsure));

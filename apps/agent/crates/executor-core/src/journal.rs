@@ -342,8 +342,19 @@ impl Live {
     }
 }
 
+/// Whether an append waits for the disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Durability {
+    /// Written to the file; the syncer syncs it within a second.
+    Written,
+    /// Written and synced before the append answers.
+    Synced,
+}
+
 enum Command {
     Append(Record, Sender<Result<(), JournalError>>),
+    /// Append, then sync the file before answering.
+    AppendSynced(Record, Sender<Result<(), JournalError>>),
     Compact(Sender<Result<(), JournalError>>),
 }
 
@@ -357,6 +368,7 @@ impl std::fmt::Debug for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Append(..) => "Append",
+            Self::AppendSynced(..) => "AppendSynced",
             Self::Compact(_) => "Compact",
         })
     }
@@ -543,12 +555,14 @@ struct InFlight {
     since: Vec<Record>,
     written: Receiver<Result<(), JournalError>>,
     callers: Vec<Sender<Result<(), JournalError>>>,
+    /// A synced append went to the old journal meanwhile, so the compacted file is synced before it replaces it.
+    synced_since: bool,
 }
 
 /// How long the writer waits for a command while a compaction is in flight, before it looks for the syncer's answer.
 const COMPACTION_POLL: Duration = Duration::from_millis(5);
 
-/// What the writer thread owns. It writes and renames; it never syncs.
+/// What the writer thread owns. It writes and renames; it syncs only for a synced append.
 struct Writer {
     path: PathBuf,
     file: Arc<File>,
@@ -572,15 +586,12 @@ impl Writer {
             };
             match commands.recv_timeout(wait) {
                 Ok(Command::Append(record, reply)) => {
-                    let written = write_record(&self.file, &self.path, &record);
-                    if written.is_ok() {
-                        self.live.apply(&record);
-                        self.appended += 1;
-                        if let Some(in_flight) = self.in_flight.as_mut() {
-                            in_flight.since.push(record);
-                        }
-                    }
+                    let written = self.append(record, Durability::Written);
                     // A sender that stopped waiting has nothing left to learn.
+                    let _ = reply.send(written);
+                }
+                Ok(Command::AppendSynced(record, reply)) => {
+                    let written = self.append(record, Durability::Synced);
                     let _ = reply.send(written);
                 }
                 Ok(Command::Compact(reply)) => {
@@ -605,6 +616,20 @@ impl Writer {
         }
     }
 
+    fn append(&mut self, record: Record, durability: Durability) -> Result<(), JournalError> {
+        write_record(&self.file, &self.path, &record)?;
+        if durability == Durability::Synced {
+            self.file.sync_data().map_err(io_error("sync", &self.path))?;
+        }
+        self.live.apply(&record);
+        self.appended += 1;
+        if let Some(in_flight) = self.in_flight.as_mut() {
+            in_flight.since.push(record);
+            in_flight.synced_since |= durability == Durability::Synced;
+        }
+        Ok(())
+    }
+
     fn begin_compaction(&mut self) {
         if self.in_flight.is_some() {
             return;
@@ -625,6 +650,7 @@ impl Writer {
             since: Vec::new(),
             written,
             callers: Vec::new(),
+            synced_since: false,
         });
     }
 
@@ -643,7 +669,7 @@ impl Writer {
         let Some(in_flight) = self.in_flight.take() else {
             return;
         };
-        let outcome = result.and_then(|()| self.swap(&in_flight.since));
+        let outcome = result.and_then(|()| self.swap(&in_flight));
         if let Err(error) = &outcome {
             (self.log)(&format!("journal compaction failed: {error}"));
         }
@@ -655,11 +681,14 @@ impl Writer {
         }
     }
 
-    fn swap(&mut self, since: &[Record]) -> Result<(), JournalError> {
+    fn swap(&mut self, in_flight: &InFlight) -> Result<(), JournalError> {
         let temporary = compacted_path(&self.path);
         let file = open_append(&temporary)?;
-        for record in since {
+        for record in &in_flight.since {
             write_record(&file, &temporary, record)?;
+        }
+        if in_flight.synced_since {
+            file.sync_data().map_err(io_error("sync", &temporary))?;
         }
         fs::rename(&temporary, &self.path).map_err(io_error("rename", &self.path))?;
         self.file = Arc::new(file);
@@ -723,6 +752,20 @@ impl Journal {
         let (reply, answer) = mpsc::channel();
         self.commands
             .send(Command::Append(record.clone(), reply))
+            .map_err(|_| JournalError::WriterGone)?;
+        answer.recv().map_err(|_| JournalError::WriterGone)?
+    }
+
+    /// Appends one record and waits until it is written and synced to disk. Only an at-most-once action's open record needs
+    /// this (`Action::at_most_once`): it must survive a power loss before the action acts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError`] when the record cannot be written or synced, or the writer is gone.
+    pub fn append_synced(&self, record: &Record) -> Result<(), JournalError> {
+        let (reply, answer) = mpsc::channel();
+        self.commands
+            .send(Command::AppendSynced(record.clone(), reply))
             .map_err(|_| JournalError::WriterGone)?;
         answer.recv().map_err(|_| JournalError::WriterGone)?
     }

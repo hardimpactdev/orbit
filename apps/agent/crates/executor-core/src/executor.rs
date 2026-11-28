@@ -30,6 +30,10 @@ pub trait Run: Send + Sync {
 /// The code of an order that expired while it waited for its target's lock. It never acted.
 pub const ORDER_EXPIRED: &str = "executor.order_expired";
 
+/// The code of an at-most-once order ([`Action::at_most_once`]) that start-up found open: it may have acted before the
+/// executor stopped, so it never runs again. The Gateway reads the resource to learn what happened.
+pub const RUN_INTERRUPTED: &str = "executor.run_interrupted";
+
 /// The result line for one order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Reply {
@@ -91,6 +95,9 @@ pub struct Executor<R> {
     done: Mutex<HashMap<DoneKey, Finished>>,
     targets: Mutex<HashMap<TargetId, Arc<Mutex<()>>>>,
     clock: fn() -> u64,
+    /// Fails every `done` append, so a test can lose exactly the result record.
+    #[cfg(test)]
+    fail_done: std::sync::atomic::AtomicBool,
 }
 
 impl<R> std::fmt::Debug for Executor<R> {
@@ -236,6 +243,8 @@ impl<R: Run> Executor<R> {
             done: Mutex::new(done),
             targets: Mutex::new(HashMap::new()),
             clock,
+            #[cfg(test)]
+            fail_done: std::sync::atomic::AtomicBool::new(false),
         };
 
         Ok((executor, Pending(unfinished)))
@@ -279,7 +288,7 @@ impl<R: Run> Executor<R> {
         for open in pending.0 {
             let key = open.key.clone();
             let order = VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
-            let outcome = self.runner.run(&order);
+            let outcome = if key.action.at_most_once() { Outcome::failed(RUN_INTERRUPTED) } else { self.runner.run(&order) };
             self.finish(open.nonce, &key, &outcome, (self.clock)())?;
             // The target's lock goes with its last repeat, so its new orders run without waiting for other targets.
             if left.get_mut(&key.target).is_some_and(|count| {
@@ -377,9 +386,10 @@ impl<R: Run> Executor<R> {
             power_check: order.power_check(),
             input: order.input().clone(),
         };
-        self.journal
-            .append(&open)
-            .map_err(|_| StateRefusal::JournalWrite)?;
+        // An at-most-once action is spent once its open record is on disk, synced before it acts: recovery never runs it
+        // again, even after a power loss.
+        let opened = if key.action.at_most_once() { self.journal.append_synced(&open) } else { self.journal.append(&open) };
+        opened.map_err(|_| StateRefusal::JournalWrite)?;
         let outcome = self.runner.run(order);
         // The action ran; a lost done record only means a repeat runs it again after a crash, which every
         // action allows, so the result still goes back.
@@ -411,8 +421,13 @@ impl<R: Run> Executor<R> {
             outcome: outcome.clone(),
             at_ms: now_ms,
         };
+        #[cfg(test)]
+        let written = if self.fail_done.load(std::sync::atomic::Ordering::SeqCst) { Err(JournalError::WriterGone) } else { self.journal.append(&record) };
+        #[cfg(not(test))]
         let written = self.journal.append(&record);
-        if !outcome.ends_operation(key.action) || (key.action.receipt_fenced() && written.is_err()) {
+        // An at-most-once action keeps its result in memory even when the record is lost: it acted, so a resend answers the
+        // result and never runs it again, and after a restart its synced open record ends it as interrupted.
+        if !outcome.ends_operation(key.action) || (key.action.receipt_fenced() && written.is_err() && !key.action.at_most_once()) {
             return written;
         }
         let mut done = self.done.lock().expect("done map lock poisoned");
@@ -627,6 +642,115 @@ mod tests {
         }
     }
 
+    /// A signed `systemd.unit.restart` or `systemd.unit.signal` order for the Node.
+    fn unit_order(action: &str, nonce: &str, operation: &str) -> VerifiedOrder {
+        let mut fields = payload();
+        fields["action"] = action.into();
+        fields["target"] = "7".into();
+        fields["operation"] = operation.into();
+        fields["nonce"] = nonce.into();
+        fields["expires_ms"] = (NOW + 5000).into();
+        fields["input"] = serde_json::json!({"unit": "web.service", "budget_ms": 1000});
+        let keys = pinned(1);
+        let enabled = Enabled::parse("host").expect("valid");
+        let node = "7".parse().expect("id");
+        check(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW).expect("valid host order")
+    }
+
+    #[test]
+    fn a_unit_restart_or_signal_whose_done_record_is_lost_never_runs_again() {
+        for action in ["systemd.unit.restart", "systemd.unit.signal"] {
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            // Only the done append fails: the open record is on file, the action ran, and its receipt cannot be recorded.
+            executor.fail_done.store(true, Ordering::SeqCst);
+            assert_eq!(executor.handle(&unit_order(action, N1, "42:restart"), NOW), Err(StateRefusal::JournalWrite), "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+            // A resend with a fresh nonce answers the result the action had and never runs it again.
+            let resend = executor.handle(&unit_order(action, N2, "42:restart"), NOW).expect("resend");
+            assert!(resend.repeat && resend.outcome == Outcome::Done, "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}: one execution");
+            drop(executor);
+            // After a restart the journal still holds no done record: the synced open record ends the order as interrupted.
+            let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            assert_eq!(recovered.len(), 1, "{action}");
+            assert_eq!(recovered[0].outcome, Outcome::failed(RUN_INTERRUPTED), "{action}");
+            assert!(executor.handle(&unit_order(action, N3, "42:restart"), NOW).expect("resend").repeat, "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+    /// Counts runs, and checks that the order's open record is on file before the action acts.
+    struct OpenFirst(Arc<AtomicUsize>, std::path::PathBuf);
+
+    impl Run for OpenFirst {
+        fn run(&self, order: &VerifiedOrder) -> Outcome {
+            let opened = journal::read(&self.1).expect("journal").into_iter()
+                .any(|record| matches!(record, Record::Open { nonce, .. } if nonce == order.nonce()));
+            assert!(opened, "the open record is written before the action acts");
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Outcome::Done
+        }
+    }
+
+    #[test]
+    fn a_unit_restart_or_signal_is_spent_on_disk_before_it_acts_and_a_seen_record_alone_never_runs_it() {
+        for action in ["systemd.unit.restart", "systemd.unit.signal"] {
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, OpenFirst(Arc::clone(&runs), path.clone()), || NOW, |_| {}).expect("start");
+            assert!(!executor.handle(&unit_order(action, N1, "42:restart"), NOW).expect("acts").repeat);
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+            drop(executor);
+
+            // A journal in which only the accept record survived: the order never reached its synced open record, so it never
+            // acted, and recovery does not run it.
+            let seen_only = directory.path().join("seen-only");
+            let accepted = unit_order(action, N2, "43:restart");
+            let key = DoneKey { operation: accepted.operation().clone(), action: accepted.action(), target: accepted.target().clone() };
+            let record = Record::Seen { nonce: accepted.nonce(), key, expires_ms: accepted.expires_ms() };
+            std::fs::write(&seen_only, format!("{}\n", serde_json::to_string(&record).expect("json"))).expect("journal");
+            let ran = Arc::new(AtomicUsize::new(0));
+            let (_, recovered) = Executor::start(&seen_only, Counting(Arc::clone(&ran)), || NOW, |_| {}).expect("recover");
+            assert!(recovered.is_empty(), "{action}");
+            assert_eq!(ran.load(Ordering::SeqCst), 0, "{action}: recovery never runs it");
+        }
+    }
+
+    #[test]
+    fn a_unit_restart_or_signal_acts_at_most_once_per_order_across_resends_and_a_restart() {
+        for action in ["systemd.unit.restart", "systemd.unit.signal"] {
+            let order = |nonce: &str, operation: &str| unit_order(action, nonce, operation);
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            assert!(!executor.handle(&order(N1, "42:restart"), NOW).expect("acts").repeat);
+            let again = executor.handle(&order(N2, "42:restart"), NOW).expect("resend");
+            assert!(again.repeat && again.outcome == Outcome::Done, "{action}: a resend answers the recorded result");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+            drop(executor);
+
+            // The executor stopped after the open record of another order and before its done record: it may have acted.
+            let open = order(N3, "43:restart");
+            let key = DoneKey { operation: open.operation().clone(), action: open.action(), target: open.target().clone() };
+            let record = Record::Open { nonce: open.nonce(), key: key.clone(), expires_ms: open.expires_ms(), power_check: crate::order::PowerCheck::Default, input: open.input().clone() };
+            let mut journal = std::fs::read_to_string(&path).expect("journal");
+            journal.push_str(&serde_json::to_string(&record).expect("json"));
+            journal.push('\n');
+            std::fs::write(&path, journal).expect("journal");
+            let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("recover");
+            assert_eq!(recovered, vec![Recovered { key, outcome: Outcome::failed(RUN_INTERRUPTED) }], "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}: recovery never acts again");
+            let resend = executor.handle(&order("00000000000000000000000000000004", "43:restart"), NOW).expect("resend");
+            assert!(resend.repeat && resend.outcome == Outcome::failed(RUN_INTERRUPTED), "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
     #[test]
     fn a_route_step_that_expired_before_its_lock_runs_once_on_a_fresh_nonce_after_restart() {
         for (action, step) in [("tls.ensure_csr", "csr-0"), ("route.publish_site", "site-3"), ("dns.publish_records", "dns-0")] {
@@ -657,7 +781,7 @@ mod tests {
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
         // The host primitives that change a resource are fenced as the Route actions they replace; the read-only probe and reads are not.
         for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply,
-            Action::GitFetch, Action::GitCheckout, Action::GitRefEnsure, Action::IncusInstanceEnsure] {
+            Action::GitFetch, Action::GitCheckout, Action::GitRefEnsure, Action::IncusInstanceEnsure, Action::SystemdUnitRestart, Action::SystemdUnitSignal] {
             assert!(action.receipt_fenced() && !action.read_only(), "{action} is fenced");
         }
         for action in [Action::HttpProbe, Action::FileRead, Action::AccountRead, Action::GitWorktreeRead] {

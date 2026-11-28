@@ -153,6 +153,7 @@ impl Run for Families {
             Action::DnsPublishRecords => dns(order),
             Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure | Action::ConfigApply | Action::HttpProbe => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
+            Action::SystemdUnitRestart | Action::SystemdUnitSignal => unit_once(order),
             Action::GitFetch | Action::GitCheckout | Action::GitRefEnsure | Action::GitWorktreeRead => git(order),
             Action::IncusInstanceEnsure | Action::IncusAclEnsure | Action::IncusDeviceEnsure | Action::IncusVolumeEnsure => incus(order),
             Action::InstanceDestroy => self.destroy(order),
@@ -414,6 +415,24 @@ fn acl_ensure(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |acl| Outcome::Output { stdout: serde_json::json!(acl).to_string() },
+    )
+}
+
+/// `systemd.unit.restart` and `systemd.unit.signal` of the host family: the new run or the delivered signal, as JSON in the
+/// receipt's output. The core runs each at most once per order (`Action::at_most_once`).
+fn unit_once(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
+    let result = if order.action() == Action::SystemdUnitRestart {
+        orbit_executor_host::unit_restart(&system, order.input())
+    } else {
+        orbit_executor_host::unit_signal(&system, order.input())
+    };
+    result.map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |stdout| Outcome::Output { stdout },
     )
 }
 

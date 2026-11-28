@@ -324,6 +324,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::GitRefEnsure
             | orbit_executor_core::action::Action::GitWorktreeRead
             | orbit_executor_core::action::Action::IncusInstanceEnsure
+            | orbit_executor_core::action::Action::SystemdUnitRestart
+            | orbit_executor_core::action::Action::SystemdUnitSignal
             | orbit_executor_core::action::Action::IncusAclEnsure
             | orbit_executor_core::action::Action::IncusDeviceEnsure
             | orbit_executor_core::action::Action::IncusVolumeEnsure => {
