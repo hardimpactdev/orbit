@@ -512,3 +512,21 @@ impl System for Late {
         std::time::Instant::now() + std::time::Duration::from_secs(u64::from(*self.reads.borrow()) * 3600)
     }
 }
+
+#[test]
+fn config_apply_checks_dnsmasq_with_the_configuration_it_loads_and_refuses_before_the_restart() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"old\n");
+    fake.fail.borrow_mut().push("/usr/sbin/dnsmasq");
+    let content = fake.put(b"bad\n");
+    let validator = json!({"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf", "skip_suffixes": [".bak"]});
+    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": sha256(b"old\n"), "owner": owner()}],
+        "validators": [validator], "units": [{"unit": "dnsmasq.service", "load": "restart"}]});
+    assert_eq!(config_apply(&fake, &input).expect_err("rejected").code, "config.validate_failed");
+    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/dnsmasq", "--test", "--conf-file=/conf/dnsmasq.conf", "--conf-dir=/conf,.bak"])), "the folder the service loads, not the one file");
+    assert_eq!(fake.ran("restart"), 0, "a rejected set never restarts the service");
+    assert_eq!(fake.read("/conf/site.conf"), b"old\n");
+    let comma = json!({"lock": "/tmp-lock/given.lock", "files": input["files"].clone(), "validators": [{"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf,*.x"}]});
+    assert_eq!(config_apply(&fake, &comma).expect_err("an extra list item").code, "host.input_invalid");
+}
