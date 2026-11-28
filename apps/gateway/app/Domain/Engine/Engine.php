@@ -60,7 +60,7 @@ final readonly class Engine
         'instance.clear_base' => 'output', 'tls.ensure_csr' => 'output', 'route.publish_site' => 'applied', ProcessControlEngineFlow::Action => 'applied', ProcessControlEngineFlow::ReadAction => 'output', ProcessControlEngineFlow::RestartAction => 'output', ScheduleEnableEngineFlow::Action => 'output',
         // The fenced host primitives (ADR 0271 N3) each answer `applied` with their changes.
         'file.ensure' => 'applied', 'dotenv.ensure' => 'applied', 'posix.acl.ensure' => 'applied', 'ca.trust.ensure' => 'applied',
-        'systemd.unit.ensure' => 'applied', 'config.apply' => 'applied'];
+        'systemd.unit.ensure' => 'applied', 'config.apply' => 'applied', 'http.probe' => 'applied', 'file.read' => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 

@@ -20,6 +20,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 use App\Models\Process as ManagedProcess;
 use App\Models\Project;
 use App\Models\Route;
@@ -102,6 +103,15 @@ function destroyExpressions(array $inputs): array
     $process->mustRun();
 
     return json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+}
+
+/** The admitted removal without its leaf folders, which need the account's home (account.read, agent 0.37.0). */
+function withoutLeaves(Operation $operation): Operation
+{
+    $input = $operation->input;
+    $input['route_lifecycle']['plan']['cleanup'] = [];
+
+    return $operation->forceFill(['input' => $input]);
 }
 
 /** @return array{Operation,array<string,mixed>} */
@@ -247,11 +257,43 @@ it('records the whole-file digests the engine guards with, and builds its steps 
     expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
         'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
-    $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
-    expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
-        ->and($flow->input($operation, "withdraw-{$node->id}", new EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
-        ->toBe(hash('sha256', $before['caddy']['content']));
+    expect(fn () => $flow->steps($operation))->toThrow(EngineUnsupported::class, 'account\'s home or group');
+    $steps = array_map(static fn ($step): string => $step->name, $flow->steps(withoutLeaves($operation)));
+    $read = (new OperationEngineStep)->forceFill(['name' => "caddyread-{$node->id}", 'status' => 'done',
+        'output' => json_encode(['state' => 'present', 'type' => 'file', 'sha256' => hash('sha256', $before['caddy']['content']), 'uid' => 0, 'gid' => 997, 'mode' => '0640'])]);
+    $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read], 0, null);
+    expect($steps)->toBe(['dnsread-0-records', 'dnsread-0-catalog', 'dns-0', 'grace', "caddyread-{$node->id}", "guard-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "sibling-{$node->id}"])
+        ->and($flow->local($operation, "guard-{$node->id}", $run))->toBeString()
+        ->and($flow->input($operation, "withdraw-{$node->id}", $run)['files'][0]['from_sha256'])->toBe(hash('sha256', $before['caddy']['content']));
 });
+
+it('persists main\'s error code and failed step through the real projection when a primitive fails', function (string $step, string $code, string $main, string $chart): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    [$operation] = destroyAdmission(destroyFixture($node, 'gone', 'gone'));
+    $operation->update(['state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
+    $name = str_replace('{node}', (string) $node->id, $step);
+    $failed = (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'failed', 'error_code' => $code, 'on_failure' => false, 'optional' => false]);
+
+    app(RouteDestroyEngineFlow::class)->finish($operation, new EngineRun($operation->id, [$name => $failed], 0, 1));
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe($main)
+        ->and($operation->failed_step)->toBe(str_replace('{node}', (string) $node->id, $chart));
+})->with([
+    // Parity with main, where the DNS write was one dns.publish_records step and the read, guard, write, reload and poll of the
+    // Caddyfile one route.withdraw_site step: each failure inside that step persists the step's code.
+    'the DNS records read' => ['dnsread-0-records', 'file.read_failed', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'a DNS guard' => ['dns-0', 'owned_revision_conflict', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'a dnsmasq test' => ['dns-0', 'config.validate_failed', 'private_dns.publication_failed', 'Remove private DNS-0'],
+    'the grace' => ['grace', 'route.dns_grace_failed', 'route.dns_grace_failed', 'Wait the DNS grace-0'],
+    'the Caddyfile read' => ['caddyread-{node}', 'file.read_failed', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddyfile changed outside the Route' => ['guard-{node}', 'owned_revision_conflict', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddyfile guard at the write' => ['withdraw-{node}', 'owned_revision_conflict', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'a Caddy reload' => ['withdraw-{node}', 'config.load_failed', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'the reload poll' => ['poll-{node}', 'http.probe_unmet', 'route.withdraw_failed', 'Withdraw site, remove cert-{node}'],
+    'the sibling probe' => ['sibling-{node}', 'engine.sibling_failed', 'route.removal_check_failed', 'Check nothing is left-{node}'],
+]);
 
 it('records no engine digests while route.destroy is not an engine kind', function (): void {
     config(['orbit.engine.kinds' => []]);
@@ -276,7 +318,7 @@ it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from
     if ($process) {
         expect(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
     } else {
-        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps(withoutLeaves($operation))))->toContain("withdraw-{$node->id}");
     }
 })->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);
 
@@ -291,7 +333,7 @@ it('keeps a private Route on the engine when an unrelated Ingress serves its clu
 
     expect($route->cluster->ingressAssignment)->not->toBeNull()
         ->and($operation->input['route_private_development'])->toBeTrue()
-        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps(withoutLeaves($operation))))->toContain("withdraw-{$node->id}");
 });
 
 it('destroys a secondary web-root Route of an active Instance and keeps its authoritative Route', function (): void {
