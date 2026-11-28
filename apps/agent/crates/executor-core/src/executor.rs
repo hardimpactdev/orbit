@@ -30,6 +30,10 @@ pub trait Run: Send + Sync {
 /// The code of an order that expired while it waited for its target's lock. It never acted.
 pub const ORDER_EXPIRED: &str = "executor.order_expired";
 
+/// The code of an at-most-once order ([`Action::at_most_once`]) that start-up found open: it may have acted before the
+/// executor stopped, so it never runs again. The Gateway reads the resource to learn what happened.
+pub const RUN_INTERRUPTED: &str = "executor.run_interrupted";
+
 /// The result line for one order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Reply {
@@ -279,7 +283,7 @@ impl<R: Run> Executor<R> {
         for open in pending.0 {
             let key = open.key.clone();
             let order = VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
-            let outcome = self.runner.run(&order);
+            let outcome = if key.action.at_most_once() { Outcome::failed(RUN_INTERRUPTED) } else { self.runner.run(&order) };
             self.finish(open.nonce, &key, &outcome, (self.clock)())?;
             // The target's lock goes with its last repeat, so its new orders run without waiting for other targets.
             if left.get_mut(&key.target).is_some_and(|count| {
@@ -628,6 +632,49 @@ mod tests {
     }
 
     #[test]
+    fn a_unit_restart_or_signal_acts_at_most_once_per_order_across_resends_and_a_restart() {
+        for action in ["systemd.unit.restart", "systemd.unit.signal"] {
+            let order = |nonce: &str, operation: &str| {
+                let mut fields = payload();
+                fields["action"] = action.into();
+                fields["target"] = "7".into();
+                fields["operation"] = operation.into();
+                fields["nonce"] = nonce.into();
+                fields["expires_ms"] = (NOW + 5000).into();
+                fields["input"] = serde_json::json!({"unit": "web.service", "budget_ms": 1000});
+                let keys = pinned(1);
+                let enabled = Enabled::parse("host").expect("valid");
+                let node = "7".parse().expect("id");
+                check(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW).expect("valid host order")
+            };
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            assert!(!executor.handle(&order(N1, "42:restart"), NOW).expect("acts").repeat);
+            let again = executor.handle(&order(N2, "42:restart"), NOW).expect("resend");
+            assert!(again.repeat && again.outcome == Outcome::Done, "{action}: a resend answers the recorded result");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+            drop(executor);
+
+            // The executor stopped after the open record of another order and before its done record: it may have acted.
+            let open = order(N3, "43:restart");
+            let key = DoneKey { operation: open.operation().clone(), action: open.action(), target: open.target().clone() };
+            let record = Record::Open { nonce: open.nonce(), key: key.clone(), expires_ms: open.expires_ms(), power_check: crate::order::PowerCheck::Default, input: open.input().clone() };
+            let mut journal = std::fs::read_to_string(&path).expect("journal");
+            journal.push_str(&serde_json::to_string(&record).expect("json"));
+            journal.push('\n');
+            std::fs::write(&path, journal).expect("journal");
+            let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("recover");
+            assert_eq!(recovered, vec![Recovered { key, outcome: Outcome::failed(RUN_INTERRUPTED) }], "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}: recovery never acts again");
+            let resend = executor.handle(&order("00000000000000000000000000000004", "43:restart"), NOW).expect("resend");
+            assert!(resend.repeat && resend.outcome == Outcome::failed(RUN_INTERRUPTED), "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+    #[test]
     fn a_route_step_that_expired_before_its_lock_runs_once_on_a_fresh_nonce_after_restart() {
         for (action, step) in [("tls.ensure_csr", "csr-0"), ("route.publish_site", "site-3"), ("dns.publish_records", "dns-0")] {
             let directory = tempfile::tempdir().expect("scratch");
@@ -656,7 +703,8 @@ mod tests {
             && Action::RouteWithdrawSite.receipt_fenced());
         assert!(!Action::Sleep.receipt_fenced() && !Action::InstanceCheckout.receipt_fenced());
         // The host primitives that change a resource are fenced as the Route actions they replace; the read-only probe and reads are not.
-        for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply, Action::IncusInstanceEnsure] {
+        for action in [Action::FileEnsure, Action::DotenvEnsure, Action::PosixAclEnsure, Action::CaTrustEnsure, Action::SystemdUnitEnsure, Action::ConfigApply, Action::IncusInstanceEnsure,
+            Action::SystemdUnitRestart, Action::SystemdUnitSignal] {
             assert!(action.receipt_fenced() && !action.read_only(), "{action} is fenced");
         }
         for action in [Action::HttpProbe, Action::FileRead, Action::AccountRead] {

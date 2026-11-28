@@ -8,6 +8,8 @@
 //! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access or default list of one path, or of one folder tree.
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
 //! - [`unit_ensure`] (`systemd.unit.ensure`): one unit, enabled and running or stopped.
+//! - [`unit_restart`] (`systemd.unit.restart`) and [`unit_signal`] (`systemd.unit.signal`): one run of one unit, restarted
+//!   or signalled at most once per order.
 //! - [`config_apply`] (`config.apply`): one set of configuration files that share a lock, validated by a fixed validator,
 //!   loaded by a reload or restart, and put back on failure.
 //! - [`probe`] (`http.probe`): one HTTP answer, read with a bounded wait and a typed expectation.
@@ -26,6 +28,7 @@ mod probe;
 mod read;
 mod trust;
 mod unit;
+mod unit_once;
 
 #[cfg(test)]
 mod tests;
@@ -47,6 +50,7 @@ pub use probe::probe;
 pub use read::{file_read, Read};
 pub use trust::trust_ensure;
 pub use unit::unit_ensure;
+pub use unit_once::{unit_restart, unit_signal};
 
 const TIMEOUT: &str = "/usr/bin/timeout";
 
@@ -89,6 +93,13 @@ pub trait System {
     ///
     /// A message when the command cannot start.
     fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
+
+    /// Runs a command as [`System::run`] does, with an empty environment, so nothing the executor inherited reaches it.
+    ///
+    /// # Errors
+    ///
+    /// The command's standard error when it fails or cannot start.
+    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
 
     /// A user's id by name.
     ///
@@ -190,6 +201,15 @@ impl System for NodeSystem {
     fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
         let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
         Ok((output.status.code(), output.stdout))
+    }
+
+    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
+        let output = Command::new(TIMEOUT).env_clear().arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+        }
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

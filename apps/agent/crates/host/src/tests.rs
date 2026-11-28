@@ -210,6 +210,10 @@ impl System for Fake {
         Ok(self.getent.borrow().get(&format!("{database} {key}")).cloned().unwrap_or((Some(2), Vec::new())))
     }
 
+    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
+        self.run(seconds, argv)
+    }
+
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
         self.blobs.get(digest).cloned().ok_or_else(|| "missing".to_owned())
     }
@@ -702,6 +706,10 @@ impl System for Late {
 
     fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
         self.fake.status(seconds, argv)
+    }
+
+    fn run_clean(&self, seconds: u32, argv: &[String]) -> Result<String, String> {
+        self.run(seconds, argv)
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -1532,4 +1540,165 @@ fn account_read_reads_the_hosts_own_account_database() {
     let system = NodeSystem::new("/nonexistent");
     assert_eq!(account_read(&system, &json!({"user": "root"})).expect("root"), Account::Present { user: "root".to_owned(), uid: 0, gid: 0, group: "root".to_owned(), home: "/root".to_owned() });
     assert_eq!(account_read(&system, &json!({"user": "no-such-user-here"})).expect("absent"), Account::Absent);
+}
+
+/// A fake systemd for `systemd.unit.restart` and `systemd.unit.signal`: one unit whose run a restart replaces, a clock the
+/// test moves, and every `systemctl` argv it was given. Only the clean runner answers; `run` fails, so a primitive that
+/// used the inheriting runner fails its test.
+struct Systemd {
+    root: tempfile::TempDir,
+    load: &'static str,
+    active: RefCell<&'static str>,
+    invocation: RefCell<u32>,
+    entered: RefCell<u64>,
+    main_pid: RefCell<u64>,
+    /// Reads after a restart before the new run shows; `None` never shows it.
+    settle: RefCell<Option<u32>>,
+    /// The state the new run settles in.
+    settles_as: &'static str,
+    pending: RefCell<Option<u32>>,
+    calls: RefCell<Vec<Vec<String>>>,
+    clock: RefCell<std::time::Instant>,
+}
+
+impl Systemd {
+    fn new() -> Self {
+        Self { root: tempfile::tempdir().expect("a scratch root"), load: "loaded", active: RefCell::new("active"), invocation: RefCell::new(1), entered: RefCell::new(100), main_pid: RefCell::new(42), settle: RefCell::new(Some(2)), settles_as: "active", pending: RefCell::default(), calls: RefCell::default(), clock: RefCell::new(std::time::Instant::now()) }
+    }
+
+    fn verbs(&self, verb: &str) -> usize {
+        self.calls.borrow().iter().filter(|argv| argv[1] == verb).count()
+    }
+}
+
+impl System for Systemd {
+    fn root(&self) -> &Path {
+        self.root.path()
+    }
+
+    fn run(&self, _seconds: u32, _argv: &[String]) -> Result<String, String> {
+        Err("the inheriting runner".to_owned())
+    }
+
+    fn status(&self, _seconds: u32, _argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
+        Err("no status".to_owned())
+    }
+
+    fn run_clean(&self, _seconds: u32, argv: &[String]) -> Result<String, String> {
+        self.calls.borrow_mut().push(argv.to_vec());
+        if argv[0] != "/usr/bin/systemctl" || argv.iter().position(|arg| arg == "--") != Some(argv.len() - 2) {
+            return Err(format!("not a fixed systemctl argv with the unit as the one operand after --: {argv:?}"));
+        }
+        match argv[1].as_str() {
+            "show" => {
+                let mut pending = self.pending.borrow_mut();
+                if let Some(left) = pending.as_mut() {
+                    if *left == 0 {
+                        *pending = None;
+                        *self.invocation.borrow_mut() += 1;
+                        *self.entered.borrow_mut() += 1000;
+                        *self.active.borrow_mut() = self.settles_as;
+                        *self.main_pid.borrow_mut() += 1;
+                    } else {
+                        *left -= 1;
+                        *self.active.borrow_mut() = "activating";
+                    }
+                }
+                let invocation = *self.invocation.borrow();
+                Ok(format!(
+                    "LoadState={}\nActiveState={}\nInvocationID={invocation:032x}\nActiveEnterTimestampMonotonic={}\nMainPID={}\n",
+                    self.load, self.active.borrow(), self.entered.borrow(), self.main_pid.borrow()
+                ))
+            }
+            "restart" => {
+                *self.pending.borrow_mut() = *self.settle.borrow();
+                if self.settle.borrow().is_none() {
+                    *self.active.borrow_mut() = "activating";
+                }
+                Ok(String::new())
+            }
+            "kill" => Ok(String::new()),
+            verb => Err(format!("unexpected verb {verb}")),
+        }
+    }
+
+    fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
+        Err("no blobs".to_owned())
+    }
+
+    fn now(&self) -> std::time::Instant {
+        *self.clock.borrow()
+    }
+
+    fn sleep(&self, duration: std::time::Duration) {
+        *self.clock.borrow_mut() += duration;
+    }
+}
+
+#[test]
+fn unit_restart_restarts_once_and_reads_back_a_new_active_run() {
+    let systemd = Systemd::new();
+    let answer = unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 5000})).expect("restarted");
+    let answer: serde_json::Value = serde_json::from_str(&answer).expect("json");
+    assert_eq!(answer["state"], "restarted");
+    assert_eq!(answer["invocation_id"], format!("{:032x}", 2));
+    assert_eq!(answer["active_enter_timestamp_monotonic"], 1100);
+    assert_eq!(systemd.verbs("restart"), 1);
+    let restart = systemd.calls.borrow().iter().find(|argv| argv[1] == "restart").cloned().expect("a restart");
+    assert_eq!(restart, strings(&["/usr/bin/systemctl", "restart", "--no-block", "--", "web.service"]));
+}
+
+#[test]
+fn unit_restart_fails_its_budget_when_no_new_run_shows() {
+    let systemd = Systemd::new();
+    *systemd.settle.borrow_mut() = None;
+    let failure = unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("no new run");
+    assert_eq!(failure.code, "unit.restart_timeout");
+    assert_eq!(systemd.verbs("restart"), 1, "it never restarts again while it waits");
+    // A new run that settles failed is no restart.
+    let systemd = Systemd { settles_as: "failed", ..Systemd::new() };
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("failed run").code, "unit.restart_failed");
+}
+
+#[test]
+fn unit_restart_and_signal_refuse_a_unit_systemd_has_not_loaded() {
+    let systemd = Systemd { load: "not-found", ..Systemd::new() };
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "gone.service", "budget_ms": 1000})).expect_err("unloaded").code, "unit.not_loaded");
+    assert_eq!(unit_signal(&systemd, &json!({"unit": "gone.service", "signal": "SIGHUP", "budget_ms": 1000})).expect_err("unloaded").code, "unit.not_loaded");
+    assert_eq!(systemd.verbs("restart") + systemd.verbs("kill"), 0);
+}
+
+#[test]
+fn unit_signal_delivers_one_signal_to_the_main_process() {
+    let systemd = Systemd::new();
+    let answer = unit_signal(&systemd, &json!({"unit": "web.service", "signal": "SIGUSR1", "budget_ms": 1000})).expect("delivered");
+    assert_eq!(answer, r#"{"main_pid":42,"signal":"SIGUSR1","state":"delivered"}"#);
+    let kill = systemd.calls.borrow().iter().find(|argv| argv[1] == "kill").cloned().expect("a kill");
+    assert_eq!(kill, strings(&["/usr/bin/systemctl", "kill", "--kill-who=main", "--signal=SIGUSR1", "--", "web.service"]));
+    // A unit with no main process takes no signal.
+    let systemd = Systemd::new();
+    *systemd.main_pid.borrow_mut() = 0;
+    assert_eq!(unit_signal(&systemd, &json!({"unit": "web.service", "signal": "SIGHUP", "budget_ms": 1000})).expect_err("no main").code, "unit.not_running");
+    assert_eq!(systemd.verbs("kill"), 0);
+}
+
+#[test]
+fn unit_restart_and_signal_refuse_names_signals_and_budgets_outside_their_shape() {
+    let systemd = Systemd::new();
+    for unit in ["-now.service", "--now.service", ".hidden.service", "../web.service", "/etc/systemd/system/web.service", "web", "web.conf", "web service.service", "worker@1.service", "worker@.service", ""] {
+        assert_eq!(unit_restart(&systemd, &json!({"unit": unit, "budget_ms": 1000})).expect_err(unit).code, "host.input_invalid", "{unit}");
+    }
+    assert_eq!(unit_restart(&systemd, &json!({"unit": format!("{}.service", "a".repeat(250)), "budget_ms": 1000})).expect_err("long").code, "host.input_invalid");
+    // A template instance passes only when the input admits templates; the bare template never does.
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "worker@.service", "template": true, "budget_ms": 1000})).expect_err("bare").code, "host.input_invalid");
+    assert!(unit_restart(&systemd, &json!({"unit": "worker@1.service", "template": true, "budget_ms": 1000})).is_ok());
+    for signal in ["HUP", "SIGSTOP", "9", "sighup"] {
+        assert_eq!(unit_signal(&systemd, &json!({"unit": "web.service", "signal": signal, "budget_ms": 1000})).expect_err(signal).code, "host.input_invalid");
+    }
+    for budget in [0, 999, 300_001] {
+        assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": budget})).expect_err("budget").code, "host.input_invalid");
+    }
+    assert_eq!(unit_restart(&systemd, &json!({"unit": "web.service", "budget_ms": 1000, "argv": ["x"]})).expect_err("unknown field").code, "host.input_invalid");
+    assert_eq!(unit_signal(&systemd, &json!({"unit": "web.service", "budget_ms": 1000})).expect_err("no signal").code, "host.input_invalid");
+    assert_eq!(systemd.verbs("restart") + systemd.verbs("kill"), 1, "only the admitted template restarted");
 }

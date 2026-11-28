@@ -141,7 +141,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `config.apply` | One set of configuration files that share a lock | Built | `dns.publish_records`; the Caddy and PHP-FPM parts of `route.publish_site` and `route.withdraw_site` |
 | `http.probe` | One HTTP answer, read with a bounded wait and a typed expectation | Built | The Caddy read-back of `route.withdraw_site`; the readiness waits of `instance.t3` and `instance.fleet_ready` |
 | `systemd.unit.ensure` | One unit: enabled, running or stopped | Built | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
-| `systemd.unit.restart`, `systemd.unit.signal` | One run of one unit, restarted or signalled at most once per order | Planned | `process.read_instance` and `process.restart` for units; the reload of `instance.names` |
+| `systemd.unit.restart`, `systemd.unit.signal` | One run of one unit, restarted or signalled at most once per order | Built | `process.read_instance` and `process.restart` for units; the reload of `instance.names` |
 | `docker.container.ensure`, `docker.container.restart` | One Docker container | Planned | The container branches of the process family |
 | `incus.instance.ensure` | One Incus instance: copied from a snapshot, running, stopped or absent | Built; [its contract](#the-incus-family) | The copy in `instance.clone`, `instance.start`, `instance.stop`, the removal in `instance.destroy`, the guest starts of `instance.fleet_ready` |
 | `incus.instance.read` | The state, configuration and snapshots of one Incus instance, read only | Planned | The seed choice of `instance.clone`; the machine id read of `instance.prepare` |
@@ -230,6 +230,8 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `posix.acl.ensure` | One absolute path; exactly one of `user` and `group`; `rwx` permissions, where `X` is search on folders and executables; `default`; `optional`; and `scope` `path` (the default) or `tree` | Reads each list through the path's own descriptor and sets the entry only where it or the mask differs. With `path`, nothing below the path changes. Answers `{changes, skipped_mounts, skipped_hard_links}` as output. |
 | `ca.trust.ensure` | A `<name>.crt`, exactly one PEM certificate and its owner and mode, or `absent` | Places a certificate that openssl reads in `/usr/local/share/ca-certificates/` and runs the plain updater after a change |
 | `systemd.unit.ensure` | Unit, `enabled`, `state` `running` or `stopped`, and `budget_ms` from 1 s to 300 s | Reads the unit with `systemctl show`, changes only what differs, reads it back; an unreadable unit fails |
+| `systemd.unit.restart` | `unit`, optional `template`, and `budget_ms` from 1 s to 300 s | Restarts the unit once per order and reads back a new active run within the budget; answers it as JSON (`output`) |
+| `systemd.unit.signal` | `unit`, optional `template`, `signal` from a fixed set, and `budget_ms` from 1 s to 300 s | Sends the signal to the unit's main process once per order; answers it as delivered (`output`) |
 | `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 | `file.read` | `path`, absolute | Opens the path without following a final link and answers what it holds as JSON (`output`). Reads only, outside the journal, and runs no command. |
@@ -290,6 +292,31 @@ Each changed path holds one descriptor until the order ends, so one order can ch
 `absent` removes the named source only when it holds the given certificate; other bytes fail `trust.source_mismatch` and nothing changes. When the plain updater leaves the trust other than asked, for example after the last source's removal or a rotation it does not converge, the primitive fails `trust.not_converged` and changes nothing more. It never rebuilds the whole store.
 
 `systemd.unit.ensure` never counts `activating` or `deactivating` as running or stopped. It starts and stops with `--no-block`, bounds every `systemctl` call by the time left, and waits for a settled state within `budget_ms`, or fails.
+
+`systemd.unit.restart` and `systemd.unit.signal` act on one run of one unit. A restart or a signal is not a desired state, so each is bound to its order: it acts at most once per order.
+
+The executor's open journal record for the order marks it as spent. A resend after the `done` record gets the recorded result and never acts again, as for every fenced action.
+
+Start-up recovery never runs an open order of either action again, because it may already have acted. It ends the order `executor.run_interrupted` (`Action::at_most_once`). The Gateway then reads the unit to learn what happened.
+
+The journal stays in the page cache until its once-a-second sync. A Node that loses power before the sync can forget the order, but its reboot restarts every unit anyway.
+
+The input refuses an unknown field. `unit` is one systemd unit name: name characters `[A-Za-z0-9_.:\-]`, at most 255 bytes, and a type `service`, `socket`, `target`, `timer`, `path`, `mount`, `swap` or `scope`. A leading `-` or `.`, a `/`, a space and a bare template (`name@.service`) fail `host.input_invalid`. A template instance such as `worker@1.service` passes only with `"template": true`. `signal` is one of `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGTERM`, `SIGKILL`, `SIGUSR1` and `SIGUSR2`.
+
+Every call is a fixed argv with `--` before the unit, run through `timeout` with an empty environment, and bounded by what is left of the absolute deadline that `budget_ms` sets at the order's start:
+
+| Action | Calls |
+| --- | --- |
+| `systemd.unit.restart` | `systemctl show --property=LoadState,ActiveState,InvocationID,ActiveEnterTimestampMonotonic,MainPID -- <unit>`, then `systemctl restart --no-block -- <unit>`, then the same `show` every 250 ms |
+| `systemd.unit.signal` | The same `show`, then `systemctl kill --kill-who=main --signal=<signal> -- <unit>` |
+
+A restart succeeds once the unit is `active` in a new run: its `InvocationID` differs from the one before, or, when either run has none, its `ActiveEnterTimestampMonotonic` is later. It answers `{"state": "restarted", "invocation_id", "active_enter_timestamp_monotonic"}`. A new run that ends `failed` fails `unit.restart_failed`, and no new active run by the deadline fails `unit.restart_timeout`. It never restarts twice.
+
+A signal answers `{"state": "delivered", "signal", "main_pid"}` once systemd has delivered it to the main process it read. A unit with no main process (`MainPID=0`) fails `unit.not_running`, and a failed `kill` fails `unit.signal_failed`.
+
+Both fail `unit.not_loaded` when the `LoadState` is not `loaded`, before they act, and their read fails `unit.restart_failed` or `unit.signal_failed`.
+
+They meet the [five conditions](#what-a-primitive-may-be). Each acts on one run of one unit and holds no Orbit name. The Gateway sends every name, signal and budget. A restart or signal has no desired state, so it is bound to its order. The input is typed, and `systemctl` and its verbs are fixed in Rust. An executor reports both in its actions from agent 0.45.0. They replace `process.read_instance` and `process.restart` for units and the reload of `instance.names` when those rewrites land; no flow sends them yet.
 
 `config.apply` takes the lock the input names, for example `/etc/caddy/.orbit-publish.lock` or `/run/lock/orbit-dnsmasq.lock`, so it shares the lock with Swamp's writers of the same files. Under it, each live file must hold its `from_sha256` or already the desired bytes, or be absent when the input names no digest. Otherwise it refuses `owned_revision_conflict` before any write. It writes the changed files, runs each validator, and reloads or restarts each unit on every run. A validator comes from a fixed list, and Rust builds its command:
 
