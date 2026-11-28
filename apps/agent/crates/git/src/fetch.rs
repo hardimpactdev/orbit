@@ -1,6 +1,6 @@
 //! `git.fetch`: one ref of a source fetched into one ref of one repository.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,6 +10,8 @@ use crate::{
 };
 
 const CODE: &str = "git.fetch_failed";
+/// The fixed askpass program: it prints the environment entry named by the prompt Git passes it as its one argument.
+const ASKPASS: &str = "/usr/bin/printenv";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,10 +41,18 @@ enum Source {
     Bundle { path: String },
 }
 
+/// A credential for one host: what askpass answers when, and only when, the server asks.
+#[derive(Debug)]
+pub(crate) struct Credential {
+    /// The environment entries askpass reads: `GIT_ASKPASS` and one answer per prompt Git asks for the host.
+    env: Vec<(String, String)>,
+    /// Every form of the secret, decoded and as the line encodes it, to mask in any detail.
+    masks: Vec<String>,
+}
+
 /// A source whose operands are checked and whose credential is read.
 enum Checked<'a> {
-    /// The URL and, with a credential, the `Authorization` header and the password to mask.
-    Url(&'a str, Option<(String, String)>),
+    Url(&'a str, Option<Credential>),
     Bundle(String),
 }
 
@@ -64,11 +74,12 @@ pub struct Fetched {
 
 /// Fetches the source's ref into `into`, forced, so `into` mirrors the source. The source's ref and object format are read
 /// first: a source without the ref changes nothing and makes no repository, and a repository is made in the source's format.
+/// Before the repository exists, the read and the init run in a private empty folder, never inside another repository.
 ///
 /// # Errors
 ///
 /// `git.input_invalid`, `git.credential_missing`, `git.repository_missing`, `git.repository_refused`, `git.ref_symbolic`
-/// or `git.fetch_failed`. No detail holds the credential.
+/// or `git.fetch_failed`. No detail holds the credential, and a credentialed call keeps none of Git's own messages.
 pub fn fetch(system: &NodeSystem, input: &Value) -> Result<Fetched, Failure> {
     let input: FetchInput = parse(input)?;
     let repository = path(&input.repository, "repository")?;
@@ -78,11 +89,11 @@ pub fn fetch(system: &NodeSystem, input: &Value) -> Result<Fetched, Failure> {
     let source = match &input.source {
         Source::Url { url, credential } => {
             let url = https(url)?;
-            let header = credential
+            let credential = credential
                 .as_ref()
-                .map(|credential| authorization(&credential.bytes(system)?, url))
+                .map(|credential| askpass(&credential.bytes(system)?, url))
                 .transpose()?;
-            Checked::Url(url, header)
+            Checked::Url(url, credential)
         }
         Source::Bundle { path: bundle } => {
             let bundle = path(bundle, "bundle")?;
@@ -95,23 +106,17 @@ pub fn fetch(system: &NodeSystem, input: &Value) -> Result<Fetched, Failure> {
             Checked::Bundle(bundle.display().to_string())
         }
     };
-    let secret = match &source {
-        Checked::Url(_, Some((_, password))) => vec![password.as_str()],
+    let masks: Vec<&str> = match &source {
+        Checked::Url(_, Some(credential)) => credential.masks.iter().map(String::as_str).collect(),
         _ => Vec::new(),
     };
-    let result = converge(
-        system,
-        &repository,
-        &source,
-        reference,
-        into,
-        if input.create {
-            Missing::Create
-        } else {
-            Missing::Refuse
-        },
-    );
-    result.map_err(|failure| failure.without(&secret))
+    let missing = if input.create {
+        Missing::Create
+    } else {
+        Missing::Refuse
+    };
+    converge(system, &repository, &source, reference, into, missing)
+        .map_err(|failure| failure.without(&masks))
 }
 
 fn converge(
@@ -129,86 +134,128 @@ fn converge(
             repository.display().to_string(),
         ));
     }
-    let parent = repository
-        .parent()
-        .ok_or_else(|| invalid("repository has no parent"))?;
     if exists {
         crate::require_repository(system, CODE, repository, crate::Kind::Repository)?;
+        let before = resolve(system, CODE, repository, into)?;
+        let Some(object) = listed(system, repository, source, reference)? else {
+            return Ok(Fetched {
+                commit: None,
+                changes: 0,
+            });
+        };
+        let held = system.text(CODE, repository, &["rev-parse", "--show-object-format"])?;
+        if held.trim() != format(&object) {
+            return Err(Failure::new(
+                CODE,
+                format!(
+                    "the repository is {}, the source {}",
+                    held.trim(),
+                    format(&object)
+                ),
+            ));
+        }
+        let after = fetched(system, repository, source, reference, into)?;
+        return Ok(Fetched {
+            changes: u32::from(before.as_deref() != Some(after.as_str())),
+            commit: Some(after),
+        });
     }
-    let before = if exists {
-        resolve(system, CODE, repository, into)?
-    } else {
-        None
-    };
-    let at = if exists { repository } else { parent };
-    let Some(object) = listed(system, at, source, reference)? else {
+    let scratch = Scratch::new()?;
+    let Some(object) = listed(system, &scratch.0, source, reference)? else {
         return Ok(Fetched {
             commit: None,
             changes: 0,
         });
     };
-    let format = if object.len() == 64 { "sha256" } else { "sha1" };
-    let mut changes = 0;
-    if exists {
-        let held = system.text(CODE, repository, &["rev-parse", "--show-object-format"])?;
-        if held.trim() != format {
-            return Err(Failure::new(
-                CODE,
-                format!("the repository is {}, the source {format}", held.trim()),
-            ));
-        }
-    } else {
-        let name = repository.display().to_string();
-        system.text(
-            CODE,
-            parent,
-            &[
-                "init",
-                "--quiet",
-                "--bare",
-                &format!("--object-format={format}"),
-                "--",
-                &name,
-            ],
-        )?;
-        changes += 1;
-    }
-    let refspec = format!("+{reference}:{into}");
-    let fetched = run_fetch(system, repository, source, &refspec)
-        .and_then(|()| resolve(system, CODE, repository, into));
-    let after = match fetched {
-        Ok(Some(after)) => after,
-        failed => {
+    let name = repository.display().to_string();
+    system.text(
+        CODE,
+        &scratch.0,
+        &[
+            "init",
+            "--quiet",
+            "--bare",
+            &format!("--object-format={}", format(&object)),
+            "--",
+            &name,
+        ],
+    )?;
+    match fetched(system, repository, source, reference, into) {
+        Ok(after) => Ok(Fetched {
+            commit: Some(after),
+            changes: 2,
+        }),
+        Err(failure) => {
             // A repository this order made holds nothing worth keeping when its one fetch failed.
-            if !exists {
-                let _ = std::fs::remove_dir_all(repository);
-            }
-            return Err(failed
-                .err()
-                .unwrap_or_else(|| Failure::new(CODE, "the ref is missing after the fetch")));
+            let _ = std::fs::remove_dir_all(repository);
+            Err(failure)
         }
-    };
-    if before.as_deref() != Some(after.as_str()) {
-        changes += 1;
     }
-    Ok(Fetched {
-        commit: Some(after),
-        changes,
-    })
 }
 
-/// The settings and secret environment one source's calls take.
-fn transport(source: &Checked<'_>) -> (Vec<String>, Vec<(String, String)>) {
+fn format(object: &str) -> &'static str {
+    if object.len() == 64 {
+        "sha256"
+    } else {
+        "sha1"
+    }
+}
+
+/// A private empty folder for the calls that run before the repository exists; removed when dropped.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Result<Self, Failure> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |at| at.as_nanos());
+        let folder = std::env::temp_dir().join(format!(
+            "git-fetch-{}-{nanos}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .map_err(|error| Failure::new(CODE, format!("scratch: {error}")))?;
+        Ok(Self(folder))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir(&self.0);
+    }
+}
+
+use std::os::unix::fs::DirBuilderExt as _;
+
+/// The settings and environment one source's calls take.
+fn transport<'a>(source: &'a Checked<'_>) -> (Vec<String>, &'a [(String, String)]) {
     match source {
-        Checked::Url(url, header) => (
+        Checked::Url(_, credential) => (
             vec!["protocol.https.allow=always".to_owned()],
-            header
-                .iter()
-                .map(|(value, _)| (format!("http.{url}.extraHeader"), value.clone()))
-                .collect(),
+            credential
+                .as_ref()
+                .map_or(&[][..], |credential| &credential.env),
         ),
         // A bundle is read through Git's file transport, and the file was checked to be a plain file.
-        Checked::Bundle(_) => (vec!["protocol.file.allow=always".to_owned()], Vec::new()),
+        Checked::Bundle(_) => (vec!["protocol.file.allow=always".to_owned()], &[]),
+    }
+}
+
+/// A failure of one transport call: Git's own message only when no credential took part.
+fn transport_failure(source: &Checked<'_>, what: &str, ran: &crate::Ran) -> Failure {
+    match source {
+        Checked::Url(_, Some(_)) => Failure::new(
+            CODE,
+            format!(
+                "{what} failed with exit {:?}; a credentialed call keeps no message",
+                ran.code
+            ),
+        ),
+        _ => Failure::new(CODE, format!("{what}: {}", ran.stderr.trim())),
     }
 }
 
@@ -219,17 +266,14 @@ fn listed(
     source: &Checked<'_>,
     reference: &str,
 ) -> Result<Option<String>, Failure> {
-    let (settings, secret) = transport(source);
+    let (settings, env) = transport(source);
     let (args, separator): (Vec<&str>, char) = match source {
         Checked::Url(url, _) => (vec!["ls-remote", "--refs", "--", url, reference], '\t'),
         Checked::Bundle(bundle) => (vec!["bundle", "list-heads", "--", bundle], ' '),
     };
-    let ran = system.run(REMOTE_SECONDS, at, &settings, &secret, &args)?;
+    let ran = system.run(REMOTE_SECONDS, at, &settings, env, &args)?;
     if ran.code != Some(0) {
-        return Err(Failure::new(
-            CODE,
-            format!("{}: {}", args[0], ran.stderr.trim()),
-        ));
+        return Err(transport_failure(source, args[0], &ran));
     }
     let text = String::from_utf8_lossy(&ran.stdout);
     let object = text.lines().find_map(|line| {
@@ -246,42 +290,40 @@ fn listed(
         .transpose()
 }
 
-fn run_fetch(
+/// Fetches `+<ref>:<into>` and answers what `into` names afterwards.
+fn fetched(
     system: &NodeSystem,
     repository: &Path,
     source: &Checked<'_>,
-    refspec: &str,
-) -> Result<(), Failure> {
-    let (settings, secret) = transport(source);
+    reference: &str,
+    into: &str,
+) -> Result<String, Failure> {
+    let (settings, env) = transport(source);
     let from = match source {
         Checked::Url(url, _) => *url,
         Checked::Bundle(bundle) => bundle.as_str(),
     };
-    let ran = system.run(
-        REMOTE_SECONDS,
-        repository,
-        &settings,
-        &secret,
-        &[
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--no-write-fetch-head",
-            "--no-recurse-submodules",
-            "--",
-            from,
-            refspec,
-        ],
-    )?;
-    if ran.code == Some(0) {
-        Ok(())
-    } else {
-        Err(Failure::new(CODE, format!("fetch: {}", ran.stderr.trim())))
+    let refspec = format!("+{reference}:{into}");
+    let args = [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--no-recurse-submodules",
+        "--",
+        from,
+        &refspec,
+    ];
+    let ran = system.run(REMOTE_SECONDS, repository, &settings, env, &args)?;
+    if ran.code != Some(0) {
+        return Err(transport_failure(source, "fetch", &ran));
     }
+    resolve(system, CODE, repository, into)?
+        .ok_or_else(|| Failure::new(CODE, "the ref is missing after the fetch"))
 }
 
 /// An https URL with a host and nothing that can carry a secret or another meaning: no user information, query, fragment,
-/// space or control byte.
+/// percent sign, space or control byte.
 fn https(url: &str) -> Result<&str, Failure> {
     let host = url
         .strip_prefix("https://")
@@ -298,37 +340,48 @@ fn https(url: &str) -> Result<&str, Failure> {
     Ok(url)
 }
 
-/// The `Authorization` header a `store` credential line gives for the URL, and the password to mask. The line must name
-/// the URL's own host over https.
-fn authorization(line: &[u8], url: &str) -> Result<(String, String), Failure> {
+/// The askpass answers a `store` credential line gives for the URL's host. Git asks `Username for 'https://<host>': ` and
+/// `Password for 'https://<user>@<host>': ` only when the server asks for authentication, and the fixed askpass prints the
+/// environment entry of that exact name; nothing is sent before. The line must name the URL's own host over https.
+pub(crate) fn askpass(line: &[u8], url: &str) -> Result<Credential, Failure> {
     let refused = || invalid("the credential is not a store line for the URL's host");
     let line = std::str::from_utf8(line)
         .map_err(|_| refused())?
         .trim_end_matches(['\n', '\r']);
     let rest = line.strip_prefix("https://").ok_or_else(refused)?;
     let (userinfo, host) = rest.rsplit_once('@').ok_or_else(refused)?;
+    let host = host.trim_end_matches('/');
     let wanted = url
         .strip_prefix("https://")
         .and_then(|rest| rest.split('/').next())
         .unwrap_or("");
-    if host.trim_end_matches('/') != wanted {
+    if host != wanted {
         return Err(refused());
     }
-    let (user, password) = userinfo.split_once(':').ok_or_else(refused)?;
+    let (encoded_user, encoded_password) = userinfo.split_once(':').ok_or_else(refused)?;
     let (user, password) = (
-        decode(user).ok_or_else(refused)?,
-        decode(password).ok_or_else(refused)?,
+        decode(encoded_user).ok_or_else(refused)?,
+        decode(encoded_password).ok_or_else(refused)?,
     );
-    if password.is_empty() {
+    if user.is_empty()
+        || password.is_empty()
+        || user.contains(['\0', '\n'])
+        || password.contains(['\0', '\n'])
+    {
         return Err(refused());
     }
-    Ok((
-        format!(
-            "Authorization: Basic {}",
-            base64(format!("{user}:{password}").as_bytes())
+    let env = vec![
+        ("GIT_ASKPASS".to_owned(), ASKPASS.to_owned()),
+        (format!("Username for 'https://{host}': "), user.clone()),
+        (
+            format!("Password for 'https://{user}@{host}': "),
+            password.clone(),
         ),
-        password,
-    ))
+    ];
+    Ok(Credential {
+        env,
+        masks: vec![password, encoded_password.to_owned(), userinfo.to_owned()],
+    })
 }
 
 /// Percent-decoding of a credential line's user or password.
@@ -349,51 +402,60 @@ fn decode(value: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let triple = chunk.iter().enumerate().fold(0u32, |acc, (index, byte)| {
-            acc | u32::from(*byte) << (16 - 8 * index)
-        });
-        for index in 0..4 {
-            if index <= chunk.len() {
-                out.push(char::from(
-                    ALPHABET[usize::try_from((triple >> (18 - 6 * index)) & 63).unwrap_or(0)],
-                ));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod unit {
+    use super::*;
+
+    /// Git's own credential prompt, through the fixed askpass and the environment the fetch would set: the answers arrive
+    /// only because Git asked, and no header or configuration carries them.
     #[test]
-    fn base64_and_the_authorization_header() {
-        assert_eq!(super::base64(b"user:pass"), "dXNlcjpwYXNz");
-        assert_eq!(super::base64(b"ab"), "YWI=");
-        let (header, password) = super::authorization(
-            b"https://x-access-token:s%40cret@example.com\n",
-            "https://example.com/r.git",
+    fn git_asks_the_fixed_askpass_and_reads_the_answers_only_when_it_prompts() {
+        let credential = askpass(
+            b"https://x-access-token:s%40cret@example.com:8443\n",
+            "https://example.com:8443/r.git",
         )
         .expect("line");
-        assert_eq!(
-            (header.as_str(), password.as_str()),
-            (
-                "Authorization: Basic eC1hY2Nlc3MtdG9rZW46c0BjcmV0",
-                "s@cret"
+        assert!(credential
+            .env
+            .iter()
+            .all(|(key, _)| !key.to_ascii_lowercase().contains("header")
+                && !key.starts_with("GIT_CONFIG")));
+        let mut fill = std::process::Command::new("/usr/bin/git")
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", "/nonexistent")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .envs(
+                credential
+                    .env
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str())),
             )
+            .args(["-c", "credential.helper=", "credential", "fill"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("git");
+        std::io::Write::write_all(
+            fill.stdin.as_mut().expect("stdin"),
+            b"protocol=https\nhost=example.com:8443\n\n",
+        )
+        .expect("ask");
+        let out = String::from_utf8(fill.wait_with_output().expect("answer").stdout).expect("text");
+        assert!(
+            out.contains("username=x-access-token\n") && out.contains("password=s@cret\n"),
+            "{out}"
+        );
+        assert_eq!(
+            credential.masks,
+            ["s@cret", "s%40cret", "x-access-token:s%40cret"]
         );
         assert!(
-            super::authorization(b"https://u:p@other.example/", "https://example.com/r.git")
-                .is_err(),
+            askpass(b"https://u:p@other.example/", "https://example.com/r.git").is_err(),
             "another host refuses"
         );
-        assert!(
-            super::authorization(b"http://u:p@example.com", "https://example.com/r.git").is_err()
-        );
+        assert!(askpass(b"http://u:p@example.com", "https://example.com/r.git").is_err());
     }
 }

@@ -1,17 +1,20 @@
 //! `git.checkout`: the branch of one work tree, as desired state.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    branch, commit, entries, full_ref, invalid, obstructions, parse, path, require_repository,
-    resolve, Failure, NodeSystem, LOCAL_SECONDS,
+    ancestors, below, branch, commit, entries, full_ref, head_branch, invalid, parse, path,
+    require_repository, resolve, Failure, NodeSystem, LOCAL_SECONDS,
 };
 
 const CODE: &str = "git.checkout_failed";
 const REFUSED: &str = "git.checkout_refused";
+/// How many entries a clean may look through for another repository before it refuses instead.
+const WALK_LIMIT: usize = 100_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,10 +31,10 @@ struct CheckoutInput {
     /// The commit the branch and every tracked file must hold; it discards local changes, so it needs `destructive`.
     #[serde(default)]
     reset: Option<String>,
-    /// Removes the files Git does not track (ignored ones and nested repositories stay); it needs `destructive`.
+    /// Removes the files Git does not track (ignored ones stay); it needs `destructive`.
     #[serde(default)]
     clean: bool,
-    /// Allows `reset` and `clean`, which discard work inside this work tree.
+    /// Allows `reset` and `clean`, which discard tracked changes and untracked files inside this work tree.
     #[serde(default)]
     destructive: bool,
 }
@@ -51,9 +54,9 @@ pub struct CheckedOut {
 /// when asked and allowed, resets it hard to `reset` and removes untracked files. Each step measures the same state before
 /// and after it, runs only when the work tree differs, and is read back.
 ///
-/// A switch or reset that would overwrite or remove an untracked or ignored path, a nested repository included, refuses
-/// with `git.checkout_refused`: no step passes an overwrite flag, and no step deletes another repository. A work tree with
-/// submodules, or with assume-unchanged or skip-worktree entries, refuses a reset and a clean.
+/// Every state that cannot be proven safe refuses with `git.checkout_refused` before anything changes: a path of the
+/// target tree or the index where a folder, an untracked file or another repository sits, a submodule in the index or the
+/// target, assume-unchanged or skip-worktree entries, and, for a clean, any repository among the untracked paths.
 ///
 /// # Errors
 ///
@@ -86,18 +89,20 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
         return Err(invalid("rename_from is the branch itself"));
     }
     require_repository(system, CODE, &tree, crate::Kind::WorkTree)?;
-    let mut changes = switch(system, &tree, wanted, start, rename_from)?;
     if reset.is_some() || input.clean {
-        guard_discard(system, &tree)?;
+        guard_index(system, &tree)?;
     }
     if let Some(reset) = reset {
+        // The reset's target is checked before the switch moves anything.
+        guard_tree(system, &tree, reset)?;
+    }
+    if input.clean {
+        guard_untracked(system, &tree)?;
+    }
+    let mut changes = switch(system, &tree, wanted, start, rename_from)?;
+    if let Some(reset) = reset {
         if head(system, &tree)?.as_deref() != Some(reset) || dirty(system, &tree)? {
-            if obstructions(system, CODE, &tree, reset)? > 0 {
-                return Err(Failure::new(
-                    REFUSED,
-                    "the reset would overwrite untracked or ignored paths",
-                ));
-            }
+            guard_tree(system, &tree, reset)?;
             system.text(
                 CODE,
                 &tree,
@@ -117,14 +122,14 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
         }
     }
     if input.clean && untracked(system, &tree)? > 0 {
-        // Without -x and a second -f, Git keeps ignored files and every nested repository.
+        guard_untracked(system, &tree)?;
         system.text(CODE, &tree, &["clean", "--quiet", "--force", "-d", "--"])?;
         if untracked(system, &tree)? > 0 {
             return Err(Failure::new(CODE, "untracked files remain after clean"));
         }
         changes += 1;
     }
-    let after = current_branch(system, &tree)?;
+    let after = head_branch(system, CODE, &tree)?;
     let head =
         head(system, &tree)?.ok_or_else(|| Failure::new(CODE, "the branch has no commit"))?;
     if after.as_deref() != Some(wanted)
@@ -144,7 +149,8 @@ pub fn checkout(system: &NodeSystem, input: &Value) -> Result<CheckedOut, Failur
     })
 }
 
-/// Puts `HEAD` on the branch; answers 1 when it moved. The branch must exist as a ref, not only as `HEAD`'s name.
+/// Puts `HEAD` on the branch; answers 1 when it moved. The branch must exist as a ref, not only as `HEAD`'s name, and the
+/// branch `HEAD` names itself is checked, never the branch an alias points to.
 fn switch(
     system: &NodeSystem,
     tree: &Path,
@@ -152,7 +158,7 @@ fn switch(
     start: Option<&str>,
     rename_from: Option<&str>,
 ) -> Result<u32, Failure> {
-    let current = current_branch(system, tree)?;
+    let current = head_branch(system, CODE, tree)?;
     let exists = resolve(system, CODE, tree, &format!("refs/heads/{wanted}"))?.is_some();
     if current.as_deref() == Some(wanted) {
         return if exists {
@@ -183,12 +189,7 @@ fn switch(
         resolve(system, CODE, tree, &target)?
             .ok_or_else(|| Failure::new(CODE, "start names no ref"))?;
     }
-    if obstructions(system, CODE, tree, &target)? > 0 {
-        return Err(Failure::new(
-            REFUSED,
-            "the switch would overwrite untracked or ignored paths",
-        ));
-    }
+    guard_tree(system, tree, &target)?;
     if exists {
         system.text(
             CODE,
@@ -220,9 +221,145 @@ fn switch(
     Ok(1)
 }
 
+/// What the disk holds at one path of a work tree, without following a final link.
+fn kind(tree: &Path, relative: &[u8]) -> Result<Option<bool>, Failure> {
+    match std::fs::symlink_metadata(below(tree, relative)) {
+        Ok(meta) => Ok(Some(meta.is_dir())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Failure::new(CODE, error.to_string())),
+    }
+}
+
+/// Refuses a switch to, or a reset to, a tree that would overwrite or remove data Git does not track. For every path of the
+/// target and of the index, the disk must hold no folder there, and no file the index lacks. For every folder the target
+/// needs, the disk must hold a folder that is no repository, nothing, or a file the index tracks. A submodule in the target
+/// or the index refuses. Paths that only share a folder are no collision.
+fn guard_tree(system: &NodeSystem, tree: &Path, target: &str) -> Result<(), Failure> {
+    let refused = |detail: &str| Err(Failure::new(REFUSED, detail.to_owned()));
+    let listed = system.bytes(
+        CODE,
+        tree,
+        &[
+            "ls-tree",
+            "-r",
+            "-z",
+            "--full-tree",
+            "--end-of-options",
+            target,
+        ],
+    )?;
+    let staged = system.bytes(CODE, tree, &["ls-files", "-z", "--stage"])?;
+    let mut wanted = Vec::new();
+    for entry in entries(&listed) {
+        let (meta, path) = split_tab(entry)?;
+        if meta.starts_with(b"160000 ") {
+            return refused("the target tree has a submodule");
+        }
+        wanted.push(path);
+    }
+    let mut tracked = HashSet::new();
+    for entry in entries(&staged) {
+        let (meta, path) = split_tab(entry)?;
+        if meta.starts_with(b"160000 ") {
+            return refused("the index has a submodule");
+        }
+        tracked.insert(path);
+    }
+    for path in wanted.iter().chain(tracked.iter()) {
+        match kind(tree, path)? {
+            Some(true) => {
+                return refused("a folder sits at a path the work tree tracks or the target holds")
+            }
+            Some(false) if !tracked.contains(path) => {
+                return refused("an untracked or ignored file sits at a path of the target")
+            }
+            _ => {}
+        }
+    }
+    let folders: HashSet<&[u8]> = wanted.iter().flat_map(|path| ancestors(path)).collect();
+    for folder in folders {
+        match kind(tree, folder)? {
+            Some(false) if !tracked.contains(folder) => {
+                return refused("an untracked file sits where the target needs a folder")
+            }
+            Some(true) if repository(&below(tree, folder)) => {
+                return refused("another repository sits where the target needs a folder")
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// The metadata and path of one `ls-tree` or `ls-files --stage` record.
+fn split_tab(entry: &[u8]) -> Result<(&[u8], &[u8]), Failure> {
+    let at = entry
+        .iter()
+        .position(|byte| *byte == b'\t')
+        .ok_or_else(|| Failure::new(CODE, "git listed a record without a path"))?;
+    Ok((&entry[..at], &entry[at + 1..]))
+}
+
+/// Whether a folder is a repository: a `.git` entry, or the `HEAD`, `objects` and `refs` of a bare one.
+fn repository(folder: &Path) -> bool {
+    std::fs::symlink_metadata(folder.join(".git")).is_ok()
+        || (folder.join("HEAD").is_file()
+            && folder.join("objects").is_dir()
+            && folder.join("refs").is_dir())
+}
+
+/// Refuses a clean when any untracked path is or holds another repository, so a clean never removes one, bare or not.
+fn guard_untracked(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
+    let listed = system.bytes(
+        CODE,
+        tree,
+        &[
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+        ],
+    )?;
+    let mut pending: Vec<std::path::PathBuf> = entries(&listed)
+        .filter(|entry| entry.ends_with(b"/"))
+        .map(|entry| below(tree, entry))
+        .collect();
+    let mut seen = 0;
+    while let Some(folder) = pending.pop() {
+        if repository(&folder) {
+            return Err(Failure::new(
+                REFUSED,
+                "an untracked path holds another repository",
+            ));
+        }
+        for entry in
+            std::fs::read_dir(&folder).map_err(|error| Failure::new(CODE, error.to_string()))?
+        {
+            let entry = entry.map_err(|error| Failure::new(CODE, error.to_string()))?;
+            seen += 1;
+            if seen > WALK_LIMIT {
+                return Err(Failure::new(
+                    REFUSED,
+                    "too many untracked entries to prove no repository is among them",
+                ));
+            }
+            if entry
+                .file_type()
+                .map_err(|error| Failure::new(CODE, error.to_string()))?
+                .is_dir()
+            {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A reset or clean refuses a work tree whose state the dirt count could not measure: submodules, and entries marked
 /// assume-unchanged or skip-worktree.
-fn guard_discard(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
+fn guard_index(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
     let staged = system.bytes(CODE, tree, &["ls-files", "-z", "--stage"])?;
     if entries(&staged).any(|entry| entry.starts_with(b"160000 ")) {
         return Err(Failure::new(REFUSED, "the work tree has submodules"));
@@ -241,7 +378,7 @@ fn guard_discard(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Whether a tracked file differs from `HEAD`, in the index or the work tree. Submodules are not part of it.
+/// Whether a tracked file differs from `HEAD`, in the index or the work tree.
 fn dirty(system: &NodeSystem, tree: &Path) -> Result<bool, Failure> {
     let status = system.bytes(
         CODE,
@@ -259,7 +396,7 @@ fn dirty(system: &NodeSystem, tree: &Path) -> Result<bool, Failure> {
     Ok(dirty)
 }
 
-/// Untracked files that are not ignored, nested repositories left out: the count `clean` brings to 0.
+/// Untracked files that are not ignored: the count `clean` brings to 0.
 fn untracked(system: &NodeSystem, tree: &Path) -> Result<usize, Failure> {
     let listed = system.bytes(
         CODE,
@@ -273,31 +410,8 @@ fn untracked(system: &NodeSystem, tree: &Path) -> Result<usize, Failure> {
             "--no-empty-directory",
         ],
     )?;
-    Ok(entries(&listed)
-        .filter(|entry| {
-            !(entry.ends_with(b"/")
-                && tree
-                    .join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(entry))
-                    .join(".git")
-                    .exists())
-        })
-        .count())
-}
-
-/// The branch `HEAD` names, or `None` when it is detached.
-fn current_branch(system: &NodeSystem, tree: &Path) -> Result<Option<String>, Failure> {
-    let ran = system.git(LOCAL_SECONDS, tree, &["symbolic-ref", "--quiet", "HEAD"])?;
-    match ran.code {
-        Some(0) => Ok(String::from_utf8_lossy(&ran.stdout)
-            .trim()
-            .strip_prefix("refs/heads/")
-            .map(str::to_owned)),
-        Some(1) => Ok(None),
-        _ => Err(Failure::new(
-            CODE,
-            format!("symbolic-ref: {}", ran.stderr.trim()),
-        )),
-    }
+    let count = entries(&listed).count();
+    Ok(count)
 }
 
 /// The commit `HEAD` names, or `None` on a branch with no commit yet.

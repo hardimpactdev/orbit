@@ -6,12 +6,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{entries, full_ref, parse, path, require_repository, resolve, Failure, NodeSystem};
+use crate::{
+    entries, full_ref, head_branch, parse, path, require_repository, resolve, Failure, NodeSystem,
+};
 
 const CODE: &str = "git.read_failed";
-/// How many path names a list carries, each cut to this many characters, as `instance.work_read` answers them.
-const NAMES: usize = 5;
-const NAME_LENGTH: usize = 200;
+/// How many paths a list carries; a longer list says `truncated`, as `instance.work_read` holds at most 5,000.
+const PATHS: usize = 5000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,13 +23,24 @@ struct ReadInput {
     against: Option<String>,
 }
 
-/// A count and the first names of a list of paths, in `instance.work_read`'s shape.
+/// The paths of one list, in Git's order, each exactly as Git names it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Listed {
-    /// How many paths.
+    /// How many paths the work tree has in this list.
     pub count: u32,
-    /// The first five, each at most 200 characters; a byte that is not UTF-8 reads as U+FFFD.
-    pub names: Vec<String>,
+    /// The first 5,000 of them.
+    pub paths: Vec<String>,
+    /// Whether `paths` holds fewer than `count`.
+    pub truncated: bool,
+}
+
+/// One stash entry: its commit and its reflog label, such as `stash@{0}: WIP on main: …`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Stash {
+    /// The stash commit.
+    pub commit: String,
+    /// The reflog selector and subject; a byte that is not UTF-8 reads as U+FFFD, as it is only shown.
+    pub label: String,
 }
 
 /// What one work tree holds.
@@ -41,21 +53,21 @@ pub enum Worktree {
     Present {
         /// The commit `HEAD` names, `None` before the first commit.
         head: Option<String>,
-        /// The branch, `None` when `HEAD` is detached.
+        /// The branch `HEAD` names itself, `None` when `HEAD` is detached.
         branch: Option<String>,
         /// Tracked paths with a staged change.
         staged: u32,
         /// Tracked paths with an unstaged change.
         unstaged: u32,
-        /// Paths with a merge conflict.
+        /// Listed with a merge conflict.
         unmerged: u32,
         /// Tracked paths that differ from `HEAD`, in the index or the work tree.
         modified: Listed,
         /// Untracked files that are not ignored.
         untracked: Listed,
-        /// Entries in the stash's reflog.
-        stashes: u32,
-        /// Every local branch and the commit it names.
+        /// The stash's reflog, newest first.
+        stashes: Vec<Stash>,
+        /// Every ref under `refs/heads/`, by its full name exactly as Git holds it, and the commit it names.
         heads: BTreeMap<String, String>,
         /// Commits on `HEAD` that `against` lacks, only when asked.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,8 +78,9 @@ pub enum Worktree {
     },
 }
 
-/// Reads one work tree. Every call takes no lock (`--no-optional-locks`) and refreshes no index, and a split index refuses,
-/// so the read writes no file. A symbolic branch or `against` refuses: the read certifies no ref through another.
+/// Reads one work tree. Every call takes no lock (`--no-optional-locks`) and refreshes no index, and an active split index
+/// refuses, so the read writes no file. A symbolic branch, `HEAD` naming one, or a symbolic `against` refuses. A path or a
+/// branch name that is not UTF-8 fails the read instead of being changed.
 ///
 /// # Errors
 ///
@@ -83,7 +96,17 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
         Ok(_) => {}
     }
     require_repository(system, CODE, &tree, crate::Kind::WorkTree)?;
-    split_index(system, &tree)?;
+    if !system
+        .text(CODE, &tree, &["rev-parse", "--shared-index-path"])?
+        .trim()
+        .is_empty()
+    {
+        return Err(Failure::new(
+            "git.repository_refused",
+            "the work tree uses a split index",
+        ));
+    }
+    let branch = head_branch(system, CODE, &tree)?;
     let status = system.bytes(
         CODE,
         &tree,
@@ -96,14 +119,12 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
             "--no-renames",
         ],
     )?;
-    let (mut head, mut branch) = (None, None);
+    let mut head = None;
     let (mut staged, mut unstaged, mut unmerged) = (0, 0, 0);
     let (mut modified, mut untracked) = (Vec::new(), Vec::new());
     for record in entries(&status) {
         if let Some(oid) = record.strip_prefix(b"# branch.oid ") {
             head = (oid != b"(initial)").then(|| String::from_utf8_lossy(oid).into_owned());
-        } else if let Some(name) = record.strip_prefix(b"# branch.head ") {
-            branch = (name != b"(detached)").then(|| String::from_utf8_lossy(name).into_owned());
         } else if let Some(rest) = record.strip_prefix(b"1 ") {
             staged += u32::from(rest.first().is_some_and(|byte| *byte != b'.'));
             unstaged += u32::from(rest.get(1).is_some_and(|byte| *byte != b'.'));
@@ -116,29 +137,8 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
             untracked.push(rest);
         }
     }
-    if let Some(name) = &branch {
-        resolve(system, CODE, &tree, &format!("refs/heads/{name}"))?;
-    }
     let heads = heads(system, &tree)?;
-    let stashes = match resolve(system, CODE, &tree, "refs/stash")? {
-        Some(_) => u32::try_from(
-            entries(&system.bytes(
-                CODE,
-                &tree,
-                &[
-                    "log",
-                    "--walk-reflogs",
-                    "-z",
-                    "--format=%H",
-                    "refs/stash",
-                    "--",
-                ],
-            )?)
-            .count(),
-        )
-        .unwrap_or(u32::MAX),
-        None => 0,
-    };
+    let stashes = stashes(system, &tree)?;
     let (ahead, behind) = match (against, &head) {
         (Some(against), Some(_)) => counts(system, &tree, against)?,
         _ => (None, None),
@@ -149,8 +149,8 @@ pub fn worktree_read(system: &NodeSystem, input: &Value) -> Result<Worktree, Fai
         staged,
         unstaged,
         unmerged,
-        modified: listed(&modified),
-        untracked: listed(&untracked),
+        modified: listed(&modified)?,
+        untracked: listed(&untracked)?,
         stashes,
         heads,
         ahead,
@@ -166,81 +166,88 @@ fn field(record: &[u8], skip: usize) -> &[u8] {
         .unwrap_or_default()
 }
 
-fn listed(paths: &[&[u8]]) -> Listed {
-    let names = paths
+fn listed(paths: &[&[u8]]) -> Result<Listed, Failure> {
+    let named = paths
         .iter()
-        .take(NAMES)
+        .take(PATHS)
         .map(|path| {
-            let name = String::from_utf8_lossy(path);
-            if name.chars().count() <= NAME_LENGTH {
-                name.into_owned()
-            } else {
-                name.chars().take(NAME_LENGTH - 1).chain(['…']).collect()
-            }
+            String::from_utf8(path.to_vec()).map_err(|_| Failure::new(CODE, "a path is not UTF-8"))
         })
-        .collect();
-    Listed {
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Listed {
         count: u32::try_from(paths.len()).unwrap_or(u32::MAX),
-        names,
-    }
+        truncated: named.len() < paths.len(),
+        paths: named,
+    })
 }
 
-/// A split index keeps a shared index file that a read could write; such a work tree refuses.
-fn split_index(system: &NodeSystem, tree: &Path) -> Result<(), Failure> {
-    let folder = system.text(CODE, tree, &["rev-parse", "--absolute-git-dir"])?;
-    let shared = std::fs::read_dir(folder.trim())
-        .map_err(|error| Failure::new(CODE, error.to_string()))?
-        .flatten()
-        .any(|entry| {
-            entry
-                .file_name()
-                .as_encoded_bytes()
-                .starts_with(b"sharedindex.")
-        });
-    if shared {
-        return Err(Failure::new(
-            "git.repository_refused",
-            "the work tree has a split index",
-        ));
-    }
-    Ok(())
-}
-
-/// Every local branch and its commit; a symbolic branch refuses.
+/// Every ref under `refs/heads/` by its full name; a symbolic one refuses, and a name that is not UTF-8 fails.
 fn heads(system: &NodeSystem, tree: &Path) -> Result<BTreeMap<String, String>, Failure> {
     let listed = system.bytes(
         CODE,
         tree,
         &[
             "for-each-ref",
-            "--format=%(objectname) %(symref)%00%(refname)",
+            "--format=%(objectname) %(symref)%00%(refname)%00",
             "refs/heads/",
         ],
     )?;
     let mut heads = BTreeMap::new();
-    for line in listed
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-    {
-        let text = String::from_utf8_lossy(line);
-        let (object, rest) = text
+    let mut fields = listed.split(|byte| *byte == 0);
+    while let (Some(first), Some(name)) = (fields.next(), fields.next()) {
+        let first = first.strip_prefix(b"\n").unwrap_or(first);
+        let first = std::str::from_utf8(first)
+            .map_err(|_| Failure::new(CODE, "for-each-ref answered no object"))?;
+        let (object, symref) = first
             .split_once(' ')
             .ok_or_else(|| Failure::new(CODE, "for-each-ref answered no object"))?;
-        let (symref, name) = rest
-            .split_once('\0')
-            .ok_or_else(|| Failure::new(CODE, "for-each-ref answered no name"))?;
+        let name = String::from_utf8(name.to_vec())
+            .map_err(|_| Failure::new(CODE, "a branch name is not UTF-8"))?;
         if !symref.is_empty() {
             return Err(Failure::new(
                 "git.ref_symbolic",
                 format!("{name} is a symbolic ref"),
             ));
         }
-        heads.insert(
-            name.trim_start_matches("refs/heads/").to_owned(),
-            object.to_owned(),
-        );
+        if heads
+            .insert(name, crate::commit(object)?.to_owned())
+            .is_some()
+        {
+            return Err(Failure::new(CODE, "two branches read as one name"));
+        }
     }
     Ok(heads)
+}
+
+/// The stash's reflog, newest first, or none without `refs/stash`.
+fn stashes(system: &NodeSystem, tree: &Path) -> Result<Vec<Stash>, Failure> {
+    if resolve(system, CODE, tree, "refs/stash")?.is_none() {
+        return Ok(Vec::new());
+    }
+    let log = system.bytes(
+        CODE,
+        tree,
+        &[
+            "log",
+            "--walk-reflogs",
+            "-z",
+            "--format=%H %gd: %gs",
+            "refs/stash",
+            "--",
+        ],
+    )?;
+    entries(&log)
+        .map(|entry| {
+            let text = String::from_utf8_lossy(entry);
+            let (commit, label) = text
+                .split_once(' ')
+                .ok_or_else(|| Failure::new(CODE, "the stash log answered no commit"))?;
+            Ok(Stash {
+                commit: crate::commit(commit)?.to_owned(),
+                label: label.to_owned(),
+            })
+        })
+        .collect()
 }
 
 /// Commits on `HEAD` that `against` lacks, and the reverse.

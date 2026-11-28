@@ -17,7 +17,6 @@ mod reference;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -92,12 +91,11 @@ pub struct NodeSystem {
 }
 
 /// Settings every call takes: no hook, no filesystem monitor, no program Git could start for a credential, diff, pager or
-/// SSH, no untracked cache or split index to write, and no remote protocol unless a fetch allows one.
-const FIXED: [&str; 13] = [
+/// SSH, no untracked cache to write, and no remote protocol unless a fetch allows one.
+const FIXED: [&str; 12] = [
     "core.hooksPath=/dev/null",
     "core.fsmonitor=false",
     "core.untrackedCache=false",
-    "core.splitIndex=false",
     "core.pager=cat",
     "core.sshCommand=/bin/false",
     "core.askPass=/bin/false",
@@ -130,8 +128,8 @@ impl NodeSystem {
         std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
     }
 
-    /// Runs Git on one folder with the fixed settings, a cleared environment and a time limit. `secret` settings travel in
-    /// Git's own `GIT_CONFIG_COUNT` environment, never in the argument list that other users can read. Answers the exit
+    /// Runs Git on one folder with the fixed settings, a cleared environment and a time limit. `secret` holds environment
+    /// entries that carry a credential, never in the argument list that other users can read. Answers the exit
     /// code (`None` for a signal), standard output as bytes and standard error.
     #[expect(
         clippy::unused_self,
@@ -158,14 +156,12 @@ impl NodeSystem {
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_ASKPASS", "/bin/false")
             .env("GIT_CEILING_DIRECTORIES", ceiling);
-        if !secret.is_empty() {
-            command.env("GIT_CONFIG_COUNT", secret.len().to_string());
-            for (index, (key, value)) in secret.iter().enumerate() {
-                command
-                    .env(format!("GIT_CONFIG_KEY_{index}"), key)
-                    .env(format!("GIT_CONFIG_VALUE_{index}"), value);
-            }
-        }
+        // A credentialed fetch replaces `GIT_ASKPASS` and adds the answers it reads; nothing else enters the environment.
+        command.envs(
+            secret
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        );
         command
             .arg(seconds.to_string())
             .arg(GIT)
@@ -405,7 +401,7 @@ pub(crate) enum Kind {
 /// Configuration a repository may not hold, by lowercase key prefix and suffix: each can redirect a transport, start a
 /// program, or make a read write. Git applies the repository's own value where no fixed `-c` covers every name (a
 /// `protocol.<name>.allow`, a `url.<base>.insteadOf`, a filter or merge driver), so such a repository is refused instead.
-const REFUSED: [(&str, &str); 22] = [
+const REFUSED: [(&str, &str); 21] = [
     ("url.", ".insteadof"),
     ("url.", ".pushinsteadof"),
     ("protocol.", ""),
@@ -425,7 +421,6 @@ const REFUSED: [(&str, &str); 22] = [
     ("core.askpass", ""),
     ("core.gitproxy", ""),
     ("core.worktree", ""),
-    ("core.splitindex", ""),
     ("include", ""),
     ("uploadpack.", ""),
 ];
@@ -498,44 +493,46 @@ pub(crate) fn entries(listing: &[u8]) -> impl Iterator<Item = &[u8]> {
         .filter(|entry| !entry.is_empty())
 }
 
-/// The untracked and ignored paths of a work tree that a tree's checkout would overwrite or need gone: a path the tree
-/// holds, a folder the tree needs where the path is, or a path below a file of the tree. Nested repositories count too.
-pub(crate) fn obstructions(
+/// The branch `HEAD` names itself, one level only: `HEAD` that names a symbolic branch refuses (`git.ref_symbolic`), so no
+/// primitive acts on or certifies the branch an alias points to. `None` when `HEAD` is detached.
+pub(crate) fn head_branch(
     system: &NodeSystem,
     code: &'static str,
     tree: &Path,
-    target: &str,
-) -> Result<usize, Failure> {
-    let wanted = system.bytes(
-        code,
+) -> Result<Option<String>, Failure> {
+    let ran = system.git(
+        LOCAL_SECONDS,
         tree,
-        &[
-            "ls-tree",
-            "-r",
-            "-z",
-            "--name-only",
-            "--full-tree",
-            "--end-of-options",
-            target,
-        ],
+        &["symbolic-ref", "--quiet", "--no-recurse", "HEAD"],
     )?;
-    let files: HashSet<&[u8]> = entries(&wanted).collect();
-    let folders: HashSet<&[u8]> = files.iter().flat_map(|file| ancestors(file)).collect();
-    let others = system.bytes(code, tree, &["ls-files", "-z", "--others", "--directory"])?;
-    Ok(entries(&others)
-        .map(|entry| entry.strip_suffix(b"/").unwrap_or(entry))
-        .filter(|entry| {
-            files.contains(entry)
-                || folders.contains(entry)
-                || ancestors(entry).any(|above| files.contains(above))
-        })
-        .count())
+    match ran.code {
+        Some(0) => {
+            let named = String::from_utf8(ran.stdout)
+                .map_err(|_| Failure::new(code, "HEAD names a ref that is not UTF-8"))?;
+            let named = named.trim_end_matches('\n');
+            let branch = named
+                .strip_prefix("refs/heads/")
+                .ok_or_else(|| Failure::new(code, "HEAD names a ref outside refs/heads"))?;
+            resolve(system, code, tree, named)?;
+            Ok(Some(branch.to_owned()))
+        }
+        Some(1) => Ok(None),
+        _ => Err(Failure::new(
+            code,
+            format!("symbolic-ref: {}", ran.stderr.trim()),
+        )),
+    }
 }
 
 /// Every folder above a relative path, nearest last.
-fn ancestors(path: &[u8]) -> impl Iterator<Item = &[u8]> {
+pub(crate) fn ancestors(path: &[u8]) -> impl Iterator<Item = &[u8]> {
     path.iter()
         .enumerate()
         .filter(|(_, byte)| **byte == b'/')
         .map(move |(at, _)| &path[..at])
+}
+
+/// A relative path of a listing below a folder.
+pub(crate) fn below(folder: &Path, relative: &[u8]) -> PathBuf {
+    folder.join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(relative))
 }
