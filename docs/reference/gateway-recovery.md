@@ -204,6 +204,8 @@ For an emergency key rotation before a commit lands, place a refreshed trust roo
 
 CI uploads `apps/web` as `web-dist-<sha>` (retained 14 days, max 128 MiB, SHA-256 required) from a green `push` or `workflow_dispatch` run of `.github/workflows/ci.yml` on `main`. Fork, PR, or non-main artifacts are rejected.
 
+That `main` run reuses the web build of the merge queue run that tested the same commit (`bin/ci-tree-receipt`). A commit that reached `main` without the merge queue, such as an admin merge, has no such run. Its `main` run stops with "No merge queue CI run tested this commit" and uploads no web build. A release of that commit refuses with `gateway.release_web_build_missing`. Release the next queued commit instead. Its queue run also tests the changes of the unqueued commit.
+
 The Swamp step downloads, verifies the digest, extracts only regular files and safe relative directories (max 20,000 entries, 512 MiB, root `index.html` required), and atomically moves the build into `web/releases/<id>`. Missing or invalid artifacts refuse admission with `gateway.release_web_build_missing` or `gateway.release_web_build_invalid`. Container rollbacks reuse `old`'s installed web build.
 
 ### Migrations and the snapshot
