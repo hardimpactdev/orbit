@@ -11,6 +11,7 @@ use App\Domain\Engine\MachineBus;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDestroyEngineFlow;
+use App\Domain\Routes\RouteFileGuards;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
@@ -201,9 +202,6 @@ it('leaves a removal the engine cannot reproduce exactly to Swamp', function (ar
         'caddy' => [['node_id' => 3, 'content' => "x\n"]], 'url_lines' => [['node_id' => 3, 'path' => '/home/orbit/apps/shop/.env', 'line' => 'APP_URL=https://x.orbit', 'owner' => 'orbit']]]], []],
     'access rows' => [['retire' => ['acl' => [['node_id' => 3, 'path' => '/home/orbit/apps/shop']], 'links' => [], 'lan' => [], 'env_files' => [], 'url_lines' => [], 'site_nodes' => [3],
         'caddy' => [['node_id' => 3, 'content' => "x\n"]]]], []],
-    'a leaf folder, which needs the account home' => [['cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => 'app-instance-7']]]], []],
-    'a pool, which needs the account group' => [['pools' => ['acl' => [], 'url_lines' => [], 'env_files' => [], 'links' => [], 'lan' => [], 'site_nodes' => [3],
-        'php_files' => [['node_id' => 3, 'path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf', 'content' => "[orbit]\n", 'owner' => 'root']], 'php_tests' => [], 'php_reloads' => []]], []],
     'a never-activated replacement' => [[], ['route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'new.orbit', 'replacement_of' => 4]], 'dns_node_ids' => [1]]]],
     'no captured file digests' => [[], ['route_guards' => []]],
     'a public Route or a Process proxy behind the Ingress' => [[], ['route_private_development' => false]],
@@ -214,13 +212,70 @@ it('leaves a removal the engine cannot reproduce exactly to Swamp', function (ar
         '1' => ['records' => hash('sha256', 'x'), 'catalog' => hash('sha256', 'y')]]]],
 ]);
 
+/** The removal with the Route's leaf and a shared pool, rendered from at admission with the Route's scope. */
+function leafAndPoolOperation(): Operation
+{
+    $operation = routeDestroyOperation([
+        'cleanup' => [['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => 'app-instance-7']]],
+        'pools' => ['acl' => [], 'url_lines' => [], 'env_files' => [], 'links' => [], 'lan' => [], 'site_nodes' => [3],
+            'php_files' => [['node_id' => 3, 'path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf', 'content' => "[orbit]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__\n", 'owner' => 'root']],
+            'php_tests' => [['node_id' => 3, 'argv' => ['/usr/sbin/php-fpm8.4', '-t']]], 'php_reloads' => [['node_id' => 3, 'unit' => 'php8.4-fpm.service']]],
+    ]);
+    $input = $operation->input;
+    $input['route_guards']['3']['php:8.4'] = "[orbit]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__\n[shop]\ngroup = __ORBIT_NODE_GROUP__\n";
+
+    return $operation->forceFill(['input' => $input]);
+}
+
+const DestroyAccount = ['state' => 'present', 'user' => 'orbit', 'uid' => 1000, 'gid' => 1001, 'group' => 'staff', 'home' => '/home/orbit'];
+
+it('reads the account and each pool, then withdraws Caddy, converges the pools and removes both leaf copies', function (): void {
+    expect(array_column(destroySteps(leafAndPoolOperation()), 0))->toBe(['dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace',
+        'caddyread-3', 'account-3', 'poolread-3-0', 'guard-3', 'caddyunlink-3', 'withdraw-3', 'poll-3', 'pools-3', 'leaf-3-0', 'leafhome-3-0', 'sibling-3'])
+        ->and(array_column(destroySteps(leafAndPoolOperation()), 2, 0)['account-3'])->toBe('account.read')
+        ->and(RouteDestroyEngineFlow::chartStep('pools-3'))->toBe('Converge PHP-FPM pools-3')
+        ->and(RouteDestroyEngineFlow::chartStep('leafhome-3-0'))->toBe('Withdraw site, remove cert-3');
+});
+
+it('renders the whole pool with the gid and home account.read answered, guarded by the live pool in either group form', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $live = "[orbit]\ngroup = staff\nchdir = /home/orbit\n[shop]\ngroup = staff\n";
+    $run = destroyRun(['caddyread-3' => plainFile(DestroyBefore), 'account-3' => DestroyAccount, 'poolread-3-0' => plainFile($live)]);
+
+    expect($flow->local(leafAndPoolOperation(), 'guard-3', $run))->toBeString()
+        ->and($flow->input(leafAndPoolOperation(), 'account-3', $run))->toBe(['user' => 'orbit'])
+        ->and($flow->input(leafAndPoolOperation(), 'pools-3', $run))->toBe([
+            'lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/recovery/operation-51/pools-3',
+            'files' => [['path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf', 'content' => ['blob' => ['content' => "[orbit]\ngroup = 1001\nchdir = /home/orbit\n"]],
+                'from_sha256' => hash('sha256', $live), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]],
+            'validators' => [['kind' => 'php-fpm', 'version' => '8.4']], 'units' => [['unit' => 'php8.4-fpm.service', 'load' => 'reload']],
+        ])
+        ->and($flow->input(leafAndPoolOperation(), 'leaf-3-0', $run))->toBe(['state' => 'absent', 'recursive' => true, 'path' => '/etc/caddy/orbit-certificates/app-instance-7'])
+        ->and($flow->input(leafAndPoolOperation(), 'leafhome-3-0', $run))->toBe(['state' => 'absent', 'recursive' => true, 'path' => '/home/orbit/.orbit/certificates/app-instance-7']);
+});
+
+it('refuses before any write when the account is absent or a shared pool changed outside the Route', function (array $account, string $pool): void {
+    $run = destroyRun(['caddyread-3' => plainFile(DestroyBefore), 'account-3' => $account, 'poolread-3-0' => plainFile($pool)]);
+
+    app(RouteDestroyEngineFlow::class)->local(leafAndPoolOperation(), 'guard-3', $run);
+})->throws(EngineStepRefusal::class)->with([
+    'an absent account' => [['state' => 'absent'], "[orbit]\ngroup = 1001\nchdir = /home/orbit\n"],
+    'a foreign scope in the pool' => [DestroyAccount, "[foreign]\n[orbit]\ngroup = 1001\nchdir = /home/orbit\n[shop]\ngroup = 1001\n"],
+]);
+
+it('leaves an absent guarded pool absent and sends no pool order', function (): void {
+    $run = destroyRun(['caddyread-3' => plainFile(DestroyBefore), 'account-3' => DestroyAccount, 'poolread-3-0' => ['state' => 'absent']]);
+
+    expect(app(RouteDestroyEngineFlow::class)->needed(leafAndPoolOperation(), 'pools-3', $run))->toBeFalse();
+});
+
 it('leaves a removal to Swamp when a Node with work is no development Node', function (string $node): void {
     Node::query()->find($node === 'serving' ? 3 : 1)->roles()->update(['role' => RoleName::AppProd]);
 
     app(RouteDestroyEngineFlow::class)->steps(routeDestroyOperation());
 })->throws(EngineUnsupported::class)->with(['serving', 'vpn']);
 
-it('starts on the engine only when every Node with work reports its primitives', function (array $actions, bool $engine): void {
+it('starts on the engine only when every Node with work reports its primitives', function (array $actions, bool $engine, bool $leaf = false): void {
     config(['orbit.engine.kinds' => ['route.destroy']]);
     $bus = new class($actions) implements MachineBus
     {
@@ -261,9 +316,11 @@ it('starts on the engine only when every Node with work reports its primitives',
     };
     $this->app->instance(MachineBus::class, $bus);
 
-    expect(app(EngineKinds::class)->routes(routeDestroyOperation()))->toBe($engine);
+    expect(app(EngineKinds::class)->routes($leaf ? leafAndPoolOperation() : routeDestroyOperation()))->toBe($engine);
 })->with([
     'both report' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe']], true],
+    'a leaf on a Route Node before account.read' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe']], false, true],
+    'a leaf on a Route Node with account.read' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe', 'account.read']], true, true],
     'a VPN Node before agent 0.36.0' => [[1 => ['dns.publish_records'], 3 => ['file.read', 'file.ensure', 'config.apply', 'http.probe']], false],
     'a Route Node without http.probe' => [[1 => ['file.read', 'file.ensure', 'config.apply'], 3 => ['file.read', 'file.ensure', 'config.apply']], false],
 ]);
@@ -337,4 +394,18 @@ it('signs every order in the wire shape the host primitives decode', function ()
 
     expect($withdraw['files'][0]['content'])->toBe(['blob' => ['sha256' => hash('sha256', DestroyAfter)]])
         ->and(EngineContent::upload($bus, 1, $flow->input(routeDestroyOperation(), 'dns-0', $run))['files'][1]['content'])->toBe(['blob' => ['sha256' => hash('sha256', "{}\n")]]);
+});
+
+it('accepts on the first try a catalog in Gateway form that Swamp\'s withdrawal rewrote since', function (): void {
+    // Written by swamp/ansible/module_utils/orbit_route_withdraw.py merge_dns from a catalog in Gateway form.
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/PrivateDns/swamp-withdrawn-catalog.json')), true, 512, JSON_THROW_ON_ERROR);
+    $rendered = $fixture['gateway_render'];
+    $operation = routeDestroyOperation();
+    $input = $operation->input;
+    $input['route_guards']['1'] = [...$input['route_guards']['1'], 'catalog' => RouteFileGuards::catalogDigest($rendered),
+        'catalog_file' => hash('sha256', $rendered), 'catalog_swamp' => hash('sha256', RouteFileGuards::swampCatalog($rendered))];
+    $run = destroyRun(['dnsread-0-records' => plainFile("address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'dnsread-0-catalog' => plainFile($fixture['written'])]);
+
+    expect(app(RouteDestroyEngineFlow::class)->input($operation->forceFill(['input' => $input]), 'dns-0', $run)['files'][1]['from_sha256'])
+        ->toBe(hash('sha256', $fixture['written']));
 });

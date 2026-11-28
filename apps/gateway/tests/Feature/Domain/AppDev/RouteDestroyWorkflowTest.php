@@ -105,15 +105,6 @@ function destroyExpressions(array $inputs): array
     return json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
 }
 
-/** The admitted removal without its leaf folders, which need the account's home (account.read, agent 0.37.0). */
-function withoutLeaves(Operation $operation): Operation
-{
-    $input = $operation->input;
-    $input['route_lifecycle']['plan']['cleanup'] = [];
-
-    return $operation->forceFill(['input' => $input]);
-}
-
 /** @return array{Operation,array<string,mixed>} */
 function destroyAdmission(Route $route): array
 {
@@ -258,13 +249,15 @@ it('records the whole-file digests the engine guards with, and builds its steps 
         'records' => hash('sha256', $before['dns']['records']), 'catalog' => RouteFileGuards::catalogDigest($before['dns']['catalog']),
         'catalog_file' => hash('sha256', $before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
-    expect(fn () => $flow->steps($operation))->toThrow(EngineUnsupported::class, 'account\'s home or group');
-    $steps = array_map(static fn ($step): string => $step->name, $flow->steps(withoutLeaves($operation)));
+    $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
     $read = (new OperationEngineStep)->forceFill(['name' => "caddyread-{$node->id}", 'status' => 'done',
         'output' => json_encode(['state' => 'present', 'type' => 'file', 'sha256' => hash('sha256', $before['caddy']['content']), 'uid' => 0, 'gid' => 997, 'mode' => '0640'])]);
-    $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read], 0, null);
+    $account = (new OperationEngineStep)->forceFill(['name' => "account-{$node->id}", 'status' => 'done',
+        'output' => json_encode(['state' => 'present', 'user' => 'orbit', 'uid' => 1000, 'gid' => 1000, 'group' => 'orbit', 'home' => '/home/orbit'])]);
+    $run = new EngineRun($operation->id, ["caddyread-{$node->id}" => $read, "account-{$node->id}" => $account], 0, null);
+    // The real capture removes the Route's leaf, so the Node's account is read first (account.read).
     expect($steps)->toBe(['dnsread-0-records', 'dnsunlink-0-records', 'dnsread-0-catalog', 'dnsunlink-0-catalog', 'dns-0', 'grace', "caddyread-{$node->id}",
-        "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "sibling-{$node->id}"])
+        "account-{$node->id}", "guard-{$node->id}", "caddyunlink-{$node->id}", "withdraw-{$node->id}", "poll-{$node->id}", "leaf-{$node->id}-0", "leafhome-{$node->id}-0", "leaf-{$node->id}-1", "leafhome-{$node->id}-1", "sibling-{$node->id}"])
         ->and($flow->local($operation, "guard-{$node->id}", $run))->toBeString()
         ->and($flow->input($operation, "withdraw-{$node->id}", $run)['files'][0]['from_sha256'])->toBe(hash('sha256', $before['caddy']['content']));
 });
@@ -320,7 +313,7 @@ it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from
     if ($process) {
         expect(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
     } else {
-        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps(withoutLeaves($operation))))->toContain("withdraw-{$node->id}");
+        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
     }
 })->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);
 
@@ -335,7 +328,7 @@ it('keeps a private Route on the engine when an unrelated Ingress serves its clu
 
     expect($route->cluster->ingressAssignment)->not->toBeNull()
         ->and($operation->input['route_private_development'])->toBeTrue()
-        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps(withoutLeaves($operation))))->toContain("withdraw-{$node->id}");
+        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
 });
 
 it('destroys a secondary web-root Route of an active Instance and keeps its authoritative Route', function (): void {

@@ -26,7 +26,7 @@ from clone_lifecycle import (
 
 VPN_NODE = 1
 # Node actions that change nothing and keep no journal entry.
-READS = ('file.read', 'http.probe')
+READS = ('file.read', 'http.probe', 'account.read')
 GRACE_MS = 31_000
 RECORDS = '/etc/dnsmasq.d/orbit-records.conf'
 CADDYFILE = '/etc/caddy/Caddyfile'
@@ -249,7 +249,7 @@ class RouteLane(CloneLane):
             require(sum(entry['record'] == 'open' for entry in mine) == 1 and [entry['outcome']['status'] for entry in mine if entry['record'] == 'done'] in (['applied'], ['done']),
                     f'step {step["name"]} of {operation} did not execute once in the Node journal: {mine}')
         skipped = [step['name'] for step in summary['steps'] if step['target'] != 'gateway' and step['first_sent_ms'] is None]
-        require(all(name.startswith(('dnsunlink-', 'caddyunlink-')) for name in skipped), f'{operation} skipped Node steps other than a link removal: {skipped}')
+        require(all(name.startswith(('dnsunlink-', 'caddyunlink-', 'pools-')) for name in skipped), f'{operation} skipped Node steps other than a link removal or an unneeded pool write: {skipped}')
         return journal
 
     @traced

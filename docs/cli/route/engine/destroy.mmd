@@ -27,7 +27,7 @@ sequenceDiagram
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - production gate (as ORB-6337): each serving Node has the active `app-dev` role and each DNS Node the `vpn` role; no `production_control`, and no production Instance on a serving Node
     %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, Caddy access rows (`posix.acl.ensure` with scope `tree`, A4) or link writes, a never-activated replacement, LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`
-    %%> - leaf folders and shared pools need the account's home and group, which only `account.read` (agent 0.37.0) reads on the Node; until that pin a removal with either runs on Swamp
+    %%> - leaf folders and pools need the account's home and group, which `account.read` (agent 0.37.0) reads on the Node; a Route Node with either must report it
     %%> - also refused: a public Route or a Process proxy (`route_private_development`), and a PHP version whose last shared pool would leave
     Note over GW: Bind steps, take the lock<br/>hold every Node, publish the start
     %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
@@ -49,10 +49,12 @@ sequenceDiagram
       %%> The engine keeps that time on the step (`EngineWait`) and schedules its deadline on the bus; no process sleeps, so a restart resumes only what is left (ORB-6333)
       %%> A cancel during the wait ends the Operation `cancelled` with nothing withdrawn from the Route Node
     end
-    EN->>N: Read the Caddyfile<br/>file.read · caddyread-node
-    N-->>EN: Digest
+    EN->>N: Read files and account<br/>file.read · account.read
+    %%> `caddyread-node`; `account-node` (`account.read`: uid, gid, group, home) and `poolread-node-k` only when the Node has a leaf or a pool to change
+    N-->>EN: Digests · account
     Note over EN: Guard the Caddyfile<br/>guard-node
     %%> A Gateway step: the read digest must be the Caddyfile rendered at admission (`route_guards`) or the desired one, else `owned_revision_conflict` and nothing is written; a missing Caddyfile or another kind refuses too
+    %%> An absent account refuses (`account.absent`), so nothing is written or removed for it; each pool must hold its render at admission or the desired one, the group as the gid or the group's name, else `owned_revision_conflict`
     %%> A link in its place passes: `caddyunlink-node` removes it without following it (`file.ensure` absent), and the write below goes unguarded; the step is done without an order otherwise
     EN->>N: Write and reload Caddy<br/>config.apply · withdraw-node
     %%> The whole Caddyfile without the Route, guarded by the digest read, owner `root:caddy 0640`, under the publication lock `/etc/caddy/.orbit-publish.lock`
@@ -62,6 +64,12 @@ sequenceDiagram
     EN->>N: Poll Caddy's admin API<br/>http.probe · poll-node
     %%> `http://127.0.0.1:2019/config/` until no withdrawn name appears in it, within 5 s (ORB-6335); unmet fails the chart's withdrawal step
     N-->>EN: met
+    opt a pool or a leaf to change
+      EN->>N: Pools and leaves<br/>config.apply · file.ensure
+      %%> `pools-node`: each pool rendered whole by the Gateway (in place of withdraw.rs `merge_pool`), the gid and home from `account.read`, guarded by its read, under `/etc/caddy/.orbit-publish.lock`; `php-fpm -t` per pool, then each pool reloads; a failure restores them and fails `Converge PHP-FPM pools`; no order when every guarded pool is absent
+      %%> `leaf-node-k`, `leafhome-node-k`: `file.ensure` absent, recursive, of `/etc/caddy/orbit-certificates/<scope>` and `<home>/.orbit/certificates/<scope>`, only once Caddy no longer names them
+      N-->>EN: applied
+    end
     EN->>N: Probe a sibling Route<br/>TLS over WireGuard
     %%> A Gateway step (`sibling-node`) as route.create's probe: a TLS handshake with another Route on the same Node, trusting only the Orbit root, proves Caddy still serves the rest; skipped when the Node serves no other Route
     opt the receipt is lost
