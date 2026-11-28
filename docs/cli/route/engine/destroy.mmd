@@ -23,7 +23,7 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `route.destroy` is in `ORBIT_ENGINE_KINDS`
-    %%> - every Node a step touches reports its action in `$KV.NODES`: `file.read` and `config.apply` on each VPN Node, and `http.probe` too on each Route Node (agent 0.36.0)
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `file.read`, `file.ensure` and `config.apply` on each VPN Node, and `http.probe` too on each Route Node (agent 0.36.0)
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - production gate (as ORB-6337): each serving Node has the active `app-dev` role and each DNS Node the `vpn` role; no `production_control`, and no production Instance on a serving Node
     %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, Caddy access rows (`posix.acl.ensure` with scope `tree`, A4) or link writes, a never-activated replacement, LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`
@@ -36,11 +36,11 @@ sequenceDiagram
     opt domain outside the TLD
       EN->>V: Read records and catalog<br/>file.read · dnsread-i
       %%> Two reads, never following a link: the digest, type, owner and mode of `/etc/dnsmasq.d/orbit-records.conf` and `/var/lib/orbit/private-dns/catalog.json`; the receipt is the step's output, so a retry sends the same guard
-      %%> Anything but a plain file or nothing refuses (`owned_revision_conflict`)
+      %%> A link in a file's place is removed without following it (`file.ensure` absent, `dnsunlink-i-file`), only then; the step is done without an order otherwise; any other kind refuses
       V-->>EN: Digest or absent
       EN->>V: Write records and catalog<br/>config.apply · dns-i
-      %%> The records and catalog rendered without the Route, each guarded by the digest just read (`from_sha256`; none for an absent file), owner `root:root 0644`, under the DNS lock `/run/lock/orbit-dnsmasq.lock`
-      %%> A file that changed since the read refuses before any write (`owned_revision_conflict`); bytes that differ only in form (another key order) are rewritten to the Gateway's render
+      %%> The records and catalog rendered without the Route, owner `root:root 0644`, under the DNS lock `/run/lock/orbit-dnsmasq.lock`; each guarded (`from_sha256`) by the digest of the bytes the Gateway rendered from at admission (`records`, `catalog_file`), or by the read digest when the read already found the desired bytes; a file that was a link is written unguarded
+      %%> A file changed after admission, by another Route or any other publisher, refuses before any write (`owned_revision_conflict`), as on main; a sibling added since is never erased
       %%> `dnsmasq --test` with `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`, then `dnsmasq` and `orbit-private-dns` restart on every run; a failed test or restart puts the old files back and loads them again
       %%> The prior state is recorded in `/var/lib/orbit/executor/recovery/operation-<id>/dns-<i>`, so a run that stopped is undone by its replay
       V-->>EN: Files and restart<br/>applied
@@ -52,7 +52,8 @@ sequenceDiagram
     EN->>N: Read the Caddyfile<br/>file.read · caddyread-node
     N-->>EN: Digest
     Note over EN: Guard the Caddyfile<br/>guard-node
-    %%> A Gateway step: the read digest must be the Caddyfile rendered at admission (`route_guards`) or the desired one, else `owned_revision_conflict` and nothing is written; a link in its place refuses too
+    %%> A Gateway step: the read digest must be the Caddyfile rendered at admission (`route_guards`) or the desired one, else `owned_revision_conflict` and nothing is written; a missing Caddyfile or another kind refuses too
+    %%> A link in its place passes: `caddyunlink-node` removes it without following it (`file.ensure` absent), and the write below goes unguarded; the step is done without an order otherwise
     EN->>N: Write and reload Caddy<br/>config.apply · withdraw-node
     %%> The whole Caddyfile without the Route, guarded by the digest read, owner `root:caddy 0640`, under the publication lock `/etc/caddy/.orbit-publish.lock`
     %%> `caddy validate` as `caddy`, then `caddy.service` reloads on every run, also a replay that finds nothing to change; a failed validation or reload puts the old file back and reloads it
@@ -81,7 +82,7 @@ sequenceDiagram
       %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
       Note over GW: Record the failure<br/>Route kept · failed step
       %%> - what was withdrawn stays withdrawn; no rollback
-      %%> - each step maps onto the Swamp chart step it is part of (reads, guard and poll onto `Withdraw site, remove cert` or `Remove private DNS`), so the projection records main's `failed_step` and that step's code
+      %%> - each step maps onto the Swamp chart step it is part of (reads, unlinks, guard and poll onto `Withdraw site, remove cert` or `Remove private DNS`), so the projection records main's `failed_step` and that step's code: a guard conflict (`owned_revision_conflict` in the receipt) persists `route.withdraw_failed` or `private_dns.publication_failed`, as on main
       %%> - retry: the same command; its reads take the files as they are and each write converges
     end
   else the engine does not admit it
