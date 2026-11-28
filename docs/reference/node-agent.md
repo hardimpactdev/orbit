@@ -219,7 +219,7 @@ The subscriber also acts as the [executor result listener](/reference/executor#t
 
 ## Delivery
 
-Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10995.0` / agent `0.38.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
+Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.11000.0` / agent `0.39.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
 
 ```json
 {
