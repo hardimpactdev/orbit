@@ -342,7 +342,9 @@ A repeat changes nothing and answers 0. Each background operation is awaited wit
 
 It does not yet hold the id-map shift of the root filesystem or the ZFS dataset repair that the [catalogue's notes](#the-catalogue) give it; they join before a flow starts or removes an instance with it.
 
-It meets the [five conditions](#what-a-primitive-may-be): one Incus instance; no Orbit name or path, the socket being the Incus default; every project, instance, snapshot and profile name from the order; desired state with read-back and 0 changes on a repeat; typed input with no command, and requests fixed in the Rust code. An executor reports it in its actions from agent 0.39.0, so the Gateway admits a flow that uses it only on Nodes that report it.
+It meets the [five conditions](#what-a-primitive-may-be). It acts on one Incus instance. It holds no Orbit name or path, and its only fixed path is the Incus default socket. The order sends every project, instance, snapshot and profile name. It reads back the desired state and answers 0 changes on a repeat. Its input is typed and carries no command; the Rust code fixes every request.
+
+An executor reports it in its actions from agent 0.39.0, so the Gateway admits a flow that uses it only on Nodes that report it.
 
 ### The instance family
 
