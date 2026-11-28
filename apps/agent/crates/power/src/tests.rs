@@ -322,7 +322,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::GitFetch
             | orbit_executor_core::action::Action::GitCheckout
             | orbit_executor_core::action::Action::GitRefEnsure
-            | orbit_executor_core::action::Action::GitWorktreeRead => {
+            | orbit_executor_core::action::Action::GitWorktreeRead
+            | orbit_executor_core::action::Action::IncusInstanceEnsure => {
                 panic!("power actions only")
             }
         }
