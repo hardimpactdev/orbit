@@ -137,9 +137,16 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         return $steps;
     }
 
-    /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked). */
+    /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked); an untrust step only on a rotation. */
     public function skips(Operation $operation, string $step, EngineRun $run): bool
     {
+        if (str_ends_with($step, '-untrust')) {
+            // Only a rotation removes a source: the fixed CA file held another root, by the digest of its PEM.
+            $before = RouteHostSteps::digest($run->output(substr($step, 0, -strlen('untrust')).'read-trust'));
+
+            return $before === null || $before === hash('sha256', ValidatedData::string(self::plan($operation)['root_certificate']));
+        }
+
         return str_contains($step, '-unlink-') && ! RouteHostSteps::linked($run->output(str_replace('-unlink-', '-read-', $step)));
     }
 
@@ -228,7 +235,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             }
         }
         if (in_array($node, ValidatedData::integerList($plan['trust']), true)) {
-            $parts[] = ['trust', 'ca.trust.ensure', [], 120_000];
+            // A rotation removes the source of the root the fixed CA file held, writes the new root there, then trusts it.
+            $parts = [...$parts, ['read-trust', 'file.read', [], 30_000], ['untrust', 'file.ensure', [], 30_000], ['cafile', 'file.ensure', [], 30_000],
+                ['trust', 'ca.trust.ensure', [], 120_000]];
         }
         if ($mine('caddy') !== []) {
             $parts[] = ['read-caddy', 'file.read', [], 30_000];
@@ -315,14 +324,20 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /**
-     * A VPN Node's records and catalog, as the Gateway rendered them, each guarded by the live digest its read returned.
+     * A VPN Node's records and catalog, as the Gateway rendered them at admission, each guarded by its admission digest.
      *
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private static function dnsInput(array $row, ?string $records, ?string $catalog): array
     {
-        return RouteHostSteps::dns(ValidatedData::string($row['records']), ValidatedData::string($row['catalog']), RouteHostSteps::digest($records), RouteHostSteps::digest($catalog));
+        // The guard is the admission digest, as route.update and route.destroy guard theirs: a payload that went stale while the
+        // create waited for its hold refuses without writing. config.apply still keeps a file that already holds the payload. A
+        // link the read found was removed first, so that file takes no guard.
+        $from = is_array($row['from'] ?? null) ? $row['from'] : [];
+        $guard = static fn (string $file, ?string $read): ?string => RouteHostSteps::linked($read) || ! is_string($from[$file] ?? null) ? null : $from[$file];
+
+        return RouteHostSteps::dns(ValidatedData::string($row['records']), ValidatedData::string($row['catalog']), $guard('records', $records), $guard('catalog', $catalog));
     }
 
     /**
@@ -417,12 +432,15 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         $home = $answer['home'] ?? null;
         $gid = $answer['gid'] ?? null;
         $user = $answer['user'] ?? null;
-        if (($answer['state'] ?? null) !== 'present' || ! is_string($user) || preg_match(self::Name, $user) !== 1 || ! is_string($group) || preg_match(self::Name, $group) !== 1 || ! is_string($home)
-            || ! str_starts_with($home, '/') || str_contains($home, "\n") || ! is_int($gid)) {
+        // Any account NSS resolves is usable: its names are taken as NSS answers them, whatever their case or characters.
+        $named = static fn (mixed $name): bool => is_string($name) && $name !== '' && strpbrk($name, ":\n\0") === false;
+        if (($answer['state'] ?? null) !== 'present' || ! is_string($user) || ! $named($user) || ! is_string($group) || ! $named($group) || ! is_string($home) || ! str_starts_with($home, '/')
+            || strpbrk($home, "\n\0") !== false || ! is_int($gid)) {
             throw new RuntimeException('route.account_invalid');
         }
 
-        return [$group, rtrim($home, '/') === '' ? '/' : rtrim($home, '/'), $gid, $user];
+        // One spelling of the home: repeated slashes joined, no trailing slash, `/` for the root.
+        return [$group, '/'.trim((string) preg_replace('#/+#', '/', $home), '/'), $gid, $user];
     }
 
     /**
@@ -447,7 +465,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         $named = static fn (string $name): string => preg_match(self::Name, $name) === 1 ? $name : throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
         $pools = static fn (): array => RouteHostSteps::pools(self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $who($account)[0], $who($account)[1],
             static fn (int $index): ?string => $read("pool-{$index}"));
-        $copies = static fn (): string => $who($account)[1].'/.orbit/certificates/';
+        $copies = static fn (): string => rtrim($who($account)[1], '/').'/.orbit/certificates/';
         $leaf = static function () use ($plan, $index, $account): array {
             $leaf = RouteExecutionProof::objects($plan['leaves'])[$index];
             $scope = ValidatedData::string($leaf['scope']);
@@ -488,10 +506,13 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'copylink' => RouteHostSteps::link($copies().$leaf()[0].'/current', $leaf()[1], $who($account)[3], $who($account)[0]),
             'trust' => ['state' => 'present', 'name' => RouteHostSteps::trustName(ValidatedData::string($plan['root_certificate'])), 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
+            'untrust' => RouteHostSteps::absent(RouteHostSteps::TrustFolder.RouteHostSteps::trustNamed(RouteHostSteps::digest($output("site-{$node}-read-trust"))
+                ?? throw new LogicException('No earlier root to remove.'))),
+            'cafile' => RouteHostSteps::plain(RouteHostSteps::TrustFile, ValidatedData::string($plan['root_certificate']), 'root', 'root', '0644'),
             'unlink' => RouteHostSteps::absent(ValidatedData::string($this->hostInput($plan, $node, 'read-'.substr($part, strlen('unlink-')), $output)['path'])),
             // A read names the file its write replaces: the Caddyfile, or the pool at an index.
-            'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ValidatedData::string(RouteHostSteps::pools(
-                self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), '', '', static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null)),
+            'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ($part === 'read-trust' ? RouteHostSteps::TrustFile : ValidatedData::string(RouteHostSteps::pools(
+                self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), '', '', static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null))),
             'caddy' => RouteHostSteps::caddy(ValidatedData::string(end($caddy)['content'] ?? null), $read('caddy')),
             default => throw new LogicException("Site step [{$part}] has no input."),
         };

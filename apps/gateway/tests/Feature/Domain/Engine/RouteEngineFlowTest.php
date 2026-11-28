@@ -94,7 +94,10 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['site-3-key-0', 3, 'file.ensure', ['site-3-folder-0']],
         ['site-3-copy-0', 3, 'file.ensure', ['site-3-key-0']],
         ['site-3-copylink-0', 3, 'file.ensure', ['site-3-copy-0']],
-        ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-copylink-0']],
+        ['site-3-read-trust', 3, 'file.read', ['site-3-copylink-0']],
+        ['site-3-untrust', 3, 'file.ensure', ['site-3-read-trust']],
+        ['site-3-cafile', 3, 'file.ensure', ['site-3-untrust']],
+        ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-cafile']],
         ['site-3-read-caddy', 3, 'file.read', ['site-3-trust']],
         ['site-3-unlink-caddy', 3, 'file.ensure', ['site-3-read-caddy']],
         ['site-3-caddy', 3, 'config.apply', ['site-3-unlink-caddy']],
@@ -194,7 +197,8 @@ it('sends a retried write byte-identical input, because its reads are recorded o
 });
 
 it('publishes private DNS on the VPN Node under its lock after the signature, beside the site, and probes after the site alone', function (): void {
-    $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n"]]]);
+    $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n",
+        'from' => ['records' => str_repeat('2', 64), 'catalog' => str_repeat('3', 64)]]]]);
     $steps = app(RouteEngineFlow::class)->steps(routeOperation($plan));
 
     expect(array_values(array_map(static fn ($step): array => [$step->name, $step->node, $step->action, $step->after],
@@ -346,14 +350,47 @@ it('gives each config.apply step its own recovery folder, so a pending record bl
         ->toBe(json_encode($flow->input(routeOperation($plan), 'site-3-reload', routeRun())));
 });
 
-it('names the trust source after the root\'s fingerprint, so a new root gets its own name and hash link', function (): void {
+it('rotates the Orbit root: removes the old root\'s source, writes the new one to the fixed CA file, then trusts it', function (): void {
     $old = "-----BEGIN CERTIFICATE-----\nT0xE\n-----END CERTIFICATE-----\n";
     $new = "-----BEGIN CERTIFICATE-----\nTkVX\n-----END CERTIFICATE-----\n";
-    $input = app(RouteEngineFlow::class)->input(routeOperation(routePlan(['root_certificate' => $new])), 'site-3-trust', routeRun());
+    $flow = app(RouteEngineFlow::class);
+    $plan = routePlan(['root_certificate' => $new]);
+    // The fixed CA file still holds the old root: its digest names the old root's source, as this flow named it.
+    $rotated = routeRun(['site-3-read-trust' => routeRead(hash('sha256', $old))]);
 
     expect(RouteHostSteps::trustName($new))->not->toBe(RouteHostSteps::trustName($old))
-        ->and(RouteHostSteps::trustName($new))->toBe('orbit-managed-root-ca-'.substr(hash('sha256', 'NEW'), 0, 16).'.crt')
-        ->and($input['name'])->toBe(RouteHostSteps::trustName($new));
+        ->and($flow->input(routeOperation($plan), 'site-3-read-trust', $rotated))->toBe(['path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
+        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', $rotated))->toBeFalse()
+        // The old root is no longer a source, so the update that follows stops trusting it.
+        ->and($flow->input(routeOperation($plan), 'site-3-untrust', $rotated))->toBe(['state' => 'absent', 'path' => '/usr/local/share/ca-certificates/'.RouteHostSteps::trustName($old)])
+        // The fixed file the TLS probes read holds the new root.
+        ->and($flow->input(routeOperation($plan), 'site-3-cafile', $rotated))->toBe(['state' => 'file', 'path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+            'content' => ['blob' => ['content' => $new]], 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']])
+        // The new root is trusted under its own name, and the trust update runs after that change.
+        ->and($flow->input(routeOperation($plan), 'site-3-trust', $rotated))->toMatchArray(['state' => 'present', 'name' => RouteHostSteps::trustName($new),
+            'certificate' => ['blob' => ['content' => $new]]])
+        // No rotation, or no fixed file yet: nothing is removed, and unrelated roots are never named.
+        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', routeRun(['site-3-read-trust' => routeRead(hash('sha256', $new))])))->toBeTrue()
+        ->and($flow->skips(routeOperation($plan), 'site-3-untrust', routeRun(['site-3-read-trust' => '{"state":"absent"}'])))->toBeTrue();
+});
+
+it('guards the DNS write with the admission digests, so a payload that went stale while it waited refuses instead of erasing a sibling', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $before = ['records' => "address=/a.test/10.44.0.2\n", 'catalog' => '{"a.test":"10.44.0.2"}'."\n"];
+    // Two creates admitted from the same sites: each renders the records and catalog with only its own name added.
+    $first = routePlan(['dns' => [['node_id' => 1, 'records' => $before['records']."address=/b.test/10.44.0.3\n", 'catalog' => "{\"a.test\":\"10.44.0.2\",\"b.test\":\"10.44.0.3\"}\n",
+        'from' => ['records' => hash('sha256', $before['records']), 'catalog' => hash('sha256', $before['catalog'])]]]]);
+    $second = routePlan(['dns' => [['node_id' => 1, 'records' => $before['records']."address=/c.test/10.44.0.4\n", 'catalog' => "{\"a.test\":\"10.44.0.2\",\"c.test\":\"10.44.0.4\"}\n",
+        'from' => ['records' => hash('sha256', $before['records']), 'catalog' => hash('sha256', $before['catalog'])]]]]);
+    // The first create wrote its payload; the second one, which waited for the hold, reads the first's bytes.
+    $read = routeRun(['dns-0-read-records' => routeRead(hash('sha256', $first['dns'][0]['records'])), 'dns-0-read-catalog' => routeRead(hash('sha256', $first['dns'][0]['catalog']))]);
+    $files = $flow->input(routeOperation($second), 'dns-0', $read)['files'];
+
+    // Its guard is still the admission digest, which the live files no longer hold: config.apply refuses before any write, and
+    // the Route records the DNS step's code. Its payload, which lacks b.test, never replaces the first create's records.
+    expect(array_column($files, 'from_sha256'))->toBe([hash('sha256', $before['records']), hash('sha256', $before['catalog'])])
+        ->and(array_column($files, 'from_sha256'))->not->toContain(hash('sha256', $first['dns'][0]['records']))
+        ->and(RouteEngineFlow::chartStep('dns-0'))->toBe('Publish private DNS-0');
 });
 
 it('sizes each order with real 64-hex guards: every admitted pool count fits at run time, and an order over the signer limit runs on Swamp', function (): void {
@@ -416,6 +453,21 @@ it('refuses in the Node\'s site step, before the first request, when an account 
     'no recorded answer' => [null, 'route.account_missing'],
     'a relative home' => ['{"state":"present","user":"orbit","uid":1000,"gid":1000,"group":"orbit","home":"orbit"}', 'route.account_invalid'],
     'no canonical name' => ['{"state":"present","uid":1000,"gid":1000,"group":"orbit","home":"/home/orbit"}', 'route.account_invalid'],
+]);
+
+it('accepts any account NSS resolves and joins its home into one spelling', function (string $user, string $group, string $home, string $copies): void {
+    $flow = app(RouteEngineFlow::class);
+    $run = routeRun(['site-3-account-0' => json_encode(['state' => 'present', 'user' => $user, 'uid' => 1000, 'gid' => 2000, 'group' => $group, 'home' => $home])]);
+
+    expect($flow->local(routeOperation(routePlan()), 'site-3-accounts', $run))->toBe('accounts resolved on node 3')
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-copy-0', $run))->toMatchArray(['path' => $copies.'app-instance-7/versions/0123456789abcdef/cert.pem',
+            'owner' => ['user' => $user, 'group' => $group, 'mode' => '0600']])
+        ->and($flow->input(routeOperation(routePlan()), 'site-3-copylink-0', $run)['path'])->toBe($copies.'app-instance-7/current');
+})->with([
+    'a capitalised name' => ['Orbit', 'Orbit', '/home/Orbit', '/home/Orbit/.orbit/certificates/'],
+    'a dotted group' => ['orbit', 'Dev.Team', '/home/orbit', '/home/orbit/.orbit/certificates/'],
+    'the root folder as home' => ['orbit', 'orbit', '/', '/.orbit/certificates/'],
+    'repeated slashes' => ['orbit', 'orbit', '/srv//x', '/srv/x/.orbit/certificates/'],
 ]);
 
 it('passes the check when every account resolves', function (): void {

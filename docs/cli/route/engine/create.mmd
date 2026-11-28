@@ -47,15 +47,15 @@ sequenceDiagram
     %%> The same files with the digest of the bytes the install left as their guard, so it writes nothing and refuses a change made since; validators, then each pool unit reloads on every run, as route.publish_site did
     EN->>N: Install leaf, copies<br/>file.ensure · cert-i …
     %%> `cert-i`: the signed leaf, root:caddy 0644; `current-i`: the version link; `folder-i`: the account copy's folder, root 0755 as `install -D` made it; `key-i`: the key copied on the Node (`source_path`), account 0600; `copy-i`: the leaf, account 0600; `copylink-i`: the account's version link
-    EN->>N: Trust the Orbit root<br/>ca.trust.ensure · site-node-trust
-    %%> Named after the root's fingerprint (`orbit-managed-root-ca-<16 hex>.crt`), so a new root gets its own name and hash link; an old root stays until the Gateway knows it (follow-up)
-    %%> `orbit-managed-root-ca.crt`, root:root 0644; the plain `update-ca-certificates` runs after a change
+    EN->>N: Trust the Orbit root<br/>ca.trust.ensure · trust
+    %%> `read-trust` reads the fixed CA file `orbit-managed-root-ca.crt`, which existing TLS probes use; on a rotation (it holds another root) `untrust` removes that root's source, named after the SHA-256 of its PEM; `cafile` writes the new root to the fixed file, root:root 0644; `trust` places the new root under `orbit-managed-root-ca-<16 hex>.crt` and runs the plain `update-ca-certificates` after a change; unrelated roots are never named
     EN->>N: Read the Caddyfile<br/>file.read · read-caddy
     EN->>N: Apply the Caddyfile<br/>config.apply · site-node-caddy
     %%> Under `/etc/caddy/.orbit-publish.lock`: the whole Caddyfile, root:caddy 0640, with the digest its read recorded; validated as `caddy`; Caddy reloads on every run; a failed validation or reload restores the file
     EN->>V: Read records, catalog<br/>file.read · dns-i-read-…
+    %%> The reads find a link in a file's place, which the unlink step removes first
     EN->>V: Publish private DNS<br/>config.apply · dns-i
-    %%> Beside the sites, after the signatures. Under `/run/lock/orbit-dnsmasq.lock`: records and catalog, root:root 0644, each with the digest its read recorded; the `dnsmasq` validator over `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`; dnsmasq and the private DNS listener restart on every run
+    %%> Beside the sites, after the signatures. Under `/run/lock/orbit-dnsmasq.lock`: records and catalog, root:root 0644, each guarded by its admission digest, so a payload that went stale while the create waited refuses without writing (`private_dns.publication_failed`); a file already holding the payload is kept; the `dnsmasq` validator over `/etc/dnsmasq.conf` and `/etc/dnsmasq.d`; dnsmasq and the private DNS listener restart on every run
     Note over EN: Probe the site over TLS<br/>Gateway step · probe-i
     %%> After each Node's last site step: a TLS handshake by WireGuard address, trusting only the Orbit root
     %%> A read that finds a link in a file's place runs that file's unlink step (`file.ensure` absent, never following it), and the write then sends no guard; for any other read the unlink step is done without an order (EngineSkip)
