@@ -29,11 +29,16 @@ struct Fake {
     /// A destination and a file that it becomes a hard link to on the next user lookup, which a primitive makes between
     /// reading its input and changing the destination.
     relink: RefCell<Option<(std::path::PathBuf, std::path::PathBuf)>>,
+    /// The account database: users by name and group names by id.
+    accounts: BTreeMap<&'static str, Passwd>,
+    groups: BTreeMap<u32, &'static str>,
+    /// An NSS lookup that fails: `passwd` or `group`.
+    nss_fails: RefCell<Option<&'static str>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default(), relink: RefCell::default() }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default(), relink: RefCell::default(), accounts: BTreeMap::new(), groups: BTreeMap::new(), nss_fails: RefCell::default() }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -194,6 +199,20 @@ impl System for Fake {
 
     fn group(&self, _name: &str) -> Result<u32, String> {
         Ok(me().1)
+    }
+
+    fn account(&self, name: &str) -> Result<Option<Passwd>, String> {
+        if *self.nss_fails.borrow() == Some("passwd") {
+            return Err("Input/output error (os error 5)".to_owned());
+        }
+        Ok(self.accounts.get(name).cloned())
+    }
+
+    fn group_name(&self, gid: u32) -> Result<Option<String>, String> {
+        if *self.nss_fails.borrow() == Some("group") {
+            return Err("Input/output error (os error 5)".to_owned());
+        }
+        Ok(self.groups.get(&gid).map(|name| (*name).to_owned()))
     }
 
     fn blob(&self, digest: &str) -> Result<Vec<u8>, String> {
@@ -1121,4 +1140,96 @@ fn file_read_leaves_the_access_time_as_it_was() {
     let after = fs::symlink_metadata(fake.path("/etc/app.conf")).expect("meta");
     assert_eq!((after.atime(), after.atime_nsec()), (before.atime(), before.atime_nsec()), "the read wrote the access time");
     assert_eq!((after.mtime(), after.mtime_nsec()), (before.mtime(), before.mtime_nsec()));
+}
+
+/// An account database with an ordinary user, and www-data, whose home is not below /home.
+fn accounts() -> Fake {
+    let mut fake = Fake::new();
+    fake.accounts.insert("alice", Passwd { uid: 1000, gid: 1000, home: "/home/alice".to_owned() });
+    fake.accounts.insert("www-data", Passwd { uid: 33, gid: 33, home: "/var/www".to_owned() });
+    fake.groups.insert(1000, "alice");
+    fake.groups.insert(33, "www-data");
+    fake
+}
+
+#[test]
+fn account_read_answers_an_existing_users_ids_primary_group_and_home() {
+    let fake = accounts();
+    let read = account_read(&fake, &json!({"user": "alice"})).expect("read");
+    assert_eq!(read, Account::Present { uid: 1000, gid: 1000, group: "alice".to_owned(), home: "/home/alice".to_owned() });
+    // The answer holds the ids, the group's name and the home, and nothing else: no password and no shadow data.
+    assert_eq!(serde_json::to_value(&read).expect("json"), json!({"state": "present", "uid": 1000, "gid": 1000, "group": "alice", "home": "/home/alice"}));
+    assert!(fake.ran.borrow().is_empty(), "it runs no command");
+}
+
+#[test]
+fn account_read_answers_the_home_the_account_database_holds() {
+    let fake = accounts();
+    assert_eq!(account_read(&fake, &json!({"user": "www-data"})).expect("read"), Account::Present { uid: 33, gid: 33, group: "www-data".to_owned(), home: "/var/www".to_owned() });
+}
+
+#[test]
+fn account_read_answers_absent_only_for_a_user_nss_does_not_hold() {
+    let fake = accounts();
+    let read = account_read(&fake, &json!({"user": "nobody-here"})).expect("absent");
+    assert_eq!(read, Account::Absent);
+    assert_eq!(serde_json::to_value(read).expect("json"), json!({"state": "absent"}));
+    for user in ["", "Alice", "al ice", "../root", "a\0b", "-alice", "a234567890123456789012345678901234"] {
+        assert_eq!(account_read(&fake, &json!({"user": user})).expect_err(user).code, "host.input_invalid", "{user}");
+    }
+    assert_eq!(account_read(&fake, &json!({"user": "alice", "shadow": true})).expect_err("unknown field").code, "host.input_invalid");
+    assert_eq!(account_read(&fake, &json!({})).expect_err("no user").code, "host.input_invalid");
+}
+
+#[test]
+fn account_read_fails_a_lookup_error_and_never_answers_absent() {
+    let mut fake = accounts();
+    *fake.nss_fails.borrow_mut() = Some("passwd");
+    assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("passwd error").code, "account.read_failed");
+    assert_eq!(account_read(&fake, &json!({"user": "nobody-here"})).expect_err("a missing user behind an error is unknown").code, "account.read_failed");
+    *fake.nss_fails.borrow_mut() = Some("group");
+    assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("group error").code, "account.read_failed");
+    *fake.nss_fails.borrow_mut() = None;
+    // A primary group NSS cannot name is no answer either.
+    fake.groups.remove(&1000);
+    assert_eq!(account_read(&fake, &json!({"user": "alice"})).expect_err("no primary group").code, "account.read_failed");
+}
+
+#[test]
+fn account_read_repeated_answers_the_same() {
+    let fake = accounts();
+    for user in ["alice", "www-data", "nobody-here"] {
+        let first = account_read(&fake, &json!({"user": user})).expect(user);
+        assert_eq!(account_read(&fake, &json!({"user": user})).expect(user), first, "{user}");
+    }
+}
+
+#[test]
+fn an_nss_lookup_grows_its_buffer_and_fails_every_error_status() {
+    let mut sizes = Vec::new();
+    let found = nss::grow(|buffer| {
+        sizes.push(buffer.len());
+        if buffer.len() < 64 * 1024 { (libc::ERANGE, None) } else { (0, Some(Ok(42))) }
+    });
+    assert_eq!(found, Ok(Some(42)));
+    assert_eq!(sizes, [16 * 1024, 32 * 1024, 64 * 1024]);
+    // Success without an entry is the only absent answer.
+    assert_eq!(nss::grow::<u32>(|_| (0, None)), Ok(None));
+    // An entry that never fits, an I/O error, or a source that cannot be read fails.
+    let mut calls = 0;
+    assert!(nss::grow::<u32>(|_| { calls += 1; (libc::ERANGE, None) }).is_err());
+    assert_eq!(calls, 7);
+    for status in [libc::EIO, libc::EMFILE, libc::ENOMEM, libc::EAGAIN] {
+        assert!(nss::grow::<u32>(|_| (status, None)).is_err(), "{status}");
+    }
+    // A field that cannot be read fails, though the call succeeded.
+    assert_eq!(nss::grow::<u32>(|_| (0, Some(Err("a field that is not UTF-8".to_owned())))), Err("a field that is not UTF-8".to_owned()));
+}
+
+#[test]
+fn account_read_reads_the_hosts_own_account_database() {
+    // The Node's system, through the real getpwnam_r and getgrgid_r: root's home is /root, not /home/root.
+    let system = NodeSystem::new("/nonexistent");
+    assert_eq!(account_read(&system, &json!({"user": "root"})).expect("root"), Account::Present { uid: 0, gid: 0, group: "root".to_owned(), home: "/root".to_owned() });
+    assert_eq!(account_read(&system, &json!({"user": "no-such-user-here"})).expect("absent"), Account::Absent);
 }

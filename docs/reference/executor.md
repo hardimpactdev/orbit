@@ -135,6 +135,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `ca.trust.ensure` | One certificate in a trust store | Built | The trust steps of `route.publish_site` and `instance.prepare` |
 | `hostname.ensure` | The host name of one machine | Planned | The host name steps of `instance.start` and `instance.names` |
 | `account.ensure` | One user account and its group | Planned | The app-account step of `instance.start` |
+| `account.read` | The uid, primary group and home of one account, read only; never a password or shadow data | Built | The account home and group that `route.publish_site` resolves on the Node (`NodeConvergeInput::GroupToken`, `HomeToken`); a Route flow records them and renders from them |
 | `config.apply` | One set of configuration files that share a lock | Built | `dns.publish_records`; the Caddy and PHP-FPM parts of `route.publish_site` and `route.withdraw_site` |
 | `http.probe` | One HTTP answer, read with a bounded wait and a typed expectation | Built | The Caddy read-back of `route.withdraw_site`; the readiness waits of `instance.t3` and `instance.fleet_ready` |
 | `systemd.unit.ensure` | One unit: enabled, running or stopped | Built | `process.ensure_state` for units, `schedule.ensure_timer`, the pool units of `route.publish_site`, the unit starts of `instance.t3` and `instance.fleet_ready` |
@@ -230,6 +231,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 | `file.read` | `path`, absolute | Opens the path without following a final link and answers what it holds as JSON (`output`). Reads only, outside the journal, and runs no command. |
+| `account.read` | `user`, a user name | Looks the user up through the system's account database and answers it as JSON (`output`). Reads only, outside the journal, and runs no command. |
 
 `file.read` answers `{"state": "absent"}` only when nothing is at the path. Otherwise it answers `{"state": "present", "type", "sha256", "uid", "gid", "mode"}`: `type` is `file`, `directory`, `symlink`, `fifo`, `socket`, `char_device` or `block_device`, `mode` the octal permission bits such as `0644`, and `sha256` the digest of a plain file's bytes, absent for any other type.
 
@@ -238,6 +240,12 @@ It opens the path with `O_PATH | O_NOFOLLOW` and reads owner, group, mode and ty
 A plain file opens again for its bytes with `O_NOATIME`, so the read leaves the access time as it was, and must still be the same file by device and inode. The kernel grants `O_NOATIME` to the file's owner or a holder of `CAP_FOWNER`, which the executor has as root. Any other caller fails `file.read_failed`, never a plain open, so a read never writes. It never answers content. A read that fails, such as a folder it cannot enter or a file it cannot open, answers `file.read_failed`, never absent.
 
 A Gateway flow sends the `sha256` it read as the `from_sha256` of the `config.apply` or `file.ensure` that follows, under the lock that guards the file, so a write that replaces a file the Gateway cannot render byte for byte is still guarded.
+
+`account.read` answers `{"state": "absent"}` only when the account database answers that no such user exists. Otherwise it answers `{"state": "present", "uid", "gid", "group", "home"}`: `gid` and `group` are the primary group's id and name, and `home` the home folder as the database holds it, such as `/var/www` for `www-data`. It never answers a password or shadow data.
+
+It reads with the reentrant `getpwnam_r`, then `getgrgid_r` for the primary group's name, and grows its buffer while a lookup answers `ERANGE`, up to 1 MiB. The static musl agent reads `/etc/passwd` and `/etc/group`, and nscd where it runs; it loads no glibc NSS module. A lookup that fails, an entry that does not fit, a primary group the database cannot name, or a field that is not UTF-8 answers `account.read_failed`, never absent. The name must be a plain user name (`[a-z_][a-z0-9_-]{0,31}`), as for every owner the family takes.
+
+An executor reports `account.read` in its actions from agent 0.37.0, so the Gateway admits a flow that reads an account only on Nodes that report it.
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 
@@ -328,7 +336,7 @@ A unit in an Instance container is not covered: Swamp first moves the container'
 
 ### Signed reads
 
-A read-only action (today `instance.work_read`, `http.probe` and `file.read`) needs no Operation, stream or receipt. When the Node enables such an action, the executor also subscribes to `orbit.node.<id>.reads` on core NATS. The Gateway sends one signed order there as a request (`ExecutorOrderSigner::signRead`: `operation` `read:<target>`, expiry the request's remaining budget, at most 4 s) and waits for the reply. The executor checks the order exactly as it checks every order, fetches the content it names, runs it and answers its result line as the reply. It answers no other action there, so a change always takes the durable order stream.
+A read-only action (today `instance.work_read`, `http.probe`, `file.read` and `account.read`) needs no Operation, stream or receipt. When the Node enables such an action, the executor also subscribes to `orbit.node.<id>.reads` on core NATS. The Gateway sends one signed order there as a request (`ExecutorOrderSigner::signRead`: `operation` `read:<target>`, expiry the request's remaining budget, at most 4 s) and waits for the reply. The executor checks the order exactly as it checks every order, fetches the content it names, runs it and answers its result line as the reply. It answers no other action there, so a change always takes the durable order stream.
 
 A copy that does not run is `asleep` or `stopped` by the Node's asleep marker, and is never woken. A read writes no journal record, waits for no target lock and stores no result: a lost reply is read again with a fresh nonce, and the second read is fresh. The nonce map still refuses the same order twice, and an order that expired before it ran answers `executor.order_expired`.
 
