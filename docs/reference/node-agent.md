@@ -38,6 +38,8 @@ From agent `0.39.0`, the executor adds these primitives:
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
 - **Conn Server primitives:** Agent `0.42.0` adds the [Conn Server primitives](/reference/executor#the-conn-server-primitives) `conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue`.
 
+Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
+
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
 The observer listens on no network port. To build and test the agent workspace, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).

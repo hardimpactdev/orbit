@@ -113,6 +113,13 @@ pub enum Action {
     /// Converge one Incus instance: copied from a snapshot, running, stopped or absent, through the Incus API over its unix
     /// socket (ADR 0271 N3). Its target is the Node, because the instance may not exist yet.
     IncusInstanceEnsure,
+    /// One network ACL in one Incus project, with its rules, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusAclEnsure,
+    /// One device key of one Incus instance, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
+    IncusDeviceEnsure,
+    /// One custom Incus storage volume copied from a source volume or snapshot, or absent, through the Incus API (ADR 0271 N3).
+    /// Its target is the Node.
+    IncusVolumeEnsure,
     /// Issue one session of a Conn Server, its token sealed to the Gateway (ADR 0271 N3). Its target is the Node.
     ConnSessionIssue,
     /// Make one folder a project of a Conn Server (ADR 0271 N3). Its target is the Node.
@@ -133,7 +140,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 42] = [
+    pub const ALL: [Self; 45] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -173,6 +180,9 @@ impl Action {
         Self::FileRead,
         Self::AccountRead,
         Self::IncusInstanceEnsure,
+        Self::IncusAclEnsure,
+        Self::IncusDeviceEnsure,
+        Self::IncusVolumeEnsure,
         Self::ConnSessionIssue,
         Self::ConnProjectEnsure,
         Self::ConnPairingIssue,
@@ -215,7 +225,7 @@ impl Action {
             | Self::ConnSessionIssue
             | Self::ConnProjectEnsure
             | Self::ConnPairingIssue => Family::Host,
-            Self::IncusInstanceEnsure => Family::Incus,
+            Self::IncusInstanceEnsure | Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
         }
     }
 
@@ -258,6 +268,9 @@ impl Action {
             | Self::FileRead
             | Self::AccountRead
             | Self::IncusInstanceEnsure
+            | Self::IncusAclEnsure
+            | Self::IncusDeviceEnsure
+            | Self::IncusVolumeEnsure
             | Self::ConnSessionIssue
             | Self::ConnProjectEnsure
             | Self::ConnPairingIssue => TargetKind::Node,
@@ -349,6 +362,9 @@ impl Action {
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
             Self::IncusInstanceEnsure => "incus.instance.ensure",
+            Self::IncusAclEnsure => "incus.acl.ensure",
+            Self::IncusDeviceEnsure => "incus.device.ensure",
+            Self::IncusVolumeEnsure => "incus.volume.ensure",
             Self::ConnSessionIssue => "conn.session.issue",
             Self::ConnProjectEnsure => "conn.project.ensure",
             Self::ConnPairingIssue => "conn.pairing.issue",
@@ -405,6 +421,9 @@ impl FromStr for Action {
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
             "incus.instance.ensure" => Ok(Self::IncusInstanceEnsure),
+            "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
+            "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
+            "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
             "conn.session.issue" => Ok(Self::ConnSessionIssue),
             "conn.project.ensure" => Ok(Self::ConnProjectEnsure),
             "conn.pairing.issue" => Ok(Self::ConnPairingIssue),
@@ -453,7 +472,8 @@ pub enum Family {
     Process,
     /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads, Conn Server sessions, projects and pairing links (ADR 0271 N3).
     Host,
-    /// Incus primitives through the Incus API over its unix socket: one instance (ADR 0271 N3).
+    /// Incus primitives through the Incus API over its unix socket: instances, network ACLs, instance devices and storage volumes
+    /// (ADR 0271 N3).
     Incus,
 }
 
@@ -535,6 +555,9 @@ mod tests {
         assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
         assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert_eq!("incus.volume.ensure".parse(), Ok(Action::IncusVolumeEnsure));
+        assert!(Enabled::parse("incus\n").expect("valid file").allows(Action::IncusAclEnsure));
+        assert!(!Enabled::parse("host\n").expect("valid file").allows(Action::IncusDeviceEnsure));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));
