@@ -33,6 +33,11 @@ sequenceDiagram
     %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
     %%> - in the same transaction the start refuses `route.publication_held` while another open Route write, on either engine, writes or holds one of its Nodes, the DNS-only VPN Nodes included (RouteWriteNodes); an engine removal fences later Route writes the same way
     GW-->>CLI: 202 Accepted<br/>task ID
+    opt a leaf or a pool to change
+      EN->>N: Read the account<br/>account.read · account-node
+      %%> The account's uid, gid, group and home as the Node's NSS answers them; `identity-node`, a Gateway step, refuses an absent or unreadable account before any step below changes a file
+      N-->>EN: Account
+    end
     opt domain outside the TLD
       EN->>V: Read records and catalog<br/>file.read · dnsread-i
       %%> Two reads, never following a link: the digest, type, owner and mode of `/etc/dnsmasq.d/orbit-records.conf` and `/var/lib/orbit/private-dns/catalog.json`; the receipt is the step's output, so a retry sends the same guard
@@ -50,11 +55,11 @@ sequenceDiagram
       %%> A cancel during the wait ends the Operation `cancelled` with nothing withdrawn from the Route Node
     end
     EN->>N: Read files and account<br/>file.read · account.read
-    %%> `caddyread-node`; `account-node` (`account.read`: uid, gid, group, home) and `poolread-node-k` only when the Node has a leaf or a pool to change
+    %%> `caddyread-node`, and `poolread-node-k` for each pool; the account was read first (`account-node`, `account.read`: uid, gid, group, home), and `identity-node` refused an absent or unreadable one before any DNS or Caddy step
     N-->>EN: Digests · account
     Note over EN: Guard the Caddyfile<br/>guard-node
     %%> A Gateway step: the read digest must be the Caddyfile rendered at admission (`route_guards`) or the desired one, else `owned_revision_conflict` and nothing is written; a missing Caddyfile or another kind refuses too
-    %%> An absent account refuses (`account.absent`), so nothing is written or removed for it; each pool must hold its render at admission or the desired one, the group as the gid or the group's name, else `owned_revision_conflict`
+    %%> Each pool must hold its render at admission or the desired one in a writer's form (each scope's group as gid or name, with or without a trailing separator; at most 8 scopes, more runs on Swamp), else `owned_revision_conflict`
     %%> A link in its place passes: `caddyunlink-node` removes it without following it (`file.ensure` absent), and the write below goes unguarded; the step is done without an order otherwise
     EN->>N: Write and reload Caddy<br/>config.apply · withdraw-node
     %%> The whole Caddyfile without the Route, guarded by the digest read, owner `root:caddy 0640`, under the publication lock `/etc/caddy/.orbit-publish.lock`
@@ -66,7 +71,7 @@ sequenceDiagram
     N-->>EN: met
     opt a pool or a leaf to change
       EN->>N: Pools and leaves<br/>config.apply · file.ensure
-      %%> `pools-node`: each pool rendered whole by the Gateway (in place of withdraw.rs `merge_pool`), the gid and home from `account.read`, guarded by its read, under `/etc/caddy/.orbit-publish.lock`; `php-fpm -t` per pool, then each pool reloads; a failure restores them and fails `Converge PHP-FPM pools`; no order when every guarded pool is absent
+      %%> `pools-node`: each pool rendered whole by the Gateway (in place of withdraw.rs `merge_pool`), the gid and home from `account.read`, guarded by its read, under `/etc/caddy/.orbit-publish.lock`; `php-fpm -t` per pool, then each pool reloads; a failure restores them, `caddyback-node` puts back the Caddyfile captured at admission (guarded by the withdrawal just written), and the run fails `Converge PHP-FPM pools`; no order when every guarded pool is absent
       %%> `leaf-node-k`, `leafhome-node-k`: `file.ensure` absent, recursive, of `/etc/caddy/orbit-certificates/<scope>` and `<home>/.orbit/certificates/<scope>`, only once Caddy no longer names them
       N-->>EN: applied
     end

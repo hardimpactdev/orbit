@@ -66,10 +66,11 @@ Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`,
 
 The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) from host primitives that the Gateway composes. Every path, lock, owner, validator and unit arrives in the order. Its steps run in this order:
 
-1. `dnsread-<i>-<file>`, `dnsunlink-<i>-<file>`: `file.read` reads the dnsmasq records and the private DNS catalog on each VPN Node. `file.ensure` removes a link that a read found in a file's place.
-2. `dns-<i>`: `config.apply` writes both files under the DNS lock `/run/lock/orbit-dnsmasq.lock`. dnsmasq tests the files. Then `dnsmasq` and `orbit-private-dns` restart.
+1. `account-<node>`, `identity-<node>`: `account.read` reads the account on each Route Node with a leaf or a pool to change. An absent account refuses before any step changes a file.
+2. `dnsread-<i>-<file>`, `dnsunlink-<i>-<file>`: `file.read` reads the dnsmasq records and the private DNS catalog on each VPN Node. `file.ensure` removes a link that a read found in a file's place.
+   `dns-<i>`: `config.apply` writes both files under the DNS lock `/run/lock/orbit-dnsmasq.lock`. dnsmasq tests the files. Then `dnsmasq` and `orbit-private-dns` restart.
 3. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt, as Swamp's `route-dns-grace` does. It is a [timed Gateway step](#waits).
-4. The reads and the guard: `caddyread-<node>` and `poolread-<node>-<k>` read the Caddyfile and each PHP-FPM pool with `file.read`. `account-<node>` reads the account's group and home with `account.read`. The Gateway's `guard-<node>` checks them. `caddyunlink-<node>` removes a link in the Caddyfile's place.
+4. The reads and the guard: `caddyread-<node>` and `poolread-<node>-<k>` read the Caddyfile and each PHP-FPM pool with `file.read`. The Gateway's `guard-<node>` checks them. `caddyunlink-<node>` removes a link in the Caddyfile's place.
 5. `withdraw-<node>`: `config.apply` writes the Caddyfile without the Route under the publication lock `/etc/caddy/.orbit-publish.lock`. Caddy validates it and reloads on every run.
 6. `poll-<node>`: `http.probe` reads Caddy's admin API for up to 5 seconds. It succeeds once the API names none of the Route's domains.
 7. `pools-<node>`, `leaf-<node>-<k>`, `leafhome-<node>-<k>`: `config.apply` converges each pool under the same lock. Then `file.ensure` removes each leaf folder and its copy in the account's home.
@@ -77,7 +78,9 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 
 Each read is its step's output, so a retry sends the same guard. A DNS file must still hold the bytes the Gateway rendered from at admission, unless its read already found the desired bytes. A file that another publisher changed after admission refuses with `owned_revision_conflict`, as on main. The Caddyfile guard accepts the render captured at admission and the desired render. Any other digest, a missing Caddyfile or another kind refuses the same way.
 
-The Gateway renders each pool whole, with the gid and home that `account.read` answered, in place of withdraw.rs `merge_pool`. A shared pool must still hold its render at admission or the desired one, with the group as the gid or the group's name. Any other content, such as a scope that another writer added, refuses with `owned_revision_conflict`. A shared pool that is absent stays absent. An absent account refuses before any write, and nothing is removed for it.
+The Gateway renders each pool whole, with the gid and home that `account.read` answered, in place of withdraw.rs `merge_pool`. A shared pool must still hold its render at admission or the desired one, in a form a pool writer produces. Each scope's group may be the gid or the group's name, and a merge may leave a blank line after the last scope. The engine renders these forms for at most 8 scopes, and a pool with more runs on Swamp.
+
+Any other content, such as a scope that another writer added, refuses with `owned_revision_conflict`. A shared pool that is absent stays absent. When a pool fails its write, test or reload, `config.apply` puts the pools back. The failure step `caddyback-<node>` then puts back the Caddyfile captured at admission. Its guard is the withdrawal just written. The Route keeps serving, and the Operation fails at `Converge PHP-FPM pools` with main's code.
 
 A link in a file's place is removed without following it, and the file is then written without a guard. When the read found no link, the removal step is done without an order. Any other kind of file refuses.
 
@@ -86,6 +89,8 @@ Each `config.apply` keeps its recovery record in its own folder, `/var/lib/orbit
 The grace survives a restart of the consumer, the Gateway or Horizon: the run waits only what is left, never from zero and never less. A redelivered DNS receipt does not move that time. A cancel during the grace ends the Operation `cancelled` without withdrawing. The DNS answers stay withdrawn and the Route is kept, so the same command removes it.
 
 A failed step records the Swamp chart's step name that it is part of. A read, guard, write or poll of Node 3's Caddyfile records `Withdraw site, remove cert-3`. The Route keeps the same `failed_step` and that step's error code. A guard conflict persists `route.withdraw_failed` or `private_dns.publication_failed`, as on main. The existing removal projection deletes the Route only after every step succeeds. It first moves the Route to `retiring`, as the Swamp `DestroyRouteAction` does, so a secondary web-root Route of an active Instance leaves its target while the Instance keeps its one authoritative Route.
+
+Before `route.destroy` goes into `ORBIT_ENGINE_KINDS`, the operator checks the private DNS catalog on each development VPN Node. A catalog in a legacy key order, such as one that an older Swamp withdrawal merged, refuses at `Remove private DNS` on the engine. A Gateway-rendered DNS publish, such as `route.create`'s `dns.publish_records`, normalizes it first. Once a catalog is in the Gateway's form, Swamp's later withdrawals keep a form the guard accepts.
 
 These removals stay on Swamp: `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, and a PHP version whose last pool leaves. A Route Node with a leaf or a pool to change must report `account.read` (agent 0.37.0). A production removal stays on Swamp too: a serving Node without the `app-dev` role, a DNS Node without the `vpn` role, `production_control`, or a production Instance on a serving Node.
 
