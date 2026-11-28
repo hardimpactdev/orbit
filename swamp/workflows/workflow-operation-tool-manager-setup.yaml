@@ -72,7 +72,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") || size(steps["Prepare manager commands"].outputs.packages) == 0 }}'
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "tm-install-prerequisites-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, packages: '${{ steps["Prepare manager commands"].outputs.packages }}', ensure: present}, inputs: {}}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-install-prerequisites-"+string(inputs.node_id) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "--yes", "--no-upgrade", "--"] + steps["Prepare manager commands"].outputs.packages }}', timeoutSec: 905}}
   - name: phase_4
     dependsOn:
       - job: phase_3

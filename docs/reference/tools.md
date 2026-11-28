@@ -111,6 +111,8 @@ Tools run on active SSH-managed Nodes with a WireGuard IP and pinned SSH host fi
 
 Unsupported platform/manager pairs return `tool.manager_unsupported` (422); absent or conflicting scopes return `tool.manager_unavailable` (409). `orbit tool:manager:list --node=<id>` reports each supported manager as `uninstalled`, `provisioning`, `active`, or `failed`. Managers stay installed after their last Tool is removed.
 
+Linux Tool Manager setup installs only the missing OS prerequisites of its manager, such as Homebrew's `build-essential procps curl file git ca-certificates`, with `apt-get install --no-upgrade`. A prerequisite installed at any version counts as present. Installed prerequisites are never upgraded, and held packages never move. apt may still upgrade an unheld dependency that a missing prerequisite needs.
+
 Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o DPkg::Lock::Timeout=300`); `apt-get update` and `dpkg --remove` fail immediately if locked. Linux `vp` launchers in `/usr/local/bin` export `VP_HOME` for the resolved store.
 
 ### Host Conn Server membership
@@ -130,6 +132,8 @@ Before JavaScript deploy steps, Orbit reads the release's manifest, lockfile, an
 `GET /api/v1/tool-inventory?node_id=<id>` (`orbit tool:scan --node=<id>`) reads the [Node agent's](/reference/node-agent#packages) latest `packages` facts without contacting the Node or creating Tool rows. It returns `data.managers` in order (`brew`, `brew-cask`, `vp`, `apt`), each with `scan_state` (`complete`, `unsupported`, or `not_observed`) and sorted `packages` (`manager`, `package`, `package_kind`, `installed_version`, `dependency`, `registered`, `tool_id`, `adoption`, `adoption_block`, `repository`).
 
 Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, `authorization_required`, `removal_pending`, and `held`.
+
+When a Homebrew formula has several Cellar versions, its installed version is the one its `opt` link names, so an old folder that `brew cleanup` has not removed yet changes neither the scan, Doctor nor adoption ([brew fact](/reference/node-agent#packages)). However, several versions and no link leave the version unknown: the row carries `version_unreadable` and Doctor cannot verify the Tool.
 
 An apt package held with `apt-mark hold` (dpkg status `hold ok installed`) is installed: its row keeps its version, and Doctor checks a managed held package like any other. apt will not change a held package, so it carries the `held` block and adoption refuses it with `tool.adoption_unsupported`.
 
