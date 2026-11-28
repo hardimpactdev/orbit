@@ -51,7 +51,9 @@ struct Source {
 ///
 /// # Errors
 ///
-/// `incus.input_invalid`, `incus.volume_source_missing`, `incus.volume_source_conflict`, `incus.volume_in_use`,
+/// `incus.input_invalid`, `incus.project_missing`, `incus.project_storage_not_owned`, `incus.volume_type_unsupported`,
+/// `incus.volume_source_missing`, `incus.source_incomplete`, `incus.volume_source_conflict`, `incus.copy_in_progress`,
+/// `incus.copy_incomplete`, `incus.volume_in_use`, `incus.volume_has_snapshots`, `incus.volume_has_backups`,
 /// `incus.operation_timeout`, `incus.api_failed` or `incus.not_converged`.
 pub fn volume_ensure(raw: &Value) -> Result<u32, Failure> {
     let input: Input = input(raw)?;

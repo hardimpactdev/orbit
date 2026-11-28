@@ -33,7 +33,8 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
 - **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
-- **Incus primitives:** Agent `0.40.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev with `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure`, which speak the Incus API over its socket.
+
+Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
