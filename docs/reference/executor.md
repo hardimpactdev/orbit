@@ -231,7 +231,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `config.apply` | Lock path, `recovery_dir`, the whole rendered files with `from_sha256` and owner, validators, and units with `reload` or `restart` | See below. |
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 | `file.read` | `path`, absolute | Opens the path without following a final link and answers what it holds as JSON (`output`). Reads only, outside the journal, and runs no command. |
-| `account.read` | `user`, a user name | Looks the user up through the system's account database and answers it as JSON (`output`). Reads only, outside the journal, and runs no command. |
+| `account.read` | `{"user": name}`, a user name | Resolves the user through the host's NSS via `getent` (fixed argv) and answers it as JSON (`output`). Reads only, outside the journal. |
 
 `file.read` answers `{"state": "absent"}` only when nothing is at the path. Otherwise it answers `{"state": "present", "type", "sha256", "uid", "gid", "mode"}`: `type` is `file`, `directory`, `symlink`, `fifo`, `socket`, `char_device` or `block_device`, `mode` the octal permission bits such as `0644`, and `sha256` the digest of a plain file's bytes, absent for any other type.
 
@@ -241,9 +241,15 @@ A plain file opens again for its bytes with `O_NOATIME`, so the read leaves the 
 
 A Gateway flow sends the `sha256` it read as the `from_sha256` of the `config.apply` or `file.ensure` that follows, under the lock that guards the file, so a write that replaces a file the Gateway cannot render byte for byte is still guarded.
 
-`account.read` answers `{"state": "absent"}` only when the account database answers that no such user exists. Otherwise it answers `{"state": "present", "uid", "gid", "group", "home"}`: `gid` and `group` are the primary group's id and name, and `home` the home folder as the database holds it, such as `/var/www` for `www-data`. It never answers a password or shadow data.
+`account.read` answers `{"state": "absent"}` only when `getent passwd` answers that no such user exists. Otherwise it answers `{"state": "present", "uid", "gid", "group", "home"}`: `gid` and `group` are the primary group's id and name, and `home` the home folder as NSS answers it, such as `/var/www` for `www-data`. It never answers a password or shadow data.
 
-It reads with the reentrant `getpwnam_r`, then `getgrgid_r` for the primary group's name, and grows its buffer while a lookup answers `ERANGE`, up to 1 MiB. The static musl agent reads `/etc/passwd` and `/etc/group`, and nscd where it runs; it loads no glibc NSS module. A lookup that fails, an entry that does not fit, a primary group the database cannot name, or a field that is not UTF-8 answers `account.read_failed`, never absent. The name must be a plain user name (`[a-z_][a-z0-9_-]{0,31}`), as for every owner the family takes.
+It resolves through the host's NSS via `getent` (fixed argv): `/usr/bin/getent passwd -- <user>`, then `/usr/bin/getent group -- <gid>` with the gid it read, each within 10 s. `getent` uses the host's glibc NSS stack, so every source `nsswitch.conf` names (files, systemd, sss, ldap) answers in its order and with its actions; the static musl agent could not load those modules itself.
+
+Exit code 0 is parsed as one passwd line, then one group line. Exit code 2 from `passwd` is the only absent answer. Exit code 2 from `group` fails `account.read_failed`, because the primary group cannot be resolved. Any other exit code, the time limit, a `getent` that cannot start, or a line it cannot parse also fails `account.read_failed`, never absent.
+
+The input is exactly `{"user": "<name>"}`, and the name must be a plain user name (`[a-z_][a-z0-9_-]{0,31}`), as for every owner the family takes, before it becomes an argument. Any other shape, an array included, fails `host.input_invalid` and runs nothing.
+
+`getent` is a command, but a fixed one chosen in the Rust code, as `setfacl` is for `posix.acl.ensure` and `update-ca-certificates` for `ca.trust.ensure`. The order supplies only the checked name as one separate argument after `--`, so `account.read` stays within the [five conditions](#what-a-primitive-may-be): one account, no Orbit name or path, the name from the Gateway, read-only, and typed input with no command from the order.
 
 An executor reports `account.read` in its actions from agent 0.37.0, so the Gateway admits a flow that reads an account only on Nodes that report it.
 

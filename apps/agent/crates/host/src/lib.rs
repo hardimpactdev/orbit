@@ -3,7 +3,7 @@
 //!
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
 //! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
-//! - [`account_read`] (`account.read`): the uid, primary group and home of one account, read only through NSS.
+//! - [`account_read`] (`account.read`): the uid, primary group and home of one account, read only through the host's NSS.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
 //! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path.
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
@@ -22,7 +22,6 @@ mod dotenv;
 mod file;
 mod fs;
 mod lock;
-mod nss;
 mod probe;
 mod read;
 mod trust;
@@ -44,7 +43,6 @@ pub use acl::acl_ensure;
 pub use config::config_apply;
 pub use dotenv::dotenv_ensure;
 pub use file::file_ensure;
-pub use nss::Passwd;
 pub use probe::probe;
 pub use read::{file_read, Read};
 pub use trust::trust_ensure;
@@ -84,6 +82,14 @@ pub trait System {
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
 
+    /// Runs a command with a time limit and returns its exit code, `None` when a signal ended it, and its standard output,
+    /// whatever the code.
+    ///
+    /// # Errors
+    ///
+    /// A message when the command cannot start.
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String>;
+
     /// A user's id by name.
     ///
     /// # Errors
@@ -102,24 +108,6 @@ pub trait System {
     fn group(&self, name: &str) -> Result<u32, String> {
         let line = self.run(10, &strings(&["/usr/bin/getent", "group", name]))?;
         line.trim().split(':').nth(2).and_then(|gid| gid.parse().ok()).ok_or_else(|| format!("no group {name}"))
-    }
-
-    /// A user's passwd entry by name, read through NSS; `None` only when NSS answers that the user does not exist.
-    ///
-    /// # Errors
-    ///
-    /// The lookup's error, such as an I/O error or an entry that does not fit the largest buffer.
-    fn account(&self, name: &str) -> Result<Option<Passwd>, String> {
-        nss::passwd(name)
-    }
-
-    /// A group's name by id, read through NSS; `None` only when NSS answers that the group does not exist.
-    ///
-    /// # Errors
-    ///
-    /// The lookup's error.
-    fn group_name(&self, gid: u32) -> Result<Option<String>, String> {
-        nss::group_name(gid)
     }
 
     /// Changes the owner of a path without following a final link.
@@ -179,6 +167,11 @@ impl System for NodeSystem {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
         }
+    }
+
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, String), String> {
+        let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
+        Ok((output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned()))
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

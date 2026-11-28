@@ -108,7 +108,7 @@ pub enum Action {
     /// Read the digest, type, owner and mode of one path without following a final link (ADR 0271 N3). Read-only. Its
     /// target is the Node.
     FileRead,
-    /// Read the uid, primary group and home of one account through NSS (ADR 0271 N3). Read-only. Its target is the Node.
+    /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
 }
 

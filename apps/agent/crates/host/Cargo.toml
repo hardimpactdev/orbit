@@ -9,7 +9,6 @@ description = "Host-resource primitives of the Orbit executor: files, dotenv key
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-libc = "0.2"
 sha2 = "0.10"
 
 [dev-dependencies]

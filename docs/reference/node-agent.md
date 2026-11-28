@@ -29,7 +29,7 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
 - **Route withdrawal read-back:** Agent `0.35.0` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)).
 - **Host primitives:** Agent `0.36.0` turns on the [host family](/reference/executor#the-host-family) with `file.read` on app-dev and vpn Nodes.
-- **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home ([the host family](/reference/executor#the-host-family)).
+- **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
