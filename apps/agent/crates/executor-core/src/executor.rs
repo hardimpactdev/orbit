@@ -29,6 +29,8 @@ pub trait Run: Send + Sync {
 
 /// The code of an order that expired while it waited for its target's lock. It never acted.
 pub const ORDER_EXPIRED: &str = "executor.order_expired";
+/// A Conn Server issue whose open record has no result: it may have made its item before the crash, so it never runs again.
+pub const ISSUE_OUTCOME_UNKNOWN: &str = "conn.issue_outcome_unknown";
 
 /// The result line for one order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -278,8 +280,12 @@ impl<R: Run> Executor<R> {
         let mut recovered = Vec::new();
         for open in pending.0 {
             let key = open.key.clone();
-            let order = VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
-            let outcome = self.runner.run(&order);
+            // An issue's open record is its intent: the item may exist without a receipt, so a second one is never made.
+            let outcome = if key.action.issues_once() {
+                Outcome::failed(ISSUE_OUTCOME_UNKNOWN)
+            } else {
+                self.runner.run(&VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input))
+            };
             self.finish(open.nonce, &key, &outcome, (self.clock)())?;
             // The target's lock goes with its last repeat, so its new orders run without waiting for other targets.
             if left.get_mut(&key.target).is_some_and(|count| {
@@ -523,7 +529,7 @@ mod tests {
         fields["target"] = match action {
             "instance.fetch_branch" => "7:fetch-12",
             // A Route or DNS action targets its Node.
-            "tls.ensure_csr" | "route.publish_site" | "dns.publish_records" => "7",
+            "tls.ensure_csr" | "route.publish_site" | "dns.publish_records" | "conn.session.issue" | "conn.pairing.issue" => "7",
             _ => "12",
         }
         .into();
@@ -532,7 +538,7 @@ mod tests {
         fields["expires_ms"] = expiry.into();
         fields["input"] = serde_json::json!({});
         let keys = pinned(1);
-        let enabled = Enabled::parse("instance\nroute\ndns\n").expect("valid");
+        let enabled = Enabled::parse("instance\nroute\ndns\nhost\n").expect("valid");
         let node = "7".parse().expect("id");
         crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW, |_, _| true)
             .expect("valid sync order")
@@ -846,6 +852,29 @@ mod tests {
         assert_eq!(first.operation.as_str(), "op-1");
         assert_eq!(first.outcome, Outcome::Done);
         assert_eq!(runs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_interrupted_conn_issue_is_never_run_again_and_its_repeat_answers_the_refusal() {
+        for action in ["conn.session.issue", "conn.pairing.issue"] {
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let first = sync_order(action, "t3", N1, NOW + 5000);
+            let key = DoneKey { operation: first.operation().clone(), action: first.action(), target: first.target().clone() };
+            let seen = Record::Seen { nonce: first.nonce(), key: key.clone(), expires_ms: first.expires_ms() };
+            let open = Record::Open { nonce: first.nonce(), key, expires_ms: first.expires_ms(), power_check: crate::order::PowerCheck::Default,
+                input: first.input().clone() };
+            let lines = [&seen, &open].map(|record| serde_json::to_string(record).expect("record")).join("\n");
+            std::fs::write(&path, format!("{lines}\n")).expect("journal before crash");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            assert_eq!(recovered.len(), 1, "{action}");
+            assert_eq!(recovered[0].outcome, Outcome::failed(ISSUE_OUTCOME_UNKNOWN), "{action}");
+            let reply = executor.handle(&sync_order(action, "t3", N2, NOW + 5000), NOW).expect("repeat");
+            assert!(reply.repeat, "{action}");
+            assert_eq!(reply.outcome, Outcome::failed(ISSUE_OUTCOME_UNKNOWN), "{action}");
+            assert_eq!(runs.load(Ordering::SeqCst), 0, "{action}: nothing is issued again");
+        }
     }
 
     #[test]

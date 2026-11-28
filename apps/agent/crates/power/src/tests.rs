@@ -326,7 +326,10 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::IncusInstanceEnsure
             | orbit_executor_core::action::Action::IncusAclEnsure
             | orbit_executor_core::action::Action::IncusDeviceEnsure
-            | orbit_executor_core::action::Action::IncusVolumeEnsure => {
+            | orbit_executor_core::action::Action::IncusVolumeEnsure
+            | orbit_executor_core::action::Action::ConnSessionIssue
+            | orbit_executor_core::action::Action::ConnProjectEnsure
+            | orbit_executor_core::action::Action::ConnPairingIssue => {
                 panic!("power actions only")
             }
         }

@@ -128,6 +128,12 @@ pub enum Action {
     /// One custom Incus storage volume copied from a source volume or snapshot, or absent, through the Incus API (ADR 0271 N3).
     /// Its target is the Node.
     IncusVolumeEnsure,
+    /// Issue one session of a Conn Server, its token sealed to the Gateway (ADR 0271 N3). Its target is the Node.
+    ConnSessionIssue,
+    /// Make one folder a project of a Conn Server (ADR 0271 N3). Its target is the Node.
+    ConnProjectEnsure,
+    /// Issue one pairing link of a Conn Server, its code sealed to the Gateway (ADR 0271 N3). Its target is the Node.
+    ConnPairingIssue,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -142,7 +148,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 49] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -189,6 +195,9 @@ impl Action {
         Self::IncusAclEnsure,
         Self::IncusDeviceEnsure,
         Self::IncusVolumeEnsure,
+        Self::ConnSessionIssue,
+        Self::ConnProjectEnsure,
+        Self::ConnPairingIssue,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -224,7 +233,10 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => Family::Host,
+            | Self::AccountRead
+            | Self::ConnSessionIssue
+            | Self::ConnProjectEnsure
+            | Self::ConnPairingIssue => Family::Host,
             Self::GitFetch | Self::GitCheckout | Self::GitRefEnsure | Self::GitWorktreeRead => Family::Git,
             Self::IncusInstanceEnsure | Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
         }
@@ -233,6 +245,11 @@ impl Action {
     /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
     pub fn read_only(self) -> bool {
         matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead | Self::AccountRead | Self::GitWorktreeRead)
+    }
+
+    /// Whether the action makes one new item per order, such as a session: crash recovery never runs it again.
+    pub fn issues_once(self) -> bool {
+        matches!(self, Self::ConnSessionIssue | Self::ConnPairingIssue)
     }
 
     /// What the action's target names.
@@ -270,7 +287,10 @@ impl Action {
             | Self::IncusInstanceEnsure
             | Self::IncusAclEnsure
             | Self::IncusDeviceEnsure
-            | Self::IncusVolumeEnsure => TargetKind::Node,
+            | Self::IncusVolumeEnsure
+            | Self::ConnSessionIssue
+            | Self::ConnProjectEnsure
+            | Self::ConnPairingIssue => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -369,6 +389,9 @@ impl Action {
             Self::IncusAclEnsure => "incus.acl.ensure",
             Self::IncusDeviceEnsure => "incus.device.ensure",
             Self::IncusVolumeEnsure => "incus.volume.ensure",
+            Self::ConnSessionIssue => "conn.session.issue",
+            Self::ConnProjectEnsure => "conn.project.ensure",
+            Self::ConnPairingIssue => "conn.pairing.issue",
         }
     }
 }
@@ -429,6 +452,9 @@ impl FromStr for Action {
             "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
             "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
             "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
+            "conn.session.issue" => Ok(Self::ConnSessionIssue),
+            "conn.project.ensure" => Ok(Self::ConnProjectEnsure),
+            "conn.pairing.issue" => Ok(Self::ConnPairingIssue),
             _ => Err(UnknownActionError),
         }
     }
@@ -472,7 +498,7 @@ pub enum Family {
     Instance,
     /// A Process's run state and a Schedule's Node timer (ADR 0271).
     Process,
-    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
+    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads, Conn Server sessions, projects and pairing links (ADR 0271 N3).
     Host,
     /// Git primitives: one ref fetched, one work tree's branch, one ref compared and set, one work tree read (ADR 0271 N3).
     Git,

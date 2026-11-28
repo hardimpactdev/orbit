@@ -150,7 +150,7 @@ The catalogue is the full set of primitives that the Operations on the engine ne
 | `git.checkout` | The branch of one work tree: checked out, renamed, reset or cleaned | Built | `instance.checkout`, the branch rename of `instance.names` |
 | `git.ref.ensure` | One ref, set only from an expected old value, or absent | Built | The ref moves of `instance.sync_base` and `instance.clear_base` |
 | `git.worktree.read` | The state of one work tree, read only | Built | `instance.work_read`, the evidence reads of `instance.sync_base` |
-| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Planned | `instance.t3`, whose T3 names go with it |
+| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | One session, one project and one pairing link of a Conn Server | Built ([contract](#the-conn-server-primitives)) | `instance.t3`, whose T3 names go with it |
 
 Three notes apply to every row.
 
@@ -234,6 +234,7 @@ The `host` family (`crates/host`) holds the host-resource primitives of the [cat
 | `http.probe` | `http(s)` URL, a budget up to 60 s, `contains` and `lacks` | Reads the URL with `curl` until an answer meets the expectation, within the budget. Reads only, outside the journal. |
 | `file.read` | `path`, absolute | Opens the path without following a final link and answers what it holds as JSON (`output`). Reads only, outside the journal, and runs no command. |
 | `account.read` | `{"user": name}`, a user name | Resolves the user through the host's NSS via `getent` (fixed argv) and answers it as JSON (`output`). Reads only, outside the journal. |
+| `conn.session.issue`, `conn.project.ensure`, `conn.pairing.issue` | A Conn Server's binary, home and account, and the session, project or link | See [The Conn Server primitives](#the-conn-server-primitives). |
 
 `file.read` answers `{"state": "absent"}` only when nothing is at the path. Otherwise it answers `{"state": "present", "type", "sha256", "uid", "gid", "mode"}`: `type` is `file`, `directory`, `symlink`, `fifo`, `socket`, `char_device` or `block_device`, `mode` the octal permission bits such as `0644`, and `sha256` the digest of a plain file's bytes, absent for any other type.
 
@@ -256,6 +257,44 @@ The input is exactly `{"user": "<name>"}`, and the name must be a plain user nam
 `getent` is a command, but a fixed one chosen in the Rust code, as `setfacl` is for `posix.acl.ensure` and `update-ca-certificates` for `ca.trust.ensure`. The order supplies only the checked name, as one separate argument after `--` and the database. So `account.read` stays within the [five conditions](#what-a-primitive-may-be): one account, no Orbit name or path, the name from the Gateway, read-only, and typed input with no command from the order.
 
 An executor reports `account.read` in its actions from agent 0.37.0, so the Gateway admits a flow that reads an account only on Nodes that report it.
+
+#### The Conn Server primitives
+
+`conn.session.issue`, `conn.project.ensure` and `conn.pairing.issue` act on one Conn Server on the Node. Each takes `server`: `{"binary", "home", "user", "group"}`. The binary and the state home are absolute paths, and the account owns the home. They run the server's own local control plane, the commands `instance.t3` runs, with a fixed argv: `/usr/bin/setpriv --reuid <uid> --regid <gid> --clear-groups -- /proc/self/fd/<n> <command…> --base-dir <home>`. Each call runs under `timeout` 15 s with an empty environment.
+
+The binary must be a regular file named `conn-server`, owned by root and not group- or other-writable. Every folder from `/` down to it must be a real folder, owned by root and not group- or other-writable. The executor opens it once without following a link, checks it through that descriptor, and runs it through the same descriptor. Any other binary fails `conn.binary_untrusted` and runs nothing.
+
+The server's CLI takes no `--`, so every value is checked first and none may start with `-`. An unknown field, a relative path, or a label, title, subject, scope, lifetime or `seal_to` outside its contract fails `host.input_invalid` and runs nothing.
+
+| Primitive | Input besides `server` | Fixed commands | Answer |
+| --- | --- | --- | --- |
+| `conn.session.issue` | `label`; `subject`; `scopes` (1 to 64, `[a-z:-]+`); `ttl`; `seal_to` | `auth session list --json`, then `auth session issue --label <label> --subject <subject> --ttl <ttl> --scope <scope>… --json` | Output `{"session_id", "scopes", "sealed"}`; `sealed` opens to `{"token"}` |
+| `conn.project.ensure` | `workspace`, a folder at its real path; `title`, with no leading or trailing space | `project add <workspace> --title <title>`, only when the server's `userdata/projects.json` lacks that folder under that title, then a read-back | Changes: 0 or 1 |
+| `conn.pairing.issue` | `label`; `scopes`; `ttl`, how long the code works; `session_ttl`, how long a redeemed session lasts; `seal_to` | `auth pairing list --json` and `auth session list --json`, then `auth pairing create --label <label> --scopes <a,b> --ttl <ttl> --json` | Output `{"pairing_id", "expires_at", "sealed"}`; `sealed` opens to `{"credential"}` |
+
+A `ttl` is a count with no leading zero and a unit `s`, `m`, `h`, `d` or `w`, from 1 s to 3660 days, such as `3660d`. The server stores a longer lifetime, and `until-revoked`, as 3660 days, so both are refused rather than shortened. `auth pairing create` takes no lifetime for the session a device redeems: Conn Server 0.5.6 grants 30 days. So `session_ttl` must be `30d`. `conn.pairing.issue` makes no session itself.
+
+The server stores a title trimmed and a folder by its real path. So `conn.project.ensure` refuses a padded or blank title, and a workspace that is not a folder, is a link, lies below one, or is missing. Every accepted input reads back as sent. A repeat answers 0, and a new title for a listed folder is one change.
+
+`seal_to` must be a 32-byte X25519 key in base64 that contributes to the key agreement, checked before the server makes anything. A fresh secret's shared secret with it must not be all zeros, so all zeros and the other low-order points are refused. A token and a pairing code leave the Node only sealed to it, inside the receipt's output, as `instance.t3` returns its sessions ([Primitives that span more than one file or call](#primitives-that-span-more-than-one-file-or-call)). The journal holds that receipt, so it too holds only the sealed bytes.
+
+A failure logs its code and a fixed detail: a fixed operation name and its status, such as `conn.project.add exited 1` or `conn.pairing.create timed out`. It never logs an argument, a path, what the server wrote or the input parser's message.
+
+Each issue makes one item per order. The journal's open record, written before the command runs, is the order's issuing intent. A repeated delivery of a finished order answers its stored receipt, so the same sealed item. Crash recovery that finds an open issue with no result never runs it again: it records `conn.issue_outcome_unknown`, and a repeat of the order answers that.
+
+The server lists also guard a retry: a session whose `subject` the server lists fails `conn.session_issued`, and a link whose `label` it lists fails `conn.pairing_issued`. A redeemed link leaves the pairing list, so a session whose client label is the link's label also fails `conn.pairing_issued`. The Gateway therefore sends a subject or label of the order's own. `conn.project.ensure` is desired state.
+
+Other failures are `conn.session_failed`, `conn.project_failed` and `conn.pairing_failed`: a server that cannot run, the time limit, a refusal, or an answer with no token, code or project.
+
+They meet the [five conditions](#what-a-primitive-may-be):
+
+- One resource: one Conn Server's session, project or pairing link.
+- No Orbit concept: the Rust code holds only the server's own binary name, file layout, lifetimes and scope syntax.
+- Explicit input: the Gateway sends the binary, home, account, folder, labels, scopes and lifetimes.
+- Desired state: the project converges, and each issue makes one item per order.
+- Typed input: the commands are fixed in the Rust code, and the order supplies only checked values.
+
+They join the host family and the Gateway's signable actions. No flow sends them yet, and none answers `conn.pairing_create`. The Gateway admits a kind only on Nodes that report it, from agent 0.42.0.
 
 A `file.ensure` file with `from_sha256` that holds neither that digest nor the desired content refuses `owned_revision_conflict` and changes nothing.
 
@@ -528,6 +567,8 @@ The calls, their environment and their overrides are exactly the SSH reader's, s
 The executor appends JSON records to `/var/lib/orbit/executor/journal`: `seen` on acceptance, `open` before execution, and `done` after completion (orders that expire while waiting for a target lock record `executor.order_expired` without acting). A background syncer fsyncs once per second and compacts live records (active nonces, open orders, and 24 hours of done records) every 10 minutes or 10,000 writes.
 
 At startup, the executor creates the `journal.accepts` marker, marks any `seen`-without-`open` order as `executor.order_expired`, and replays any `open`-without-`done` order under its target lock before accepting new work on that target.
+
+An `open`-without-`done` `conn.session.issue` or `conn.pairing.issue` is never replayed: it may have made its item. Recovery records `conn.issue_outcome_unknown` for it instead ([The Conn Server primitives](#the-conn-server-primitives)).
 
 For the fenced actions (`instance.destroy`, `instance.fetch_branch`, `instance.sync_base`, `instance.clear_base`, and the Route update's `tls.ensure_csr`, `route.publish_site` and `dns.publish_records`), an order that expires before taking the target lock never settles the step, and a result goes back only after its `done` record is durable. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
 

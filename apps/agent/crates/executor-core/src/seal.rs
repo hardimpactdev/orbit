@@ -12,6 +12,18 @@ use crypto_box::PublicKey;
 #[error("seal.recipient_invalid")]
 pub struct SealError;
 
+/// Whether `recipient` is a base64 X25519 key that contributes to a key agreement: a fresh secret's shared secret with it is
+/// not all zeros. A low-order point, such as all zeros, gives every secret the same all-zero shared secret, so a box sealed
+/// to it would open with a key anyone knows.
+pub fn contributory(recipient: &str) -> bool {
+    let Ok(Ok(bytes)) = STANDARD.decode(recipient).map(<[u8; 32]>::try_from) else {
+        return false;
+    };
+    let secret = crypto_box::SecretKey::generate(&mut OsRng);
+    let shared = curve25519_dalek::MontgomeryPoint(bytes).mul_clamped(secret.to_bytes());
+    shared.to_bytes() != [0; 32]
+}
+
 /// Seals `plaintext` to `recipient`, a base64 X25519 public key, and answers the sealed box in base64.
 ///
 /// # Errors
@@ -56,6 +68,32 @@ mod tests {
     fn the_shared_fixture_opens_with_the_fixture_key() {
         let sealed = STANDARD.decode(fixture()["sealed"].as_str().expect("a box")).expect("base64");
         assert_eq!(secret().unseal(&sealed).expect("opens"), fixture()["plaintext"].as_str().expect("text").as_bytes());
+    }
+
+    #[test]
+    fn only_a_contributory_recipient_is_accepted() {
+        assert!(super::contributory(&STANDARD.encode(secret().public_key().as_bytes())), "a real key");
+        let low_order: [[u8; 32]; 4] = [
+            [0; 32],
+            {
+                let mut one = [0; 32];
+                one[0] = 1;
+                one
+            },
+            // The two points of order 8 (RFC 7748's small-subgroup inputs).
+            hex("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+            hex("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"),
+        ];
+        for point in low_order {
+            assert!(!super::contributory(&STANDARD.encode(point)), "{point:?}");
+        }
+        assert!(!super::contributory("short"), "not 32 bytes");
+        assert!(!super::contributory(&STANDARD.encode([1_u8; 31])), "31 bytes");
+    }
+
+    fn hex(text: &str) -> [u8; 32] {
+        let bytes: Vec<u8> = (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex")).collect();
+        bytes.try_into().expect("32 bytes")
     }
 
     #[test]

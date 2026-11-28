@@ -151,7 +151,8 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure | Action::ConfigApply | Action::HttpProbe => host(order),
+            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
+            | Action::ConfigApply | Action::HttpProbe | Action::ConnSessionIssue | Action::ConnProjectEnsure | Action::ConnPairingIssue => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
             Action::GitFetch | Action::GitCheckout | Action::GitRefEnsure | Action::GitWorktreeRead => git(order),
             Action::IncusInstanceEnsure | Action::IncusAclEnsure | Action::IncusDeviceEnsure | Action::IncusVolumeEnsure => incus(order),
@@ -368,6 +369,9 @@ fn host(order: &VerifiedOrder) -> Outcome {
     if order.action() == Action::PosixAclEnsure {
         return acl_ensure(order);
     }
+    if matches!(order.action(), Action::ConnSessionIssue | Action::ConnProjectEnsure | Action::ConnPairingIssue) {
+        return conn(order);
+    }
     let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
     let primitive: fn(&orbit_executor_host::NodeSystem, &serde_json::Value) -> Result<u32, orbit_executor_host::Failure> = match order.action() {
         Action::FileEnsure => orbit_executor_host::file_ensure,
@@ -384,6 +388,23 @@ fn host(order: &VerifiedOrder) -> Outcome {
         },
         |changes| Outcome::Applied { changes },
     )
+}
+
+/// The Conn Server primitives of the host family. `conn.project.ensure` answers its changes; the two issues answer their
+/// item as JSON in the receipt's output, its token or code sealed to the Gateway. A failure logs its code and a detail that
+/// never holds a server answer's body.
+fn conn(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_host::NodeSystem::new(bus::BLOBS_PATH);
+    let outcome = match order.action() {
+        Action::ConnProjectEnsure => orbit_executor_host::project_ensure(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        Action::ConnSessionIssue => orbit_executor_host::session_issue(&system, order.input())
+            .map(|session| Outcome::Output { stdout: serde_json::json!(session).to_string() }),
+        _ => orbit_executor_host::pairing_issue(&system, order.input()).map(|link| Outcome::Output { stdout: serde_json::json!(link).to_string() }),
+    };
+    outcome.unwrap_or_else(|failure| {
+        log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+        Outcome::failed(failure.code)
+    })
 }
 
 /// The incus family (ADR 0271 N3): one Incus resource per order through the Incus API, every name from the input. A
