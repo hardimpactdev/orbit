@@ -19,7 +19,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
-- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10978.0` / agent `0.35.0`, which fences `tls.ensure_csr` and `route.publish_site` for the engine-run Route update and makes `route.withdraw_site` wait for the Caddy reload before it verifies).
+- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10987.0` / agent `0.35.0`, which adds the host catalogue primitives `config.apply`, `file.ensure`, `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`).
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
 - **Route withdrawal read-back:** Agent `0.35.0` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)).
@@ -197,7 +197,7 @@ The subscriber also acts as the [executor result listener](/reference/executor#t
 
 ## Delivery
 
-Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10978.0` / agent `0.35.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
+Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10987.0` / agent `0.35.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
 
 ```json
 {

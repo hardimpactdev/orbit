@@ -1,26 +1,26 @@
 {
-  "commit": "0d22ee992bf36e998b4b91b5e57ab7d671b38ab4",
+  "commit": "018575584f9688e935493dbd82cc7b1ec6756c4d",
   "version": "0.35.0",
   "artifacts": {
     "linux-x86_64": {
       "path": "orbit-agent-linux-x86_64",
-      "sha256": "6b73d71db541904605fc99a7ff908ea2ebb807b96688bf53cde24c6de8ccd24a",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10978.0/orbit-agent-linux-x86_64"
+      "sha256": "ec7ca65ba8314fc0cce87fed3616d089e09fa58e1ee31fc552da28c4bc3c4449",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10987.0/orbit-agent-linux-x86_64"
     },
     "executor-linux-x86_64": {
       "path": "orbit-executor-linux-x86_64",
-      "sha256": "3d44c28ef0fa554f93befa5c54c5c692611c00df1aa51f85c6b70864acc79796",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10978.0/orbit-executor-linux-x86_64"
+      "sha256": "d1aa6044ffc14ba2947180591211c40ece0641b191c22ae84c89949586af11f9",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10987.0/orbit-executor-linux-x86_64"
     },
     "macos-aarch64": {
       "path": "orbit-agent-macos-aarch64",
-      "sha256": "a941455bda47cb38a5c022f5c7e07154ead5d043b87f3d608a7c3b32f62e47da",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10978.0/orbit-agent-macos-aarch64"
+      "sha256": "ef3ec3f71714dc649c9f8062041b7f007d4d1ff6e31869524b23650647795907",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10987.0/orbit-agent-macos-aarch64"
     },
     "macos-x86_64": {
       "path": "orbit-agent-macos-x86_64",
-      "sha256": "a608da4824ccf77f684f886574dcdb9cfbeb6156de3d26a9f6741db7b9b2eebf",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10978.0/orbit-agent-macos-x86_64"
+      "sha256": "2b59f0bce695bc55fc6957f9790a91b204e99925db1782ca3ce8c60419ade095",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10987.0/orbit-agent-macos-x86_64"
     }
   }
 }
