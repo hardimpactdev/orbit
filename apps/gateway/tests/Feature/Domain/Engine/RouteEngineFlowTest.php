@@ -165,7 +165,7 @@ it('reads each file its write replaces, and sends the recorded live digest, or n
         ->and($flow->input(routeOperation(routePlan()), 'site-3-read-pool-0', routeRun()))->toBe(['path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf'])
         ->and($flow->input(routeOperation(routePlan()), 'site-3-caddy', $absent)['files'][0])->not->toHaveKey('from_sha256')
         ->and($flow->input(routeOperation(routePlan()), 'site-3-pools', $absent)['files'][0]['from_sha256'])->toBe(str_repeat('e', 64))
-        ->and(RouteHostSteps::digest(json_encode(['state' => 'present', 'type' => 'link', 'uid' => 0, 'gid' => 0, 'mode' => '0777'])))->toBeNull();
+        ->and(RouteHostSteps::digest(json_encode(['state' => 'present', 'type' => 'symlink', 'uid' => 0, 'gid' => 0, 'mode' => '0777'])))->toBeNull();
 });
 
 it('sends a retried write byte-identical input, because its reads are recorded once and config.apply\'s identity is its input', function (): void {

@@ -10,6 +10,7 @@ use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteEngineFlow;
+use App\Domain\Routes\RouteHostSteps;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
@@ -142,3 +143,16 @@ it('resends a route.create step whose receipt was lost and settles it once from 
         ->and($csr->output)->toBe('CSR')->and($csr->late)->toBe(1)
         ->and(RouteCreateReceiptDefinition::$finished)->toBe('succeeded');
 });
+
+it('records a file.read receipt in the executor\'s shape as the step output whose digest the next write sends', function (string $stdout, ?string $digest): void {
+    // orbit-executor `file_read`: `Outcome::Output { stdout: serde_json::json!(read) }`, a `Read` tagged by `state`.
+    ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => $stdout]);
+
+    $read = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', 'csr-0')->firstOrFail();
+    expect($read->output)->toBe($stdout)
+        ->and(RouteHostSteps::digest($read->output))->toBe($digest);
+})->with([
+    'a plain file' => ['{"state":"present","type":"file","sha256":"'.str_repeat('ab', 32).'","uid":0,"gid":0,"mode":"0644"}', str_repeat('ab', 32)],
+    'a link, which has no digest' => ['{"state":"present","type":"symlink","uid":0,"gid":0,"mode":"0777"}', null],
+    'nothing at the path' => ['{"state":"absent"}', null],
+]);
