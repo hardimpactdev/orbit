@@ -623,8 +623,19 @@ fn volume_recovery_checks_the_source_before_it_deletes_the_marked_copy() {
 }
 
 #[test]
+fn volume_complete_destination_answers_zero_when_its_source_is_gone() {
+    // The seed volume, or its snapshot, was deleted after the copy finished: the complete volume repeats 0, with no write.
+    for source in [vec![missing()], vec![parent(), missing()]] {
+        let fake = Fake::new([vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))], source, vec![ok(stored_volume("p1/pool1/v1/s1", json!([])))]].into_iter().flatten().collect());
+        assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
+        assert_eq!(writes(&fake), Vec::<String>::new());
+    }
+}
+
+#[test]
 fn volume_complete_destination_checks_the_source_before_any_write_or_ok() {
-    for (source, code) in refused_sources() {
+    // A source that still exists must pass the type and marked-source checks.
+    for (source, code) in refused_sources().into_iter().filter(|(_, code)| *code != "incus.volume_source_missing") {
         let fake = Fake::new([vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))], source].into_iter().flatten().collect());
         let mut input = volume(&fake, "present");
         input["config"] = json!({"size": "2GiB"});

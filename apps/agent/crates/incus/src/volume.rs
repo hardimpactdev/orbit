@@ -151,7 +151,13 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
             ));
         }
     }
+    // A complete destination with this provenance needs no source: a seed deleted since must not fail a repeat. Any other
+    // destination is copied from the source, so a missing one refuses before any write.
+    let complete = existing.as_ref().is_some_and(|(found, _)| found["config"].get(COPYING_KEY).is_none());
     let settings = checked_source(&client, source, project, &record)?;
+    if settings.is_none() && !complete {
+        return Err(Failure::new("incus.volume_source_missing", record));
+    }
     if let Some((found, _)) = existing {
         if found["config"].get(COPYING_KEY).is_some() {
             // No order saw this copy succeed. Wait for the project's running copies, then a volume still marked is an
@@ -168,7 +174,7 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
     let (found, etag) = if let Some(found) = client.get(path)? {
         found
     } else {
-        copy(&client, input, source, project, &record, path, &settings).map_err(|failure| {
+        copy(&client, input, source, project, &record, path, settings.as_ref().unwrap_or(&Value::Null)).map_err(|failure| {
             if changes > 0 && failure.code == crate::api::TIMEOUT {
                 Failure::new("incus.copy_incomplete", format!("{}: the copy again did not finish within the deadline", input.name))
             } else {
@@ -257,14 +263,13 @@ fn discard(client: &Client, input: &Input, path: &str, found: &Value) -> Result<
     }
 }
 
-/// Reads the source volume, and its snapshot when the input names one, and answers the settings a copy takes. A missing
-/// volume or snapshot refuses `incus.volume_source_missing`, an ISO volume `incus.volume_type_unsupported`, and a volume or
-/// snapshot that is itself a copy no order saw succeed `incus.source_incomplete`: it may hold only part of its data.
-fn checked_source(client: &Client, source: &Source, project: &str, record: &str) -> Result<Value, Failure> {
+/// Reads the source volume, and its snapshot when the input names one, and answers the settings a copy takes, or `None`
+/// when the volume or the snapshot is gone. An ISO volume refuses `incus.volume_type_unsupported`, and a volume or snapshot
+/// that is itself a copy no order saw succeed `incus.source_incomplete`: it may hold only part of its data.
+fn checked_source(client: &Client, source: &Source, project: &str, record: &str) -> Result<Option<Value>, Failure> {
     let parent = format!("/1.0/storage-pools/{}/volumes/custom/{}?project={project}", source.pool, source.volume);
-    let missing = || Failure::new("incus.volume_source_missing", record.to_owned());
     let incomplete = || Failure::new("incus.source_incomplete", format!("{record} is an incomplete copy"));
-    let (volume, _) = client.get(&parent)?.ok_or_else(missing)?;
+    let Some((volume, _)) = client.get(&parent)? else { return Ok(None) };
     refuse_unsupported(&volume, &source.volume)?;
     if volume["config"].get(COPYING_KEY).is_some() {
         return Err(incomplete());
@@ -272,14 +277,15 @@ fn checked_source(client: &Client, source: &Source, project: &str, record: &str)
     let found = match &source.snapshot {
         Some(snapshot) => {
             let from = format!("/1.0/storage-pools/{}/volumes/custom/{}/snapshots/{snapshot}?project={project}", source.pool, source.volume);
-            client.get(&from)?.ok_or_else(missing)?.0
+            let Some((found, _)) = client.get(&from)? else { return Ok(None) };
+            found
         }
         None => volume,
     };
     if found["config"].get(COPYING_KEY).is_some() {
         return Err(incomplete());
     }
-    Ok(found["config"].clone())
+    Ok(Some(found["config"].clone()))
 }
 
 /// Copies the volume, without its snapshots, from the checked source, then removes the copy mark once the copy's
