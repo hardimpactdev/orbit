@@ -82,6 +82,7 @@ fn absent(input: &Input, path: &str) -> Result<u32, Failure> {
     let client = connect(input.socket.as_deref(), input.timeout_ms, &[&input.project, &input.pool, &input.name])?;
     owns_storage(&client, &input.project)?;
     let Some((volume, _)) = client.get(path)? else { return Ok(0) };
+    refuse_unsupported(&volume, &input.name)?;
     if volume["config"].get(COPYING_KEY).is_some() && !client.copies(&input.project)?.is_empty() {
         return Err(Failure::new("incus.copy_in_progress", format!("{} may still be being copied", input.name)));
     }
@@ -136,40 +137,42 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
         None => format!("{project}/{}/{}", source.pool, source.volume),
     };
     let mut changes = 0;
-    let (mut found, mut etag) = if let Some(found) = client.get(path)? {
+    // Every refusal reads only: the provenance and the content type are checked before any write to the destination.
+    if let Some((found, _)) = client.get(path)? {
+        refuse_unsupported(&found, &input.name)?;
+        if found["config"][SOURCE_KEY] != json!(record) {
+            return Err(Failure::new(
+                "incus.volume_source_conflict",
+                format!("{} records source {} instead of {record}", input.name, found["config"][SOURCE_KEY]),
+            ));
+        }
+        if found["config"].get(COPYING_KEY).is_some() {
+            // No order saw this copy succeed. Wait for the project's running copies, then a volume still marked is an
+            // incomplete copy that this primitive made: delete it and copy again.
+            settle(&client, &input.project, &input.name)?;
+            if let Some((found, _)) = client.get(path)? {
+                if found["config"].get(COPYING_KEY).is_some() {
+                    discard(&client, input, path, &found)?;
+                    changes += 1;
+                }
+            }
+        }
+    }
+    let (found, etag) = if let Some(found) = client.get(path)? {
         found
     } else {
-        create(&client, input, source, project, &record)?;
+        copy(&client, input, source, project, &record, path).map_err(|failure| {
+            if changes > 0 && failure.code == crate::api::TIMEOUT {
+                Failure::new("incus.copy_incomplete", format!("{}: the copy again did not finish within the deadline", input.name))
+            } else {
+                failure
+            }
+        })?;
         changes += 1;
         client.get(path)?.ok_or_else(|| not_converged(&input.name))?
     };
-    if found["config"].get(COPYING_KEY).is_some() {
-        if changes == 0 {
-            // An earlier order started this copy and never saw it end: wait for the project's running copies within the
-            // deadline. A copy that fails is removed by Incus, so a volume still there afterwards holds the whole copy.
-            for operation in client.copies(&input.project)? {
-                client.wait(&operation).map_err(|failure| {
-                    if failure.code == crate::api::TIMEOUT {
-                        Failure::new("incus.copy_in_progress", format!("{} may still be being copied", input.name))
-                    } else {
-                        failure
-                    }
-                })?;
-            }
-            (found, etag) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
-        }
-        put(&client, path, &found, etag.as_deref(), &BTreeMap::new())?;
-        changes = 1;
-        (found, etag) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
-        if found["config"].get(COPYING_KEY).is_some() {
-            return Err(not_converged(&input.name));
-        }
-    }
-    if found["config"][SOURCE_KEY] != json!(record) {
-        return Err(Failure::new(
-            "incus.volume_source_conflict",
-            format!("{} records source {} instead of {record}", input.name, found["config"][SOURCE_KEY]),
-        ));
+    if found["config"].get(COPYING_KEY).is_some() || found["config"][SOURCE_KEY] != json!(record) {
+        return Err(not_converged(&input.name));
     }
     if input.config.iter().all(|(key, value)| found["config"][key.as_str()] == json!(value)) {
         return Ok(changes);
@@ -186,11 +189,11 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
     }
 }
 
-/// Writes the volume's configuration as read, without its volatile keys and the copy mark, with the given keys set, and
-/// keeps its description. A PUT replaces the writable state, so it carries it whole, under the `ETag` read.
+/// Writes the volume's configuration as read, with its own `volatile.` keys, without the copy mark and with the given keys
+/// set, and keeps its description. A PUT replaces the writable state, so it carries it whole, under the `ETag` read.
 fn put(client: &Client, path: &str, found: &Value, etag: Option<&str>, keys: &BTreeMap<String, String>) -> Result<(), Failure> {
     let mut config = found["config"].as_object().cloned().unwrap_or_default();
-    config.retain(|key, _| !key.starts_with("volatile.") && key != COPYING_KEY);
+    config.remove(COPYING_KEY);
     for (key, value) in keys {
         config.insert(key.clone(), json!(value));
     }
@@ -198,16 +201,78 @@ fn put(client: &Client, path: &str, found: &Value, etag: Option<&str>, keys: &BT
     client.change("PUT", path, Some(&body), etag)
 }
 
-/// Copies the volume, without its snapshots, from a source that must exist. It keeps the source's settings, apart from its
-/// volatile keys and its own provenance, sets the given keys over them and records the source.
-fn create(client: &Client, input: &Input, source: &Source, project: &str, record: &str) -> Result<(), Failure> {
-    let from = match &source.snapshot {
-        Some(snapshot) => format!("/1.0/storage-pools/{}/volumes/custom/{}/snapshots/{snapshot}?project={project}", source.pool, source.volume),
-        None => format!("/1.0/storage-pools/{}/volumes/custom/{}?project={project}", source.pool, source.volume),
+/// Refuses a volume this primitive does not handle: an ISO volume, which Incus imports rather than copies.
+fn refuse_unsupported(volume: &Value, name: &str) -> Result<(), Failure> {
+    if volume["content_type"] == "iso" {
+        return Err(Failure::new("incus.volume_type_unsupported", format!("{name} is an ISO volume")));
+    }
+    Ok(())
+}
+
+/// Waits for the project's running volume copies within the deadline; one still running refuses `incus.copy_in_progress`.
+fn settle(client: &Client, project: &str, name: &str) -> Result<(), Failure> {
+    for operation in client.copies(project)? {
+        client.wait(&operation).map_err(|failure| {
+            if failure.code == crate::api::TIMEOUT {
+                Failure::new("incus.copy_in_progress", format!("{name} may still be being copied"))
+            } else {
+                failure
+            }
+        })?;
+    }
+    Ok(())
+}
+
+/// Deletes an incomplete copy before it is made again. It touches nothing that another resource holds: a marked volume
+/// that is attached or has snapshots or backups refuses `incus.copy_incomplete`, as does a delete past the deadline.
+fn discard(client: &Client, input: &Input, path: &str, found: &Value) -> Result<(), Failure> {
+    let incomplete = |detail: String| Failure::new("incus.copy_incomplete", detail);
+    if found["used_by"].as_array().is_none_or(|used| !used.is_empty()) {
+        return Err(incomplete(format!("{} is an incomplete copy in use by {}", input.name, found["used_by"])));
+    }
+    for kind in ["snapshots", "backups"] {
+        let list = format!("/1.0/storage-pools/{}/volumes/custom/{}/{kind}?project={}", input.pool, input.name, input.project);
+        let (names, _) = client.get(&list)?.ok_or_else(|| not_converged(&input.name))?;
+        if names.as_array().is_none_or(|names| !names.is_empty()) {
+            return Err(incomplete(format!("{} is an incomplete copy with {kind} {names}", input.name)));
+        }
+    }
+    client.change("DELETE", path, None, None).map_err(|failure| {
+        if failure.code == crate::api::TIMEOUT {
+            incomplete(format!("{}: the incomplete copy was not deleted within the deadline", input.name))
+        } else {
+            failure
+        }
+    })?;
+    match client.get(path)? {
+        None => Ok(()),
+        Some(_) => Err(not_converged(&input.name)),
+    }
+}
+
+/// Copies the volume, without its snapshots, from a complete source that must exist, then removes the copy mark once the
+/// copy's operation has succeeded. The copy keeps the source's settings, apart from its volatile keys, its provenance and
+/// its mark, sets the given keys over them and records the source.
+fn copy(client: &Client, input: &Input, source: &Source, project: &str, record: &str, path: &str) -> Result<(), Failure> {
+    let parent = format!("/1.0/storage-pools/{}/volumes/custom/{}?project={project}", source.pool, source.volume);
+    let missing = || Failure::new("incus.volume_source_missing", record.to_owned());
+    let (volume, _) = client.get(&parent)?.ok_or_else(missing)?;
+    refuse_unsupported(&volume, &source.volume)?;
+    // A source that is itself a copy no order saw succeed may hold only part of its data, and so may its snapshots.
+    let incomplete = || Failure::new("incus.source_incomplete", format!("{record} is an incomplete copy"));
+    if volume["config"].get(COPYING_KEY).is_some() {
+        return Err(incomplete());
+    }
+    let found = match &source.snapshot {
+        Some(snapshot) => {
+            let from = format!("/1.0/storage-pools/{}/volumes/custom/{}/snapshots/{snapshot}?project={project}", source.pool, source.volume);
+            client.get(&from)?.ok_or_else(missing)?.0
+        }
+        None => volume,
     };
-    let Some((found, _)) = client.get(&from)? else {
-        return Err(Failure::new("incus.volume_source_missing", record.to_owned()));
-    };
+    if found["config"].get(COPYING_KEY).is_some() {
+        return Err(incomplete());
+    }
     let mut config = found["config"].as_object().cloned().unwrap_or_default();
     config.retain(|key, _| !key.starts_with("volatile.") && key != SOURCE_KEY && key != COPYING_KEY);
     for (key, value) in &input.config {
@@ -222,5 +287,8 @@ fn create(client: &Client, input: &Input, source: &Source, project: &str, record
         "config": config,
         "source": {"type": "copy", "pool": source.pool, "name": name, "project": project, "volume_only": true},
     });
-    client.change("POST", &format!("/1.0/storage-pools/{}/volumes/custom?project={}", input.pool, input.project), Some(&create), None)
+    client.change("POST", &format!("/1.0/storage-pools/{}/volumes/custom?project={}", input.pool, input.project), Some(&create), None)?;
+    // The copy's operation succeeded in this order: only now does the mark go.
+    let (made, etag) = client.get(path)?.ok_or_else(|| not_converged(&input.name))?;
+    put(client, path, &made, etag.as_deref(), &BTreeMap::new())
 }
