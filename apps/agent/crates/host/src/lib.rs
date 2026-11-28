@@ -3,8 +3,9 @@
 //!
 //! - [`file_ensure`] (`file.ensure`): one file, folder or link, or its absence.
 //! - [`file_read`] (`file.read`): the digest, type, owner and mode of one path, read only.
+//! - [`account_read`] (`account.read`): the uid, primary group and home of one account, read only through the host's NSS.
 //! - [`dotenv_ensure`] (`dotenv.ensure`): keys of one dotenv file.
-//! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access list of one path.
+//! - [`acl_ensure`] (`posix.acl.ensure`): one entry of the access or default list of one path, or of one folder tree.
 //! - [`trust_ensure`] (`ca.trust.ensure`): one certificate in the system trust store.
 //! - [`unit_ensure`] (`systemd.unit.ensure`): one unit, enabled and running or stopped.
 //! - [`config_apply`] (`config.apply`): one set of configuration files that share a lock, validated by a fixed validator,
@@ -14,6 +15,7 @@
 //! Every command is fixed here; none comes from the order. Content arrives as a blob the executor has already read and
 //! checked by its SHA-256.
 
+mod account;
 mod acl;
 mod config;
 mod dotenv;
@@ -36,7 +38,8 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde::Deserialize;
 
-pub use acl::acl_ensure;
+pub use account::{account_read, Account};
+pub use acl::{acl_ensure, Acl};
 pub use config::config_apply;
 pub use dotenv::dotenv_ensure;
 pub use file::file_ensure;
@@ -79,6 +82,14 @@ pub trait System {
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String]) -> Result<String, String>;
 
+    /// Runs a command with a time limit and returns its exit code, `None` when a signal ended it, and its standard output as
+    /// the exact bytes, whatever the code.
+    ///
+    /// # Errors
+    ///
+    /// A message when the command cannot start.
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String>;
+
     /// A user's id by name.
     ///
     /// # Errors
@@ -106,6 +117,24 @@ pub trait System {
     /// The system error.
     fn lchown(&self, path: &Path, uid: u32, gid: u32) -> Result<(), String> {
         std::os::unix::fs::lchown(path, Some(uid), Some(gid)).map_err(|error| error.to_string())
+    }
+
+    /// A descriptor's extended attribute, such as its access list; `None` when it has none.
+    ///
+    /// # Errors
+    ///
+    /// The system error.
+    fn xattr(&self, fd: std::os::fd::BorrowedFd<'_>, name: &str) -> std::io::Result<Option<Vec<u8>>> {
+        acl::read_xattr(fd, name)
+    }
+
+    /// Sets a descriptor's extended attribute, or removes it for `None`.
+    ///
+    /// # Errors
+    ///
+    /// The system error.
+    fn set_xattr(&self, fd: std::os::fd::BorrowedFd<'_>, name: &str, value: Option<&[u8]>) -> std::io::Result<()> {
+        acl::write_xattr(fd, name, value)
     }
 
     /// The content of a blob the executor read for this order, by its SHA-256.
@@ -156,6 +185,11 @@ impl System for NodeSystem {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
         }
+    }
+
+    fn status(&self, seconds: u32, argv: &[String]) -> Result<(Option<i32>, Vec<u8>), String> {
+        let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
+        Ok((output.status.code(), output.stdout))
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

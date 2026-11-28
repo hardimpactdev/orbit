@@ -246,6 +246,10 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
     if settings.enabled.allows(orbit_executor_core::action::Action::TlsEnsureCsr) {
         features.push("tls.csr_input");
     }
+    // `posix.acl.ensure` takes `scope: tree`, one entry over one folder tree (docs/reference/executor.md#primitives).
+    if settings.enabled.allows(orbit_executor_core::action::Action::PosixAclEnsure) {
+        features.push("posix.acl.tree");
+    }
     serde_json::json!({
         "actions": actions,
         "node_targets": node_targets,
@@ -578,5 +582,21 @@ mod tests {
         let report = capability_report(&settings);
         assert_eq!(report["features"], serde_json::json!(["dns.guarded_records", "tls.csr_input"]));
         assert!(report["actions"].as_array().expect("actions").contains(&serde_json::json!("route.withdraw_site")));
+    }
+
+    #[test]
+    fn capability_report_lists_the_acl_tree_scope_with_the_host_family() {
+        use orbit_executor_core::action::Enabled;
+        use orbit_executor_core::caller::Policy;
+        use orbit_executor_core::order::PinnedKeys;
+
+        let settings = |families: &str| Settings {
+            policy: Policy::production(None, PathBuf::from("/usr/local/bin/orbit-agent")),
+            keys: PinnedKeys::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=").expect("valid key"),
+            enabled: Enabled::parse(families).expect("families"),
+            node: "7".parse().expect("node"),
+        };
+        assert_eq!(capability_report(&settings("host"))["features"], serde_json::json!(["posix.acl.tree"]));
+        assert_eq!(capability_report(&settings("power"))["features"], serde_json::json!([]));
     }
 }

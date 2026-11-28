@@ -19,13 +19,19 @@ The agent binary also serves signed executor orders in a separate service mode. 
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
-- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus. It is pinned at `cli-v0.10991.0` / agent `0.36.0`.
+- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus. It is pinned at `cli-v0.10993.0` / agent `0.37.0`.
+- **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
+- **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
+
+Recent agent versions changed the executor as follows. This tree builds agent `0.38.0` before the pin moves.
+
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
 - **Route withdrawal read-back:** Agent `0.35.0` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)).
 - **Host primitives:** Agent `0.36.0` turns on the [host family](/reference/executor#the-host-family) with `file.read` on app-dev and vpn Nodes.
-- **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
-- **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
+- **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
+- **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
+- **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 
@@ -200,7 +206,7 @@ The subscriber also acts as the [executor result listener](/reference/executor#t
 
 ## Delivery
 
-Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10991.0` / agent `0.36.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
+Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10993.0` / agent `0.37.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
 
 ```json
 {
