@@ -105,6 +105,9 @@ pub enum Action {
     ConfigApply,
     /// Read one HTTP answer with a bounded wait and a typed expectation (ADR 0271 N3). Read-only. Its target is the Node.
     HttpProbe,
+    /// Read the digest, type, owner and mode of one path without following a final link (ADR 0271 N3). Read-only. Its
+    /// target is the Node.
+    FileRead,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -119,7 +122,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 37] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -156,6 +159,7 @@ impl Action {
         Self::SystemdUnitEnsure,
         Self::ConfigApply,
         Self::HttpProbe,
+        Self::FileRead,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -189,13 +193,14 @@ impl Action {
             | Self::CaTrustEnsure
             | Self::SystemdUnitEnsure
             | Self::ConfigApply
-            | Self::HttpProbe => Family::Host,
+            | Self::HttpProbe
+            | Self::FileRead => Family::Host,
         }
     }
 
     /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
     pub fn read_only(self) -> bool {
-        matches!(self, Self::InstanceWorkRead | Self::HttpProbe)
+        matches!(self, Self::InstanceWorkRead | Self::HttpProbe | Self::FileRead)
     }
 
     /// What the action's target names.
@@ -223,7 +228,8 @@ impl Action {
             | Self::CaTrustEnsure
             | Self::SystemdUnitEnsure
             | Self::ConfigApply
-            | Self::HttpProbe => TargetKind::Node,
+            | Self::HttpProbe
+            | Self::FileRead => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -308,6 +314,7 @@ impl Action {
             Self::SystemdUnitEnsure => "systemd.unit.ensure",
             Self::ConfigApply => "config.apply",
             Self::HttpProbe => "http.probe",
+            Self::FileRead => "file.read",
         }
     }
 }
@@ -358,6 +365,7 @@ impl FromStr for Action {
             "systemd.unit.ensure" => Ok(Self::SystemdUnitEnsure),
             "config.apply" => Ok(Self::ConfigApply),
             "http.probe" => Ok(Self::HttpProbe),
+            "file.read" => Ok(Self::FileRead),
             _ => Err(UnknownActionError),
         }
     }
@@ -401,7 +409,7 @@ pub enum Family {
     Instance,
     /// A Process's run state and a Schedule's Node timer (ADR 0271).
     Process,
-    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes (ADR 0271 N3).
+    /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file reads (ADR 0271 N3).
     Host,
 }
 

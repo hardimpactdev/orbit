@@ -23,6 +23,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 - **Process restart:** Agent `0.33.0` adds `process.read_instance` and `process.restart`, the signed Process restart ([the process family](/reference/executor#the-process-family)).
 - **Route update:** Agent `0.34.0` keeps the Gateway's Route update fenced until `tls.ensure_csr` and `route.publish_site` return, and `route.publish_site` reads its installed Caddyfile back ([route.update](/reference/gateway-engine#routeupdate)).
 - **Route withdrawal read-back:** Agent `0.35.0` makes `route.withdraw_site` read Caddy's admin API for up to about 5 s after the reload, until the Route is gone ([action primitives](/reference/executor#action-primitives)).
+- **Host primitives:** Agent `0.36.0` turns on the [host family](/reference/executor#the-host-family) with `file.read` on app-dev and vpn Nodes. This tree builds agent `0.36.0` before the pin moves.
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 

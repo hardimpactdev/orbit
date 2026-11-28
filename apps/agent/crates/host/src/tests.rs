@@ -1042,3 +1042,83 @@ fn trust_ensure_counts_only_a_conclusive_answer_from_the_named_bundle() {
     assert_eq!(trust_ensure(&fake, &absent).expect_err("still no answer").code, "trust.ensure_failed");
     assert_eq!(trust_ensure(&fake, &present).expect_err("no answer").code, "trust.ensure_failed");
 }
+
+#[test]
+fn file_read_answers_absent_only_for_a_missing_path() {
+    let fake = Fake::new();
+    assert_eq!(file_read(&fake, &json!({"path": "/etc/gone.conf"})).expect("absent"), Read::Absent);
+    for path in ["etc/app.conf", "/etc/./app.conf", "/etc/../app.conf", "/", "/etc/"] {
+        assert_eq!(file_read(&fake, &json!({"path": path})).expect_err(path).code, "host.input_invalid", "{path}");
+    }
+    assert_eq!(file_read(&fake, &json!({"path": "/etc/app.conf", "content": true})).expect_err("unknown field").code, "host.input_invalid");
+}
+
+#[test]
+fn file_read_answers_a_files_digest_owner_and_mode_and_a_repeat_answers_the_same() {
+    let fake = Fake::new();
+    fake.write("/etc/app.conf", b"listen = 9000\n");
+    fs::set_permissions(fake.path("/etc/app.conf"), fs::Permissions::from_mode(0o4640)).expect("mode");
+    let (uid, gid) = me();
+    let expected = Read::Present { kind: "file", sha256: Some(sha256(b"listen = 9000\n")), uid, gid, mode: "4640".to_owned() };
+    let first = file_read(&fake, &json!({"path": "/etc/app.conf"})).expect("read");
+    assert_eq!(first, expected);
+    assert_eq!(file_read(&fake, &json!({"path": "/etc/app.conf"})).expect("repeat"), first);
+    // It changes nothing, and the answer names no content.
+    assert_eq!(fake.read("/etc/app.conf"), b"listen = 9000\n");
+    assert_eq!(fs::metadata(fake.path("/etc/app.conf")).expect("meta").mode() & 0o7777, 0o4640);
+    let wire = serde_json::to_value(&first).expect("json");
+    assert_eq!(wire, json!({"state": "present", "type": "file", "sha256": sha256(b"listen = 9000\n"), "uid": uid, "gid": gid, "mode": "4640"}));
+    assert_eq!(serde_json::to_value(Read::Absent).expect("json"), json!({"state": "absent"}));
+    assert!(fake.ran.borrow().is_empty(), "it runs no command");
+}
+
+#[test]
+fn file_read_reports_a_link_and_a_folder_as_themselves() {
+    let fake = Fake::new();
+    fake.write("/etc/app.conf", b"listen = 9000\n");
+    std::os::unix::fs::symlink(fake.path("/etc/app.conf"), fake.path("/etc/link.conf")).expect("link");
+    std::os::unix::fs::symlink(fake.path("/etc/gone.conf"), fake.path("/etc/dangling.conf")).expect("dangling link");
+    let (uid, gid) = me();
+    for path in ["/etc/link.conf", "/etc/dangling.conf"] {
+        // The link itself, never the file it names: no digest, and the link's own mode.
+        assert_eq!(file_read(&fake, &json!({"path": path})).expect(path), Read::Present { kind: "symlink", sha256: None, uid, gid, mode: "0777".to_owned() }, "{path}");
+    }
+    fs::create_dir_all(fake.path("/srv/site")).expect("folder");
+    fs::set_permissions(fake.path("/srv/site"), fs::Permissions::from_mode(0o2750)).expect("mode");
+    assert_eq!(file_read(&fake, &json!({"path": "/srv/site"})).expect("folder"), Read::Present { kind: "directory", sha256: None, uid, gid, mode: "2750".to_owned() });
+}
+
+#[test]
+fn file_read_fails_a_read_error_and_never_answers_absent() {
+    let fake = Fake::new();
+    fake.write("/etc/app.conf", b"listen = 9000\n");
+    // A plain file where a folder must be is a read error, also for root.
+    assert_eq!(file_read(&fake, &json!({"path": "/etc/app.conf/child"})).expect_err("not a folder").code, "file.read_failed");
+    fs::set_permissions(fake.path("/etc/app.conf"), fs::Permissions::from_mode(0o000)).expect("seal file");
+    let unreadable_file = file_read(&fake, &json!({"path": "/etc/app.conf"}));
+    fs::set_permissions(fake.path("/etc"), fs::Permissions::from_mode(0o000)).expect("seal folder");
+    let unreadable_folder = file_read(&fake, &json!({"path": "/etc/app.conf"}));
+    let behind_folder = file_read(&fake, &json!({"path": "/etc/gone.conf"}));
+    fs::set_permissions(fake.path("/etc"), fs::Permissions::from_mode(0o755)).expect("unseal");
+    // Root reads any file and enters any folder; the tests run as a normal user (AGENTS.md).
+    if me().0 != 0 {
+        assert_eq!(unreadable_file.expect_err("unreadable file").code, "file.read_failed");
+        assert_eq!(unreadable_folder.expect_err("unreadable folder").code, "file.read_failed");
+        assert_eq!(behind_folder.expect_err("a missing file behind a sealed folder is unknown").code, "file.read_failed");
+    }
+}
+
+#[test]
+fn file_read_leaves_the_access_time_as_it_was() {
+    let fake = Fake::new();
+    fake.write("/etc/app.conf", b"listen = 9000\n");
+    // An access time older than the change time, so relatime would update it on a plain read.
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(946_684_800);
+    fs::File::options().write(true).open(fake.path("/etc/app.conf")).expect("open").set_times(fs::FileTimes::new().set_accessed(old)).expect("old atime");
+    let before = fs::symlink_metadata(fake.path("/etc/app.conf")).expect("meta");
+    assert_eq!(before.atime(), 946_684_800);
+    assert!(matches!(file_read(&fake, &json!({"path": "/etc/app.conf"})).expect("read"), Read::Present { kind: "file", .. }));
+    let after = fs::symlink_metadata(fake.path("/etc/app.conf")).expect("meta");
+    assert_eq!((after.atime(), after.atime_nsec()), (before.atime(), before.atime_nsec()), "the read wrote the access time");
+    assert_eq!((after.mtime(), after.mtime_nsec()), (before.mtime(), before.mtime_nsec()));
+}
