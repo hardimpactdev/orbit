@@ -1,7 +1,7 @@
 //! `tls.ensure_csr`: the leaf key of one certificate version, and a request for it.
 
 use std::fs::{self, File};
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::os::unix::fs::{fchown, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -67,16 +67,30 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     let gid = system.group(&input.group).map_err(failed)?;
     let mode = u32::from_str_radix(&input.key_mode, 8).map_err(|_| failed("key mode".to_owned()))?;
     let key = system.path(&input.key);
-    let readable = match fs::symlink_metadata(&key) {
-        Ok(meta) if meta.file_type().is_file() => system.run(30, &strings(&["/usr/bin/openssl", "pkey", "-noout", "-in", &input.key])).is_ok(),
+    // Only a definite answer rotates the key: a missing file, or one that holds no PEM private key block at all (empty, cut
+    // short, or other content), matches no signed certificate. A key block openssl cannot read now, a timeout included,
+    // is inconclusive: the order fails and the key stays.
+    let usable = match fs::symlink_metadata(&key) {
+        Ok(meta) if meta.file_type().is_file() => {
+            let text = File::options().read(true).custom_flags(NOFOLLOW).open(&key).and_then(|mut file| {
+                let mut text = Vec::new();
+                file.read_to_end(&mut text).map(|_| text)
+            });
+            let text = text.map_err(|error| failed(error.to_string()))?;
+            if key_block(&text) {
+                system.run(30, &strings(&["/usr/bin/openssl", "pkey", "-noout", "-in", &input.key])).map_err(|detail| failed(format!("{} inspection: {detail}", input.key)))?;
+                true
+            } else {
+                false
+            }
+        }
         Ok(_) => return Err(failed(format!("{} is not a plain file", input.key))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(error) => return Err(failed(error.to_string())),
     };
-    if readable {
+    if usable {
         own(&key, uid, gid, mode).map_err(|error| failed(error.to_string()))?;
     } else {
-        // A missing key, or one that openssl cannot read and so matches no signed certificate, is made new.
         new_key(system, &key, uid, gid, mode).map_err(failed)?;
     }
     let name = format!("subjectAltName=DNS:{}", input.domain);
@@ -85,6 +99,12 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
         return Err(failed("openssl gave no request".to_owned()));
     }
     Ok(answer)
+}
+
+/// Whether `text` holds a complete PEM private key block.
+fn key_block(text: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(text);
+    text.find("-----BEGIN ").is_some_and(|begin| text[begin..].lines().next().is_some_and(|line| line.ends_with("PRIVATE KEY-----")) && text[begin..].contains("-----END "))
 }
 
 /// Puts the key's owner and mode right through a descriptor that does not follow a link, leaving its bytes alone.
@@ -108,10 +128,11 @@ fn new_key(system: &impl System, key: &Path, uid: u32, gid: u32, mode: u32) -> R
         return Err("openssl gave no key".to_owned());
     }
     let name = key.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    let partial = key.with_file_name(format!(".{name}.partial-{}", std::process::id()));
+    let partial = key.with_file_name(format!(".{name}.partial-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |at| at.as_nanos())));
+    let mut opened = false;
     let written = (|| {
-        let _ = fs::remove_file(&partial);
         let mut file = File::options().write(true).create_new(true).custom_flags(NOFOLLOW).mode(0o600).open(&partial)?;
+        opened = true;
         fchown(&file, Some(uid), Some(gid))?;
         file.set_permissions(fs::Permissions::from_mode(mode))?;
         file.write_all(pem.as_bytes())?;
@@ -125,7 +146,7 @@ fn new_key(system: &impl System, key: &Path, uid: u32, gid: u32, mode: u32) -> R
             Err(std::io::Error::other("the key in place is not the file this run made"))
         }
     })();
-    if written.is_err() {
+    if written.is_err() && opened {
         let _ = fs::remove_file(&partial);
     }
     written.map_err(|error| error.to_string())

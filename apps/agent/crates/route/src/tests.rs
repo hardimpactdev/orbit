@@ -160,14 +160,14 @@ fn a_csr_takes_its_folder_owner_modes_and_subject_from_the_input() {
 #[test]
 fn a_csr_keeps_a_readable_key_when_the_request_fails_and_puts_its_mode_right() {
     let mut fake = Fake::new();
-    fake.write(&format!("{DIRECTORY}/key.pem"), "HEALTHY");
+    fake.write(&format!("{DIRECTORY}/key.pem"), HEALTHY);
     fs::set_permissions(fake.path(&format!("{DIRECTORY}/key.pem")), fs::Permissions::from_mode(0o644)).expect("mode");
     fake.failing.push("req");
     let mut input = csr_input(DIRECTORY, "shop.orbit");
     input["subject"] = json!("/C=USA");
 
     assert_eq!(ensure_csr(&fake, &input).expect_err("openssl refuses the subject").code, "app-dev.certificate_request_failed");
-    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "HEALTHY", "a readable key is never replaced");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY, "a readable key is never replaced");
     assert_eq!(fake.ran("genpkey"), 0);
     assert_eq!(fs::metadata(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key").permissions().mode() & 0o7777, 0o640, "the mode is put right on the key in place");
 }
@@ -640,4 +640,19 @@ fn a_withdrawal_fails_before_any_change_when_a_guarded_pool_cannot_be_read() {
 
     assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_failed");
     assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
+}
+
+/// A key in PEM form, as openssl writes one.
+const HEALTHY: &str = "-----BEGIN PRIVATE KEY-----\nHEALTHY\n-----END PRIVATE KEY-----\n";
+
+#[test]
+fn a_csr_keeps_its_key_when_the_inspection_is_inconclusive() {
+    let mut fake = Fake::new();
+    fake.write(&format!("{DIRECTORY}/key.pem"), HEALTHY);
+    // Review counterexample: one inspection timeout replaced a healthy key.
+    fake.failing_argv.push(vec!["/usr/bin/openssl", "pkey", "-noout", "-in", "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef/key.pem"]);
+    let failure = ensure_csr(&fake, &csr_input(DIRECTORY, "shop.orbit")).expect_err("an inconclusive inspection");
+    assert_eq!(failure.code, "app-dev.certificate_request_failed");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), HEALTHY);
+    assert_eq!(fake.ran("genpkey"), 0);
 }

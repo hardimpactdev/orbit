@@ -133,11 +133,11 @@ fn link(system: &impl System, dest: &Path, target: &str, uid: u32, gid: u32) -> 
         if current.as_ref().is_some_and(stdfs::Metadata::is_dir) {
             stdfs::remove_dir(dest).map_err(|error| error.to_string())?;
         }
-        let parent = dest.parent().ok_or_else(|| "no parent".to_owned())?;
-        let temporary = parent.join(format!(".link.partial-{}", std::process::id()));
-        let _ = stdfs::remove_file(&temporary);
-        std::os::unix::fs::symlink(target, &temporary).map_err(|error| error.to_string())?;
-        stdfs::rename(&temporary, dest).map_err(|error| error.to_string())?;
+        let (temporary, ()) = fs::scratch(dest, "link", |path| std::os::unix::fs::symlink(target, path)).map_err(|error| error.to_string())?;
+        if let Err(error) = stdfs::rename(&temporary, dest) {
+            let _ = stdfs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
         changes += 1;
     }
     let meta = stdfs::symlink_metadata(dest).map_err(|error| error.to_string())?;

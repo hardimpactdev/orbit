@@ -75,33 +75,65 @@ pub fn acl_ensure(system: &impl System, input: &serde_json::Value) -> Result<u32
     };
     let changed = differ(&before);
     let wanted = |name: &String| paths.iter().find(|(path, _)| path == name).map(|(_, perms)| perms.clone()).unwrap_or_default();
-    // Each path with its own permissions, `X` resolved, goes alone.
+    // The mask is shared by every group-class entry: it is given explicitly, so setfacl never recomputes it. It only widens by
+    // the bits this entry needs, and only where no other entry holds a bit the mask cut, so no other subject's effective
+    // permissions move.
+    let tag = if input.default { "d:" } else { "" };
+    let mut masks = std::collections::BTreeMap::new();
+    for name in &changed {
+        let entry = before.get(name).ok_or_else(|| failed(format!("{name} was not read")))?;
+        let want = wanted(name);
+        let mask = entry.mask.clone().unwrap_or_else(|| entry.others.iter().fold("---".to_owned(), |held, (_, perms)| union(&held, perms)));
+        let widened = union(&mask, &want);
+        if entry.mask.is_some() && entry.others.iter().any(|(_, perms)| cut(perms, &mask) != cut(perms, &widened)) {
+            return Err(failed(format!("{name}: the mask would widen another entry's permissions")));
+        }
+        masks.insert(name.clone(), widened);
+    }
     for name in &changed {
         let mut argv = prefix.clone();
-        argv.extend(strings(&["/usr/bin/setfacl", "-P", "-m", &format!("{}u:{}:{}", if input.default { "d:" } else { "" }, input.user, wanted(name)), "--", name]));
+        let entries = format!("{tag}u:{}:{},{tag}m::{}", input.user, wanted(name), masks[name]);
+        argv.extend(strings(&["/usr/bin/setfacl", "-P", "-n", "-m", &entries, "--", name]));
         system.run(120, &argv).map_err(failed)?;
     }
     let after = if changed.is_empty() { std::collections::BTreeMap::new() } else { read(&changed).map_err(failed)? };
-    if changed.iter().any(|name| after.get(name).is_none_or(|entry| !entry.holds(&wanted(name)))) {
-        return Err(failed(format!("{} read-back", input.path)));
+    for name in &changed {
+        let held = after.get(name).filter(|entry| entry.holds(&wanted(name)));
+        let kept = held.is_some_and(|entry| before.get(name).is_some_and(|was| was.effective_others() == entry.effective_others()));
+        if !kept {
+            return Err(failed(format!("{name} read-back")));
+        }
     }
     Ok(u32::try_from(changed.len()).unwrap_or(u32::MAX))
 }
 
-/// The user's entry and the mask that bounds it, on one path.
+/// The bits set in either `rwx` string.
+fn union(left: &str, right: &str) -> String {
+    left.chars().zip(right.chars()).map(|(a, b)| if a == '-' { b } else { a }).collect()
+}
+
+/// `perms` as the mask lets them take effect.
+fn cut(perms: &str, mask: &str) -> String {
+    perms.chars().zip(mask.chars()).map(|(bit, allowed)| if allowed == '-' { '-' } else { bit }).collect()
+}
+
+/// The user's entry, the mask that bounds it, and every other group-class entry the mask bounds too, on one path.
 #[derive(Debug, Default)]
 struct Entry {
     perms: Option<String>,
     mask: Option<String>,
+    others: Vec<(String, String)>,
 }
 
 impl Entry {
     fn holds(&self, wanted: &str) -> bool {
-        let effective = |perms: &str| match &self.mask {
-            Some(mask) => perms.chars().zip(mask.chars()).map(|(bit, allowed)| if allowed == '-' { '-' } else { bit }).collect::<String>(),
-            None => perms.to_owned(),
-        };
+        let effective = |perms: &str| self.mask.as_deref().map_or_else(|| perms.to_owned(), |mask| cut(perms, mask));
         self.perms.as_deref().is_some_and(|perms| perms == wanted && effective(perms) == wanted)
+    }
+
+    /// What each other group-class entry may do, after the mask.
+    fn effective_others(&self) -> Vec<(String, String)> {
+        self.others.iter().map(|(tag, perms)| (tag.clone(), self.mask.as_deref().map_or_else(|| perms.clone(), |mask| cut(perms, mask)))).collect()
     }
 }
 
@@ -123,6 +155,10 @@ fn listing(text: &str, input: &Input) -> std::collections::BTreeMap<String, Entr
             entry.perms = Some(perms.to_owned());
         } else if let Some(perms) = line.strip_prefix(&format!("{tag}mask::")) {
             entry.mask = Some(perms.to_owned());
+        } else if let Some(rest) = line.strip_prefix(tag).filter(|rest| (rest.starts_with("user:") && !rest.starts_with("user::")) || rest.starts_with("group:")) {
+            if let Some((subject, perms)) = rest.rsplit_once(':') {
+                entry.others.push((subject.to_owned(), perms.to_owned()));
+            }
         }
     }
     entries

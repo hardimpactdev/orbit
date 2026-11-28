@@ -5,6 +5,8 @@ use std::fs::{self, File};
 use std::io::{Read as _, Write as _};
 use std::os::unix::fs::{fchown, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Ids;
 
@@ -55,15 +57,30 @@ pub(crate) fn ensure(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<b
     Ok(true)
 }
 
-/// Writes `content` with its owner and mode to a new file beside `dest`, then moves it in place.
-pub(crate) fn replace(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<()> {
+/// A name beside `dest` that nothing holds yet, for scratch work: the file's own name, a tag, and a suffix unique to this
+/// process and moment. `make` creates the path exclusively (`O_EXCL`, or a link); a name some other file already holds is
+/// never reused, so scratch work never touches a file it did not make.
+pub(crate) fn scratch<T>(dest: &Path, tag: &str, mut make: impl FnMut(&Path) -> std::io::Result<T>) -> std::io::Result<(PathBuf, T)> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let parent = dest.parent().unwrap_or_else(|| Path::new("/"));
     let name = dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    let temporary: PathBuf = parent.join(format!(".{name}.partial-{}", std::process::id()));
-    // A temporary file a stopped run left behind under the same name goes first.
-    let _ = fs::remove_file(&temporary);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.subsec_nanos());
+    for _ in 0..64 {
+        let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(".{name}.{tag}-{}-{nanos:08x}{count:04x}", std::process::id()));
+        match make(&path) {
+            Ok(value) => return Ok((path, value)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::other("no free scratch name"))
+}
+
+/// Writes `content` with its owner and mode to a new file beside `dest` that this run creates, then moves it in place.
+pub(crate) fn replace(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<()> {
+    let (temporary, mut stream) = scratch(dest, "partial", |path| File::options().write(true).create_new(true).custom_flags(NOFOLLOW).mode(0o600).open(path))?;
     let result = (|| {
-        let mut stream = File::options().write(true).create_new(true).mode(0o600).open(&temporary)?;
         fchown(&stream, Some(ids.uid), Some(ids.gid))?;
         stream.set_permissions(fs::Permissions::from_mode(ids.mode))?;
         stream.write_all(content)?;
@@ -95,9 +112,9 @@ pub(crate) fn restore(replaced: &[(PathBuf, Previous)]) -> Result<(), String> {
     if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
 }
 
-/// The copy of a guarded file's last usable bytes, kept beside it from before its replacement until its set loads: a temporary
-/// name derived from the file's own.
-pub(crate) fn kept(dest: &Path) -> PathBuf {
+/// The copy of a guarded file's rendered-from bytes, kept beside it from before its replacement until its set loads. Its
+/// name carries the digest of those bytes, so a copy kept for another render never stands for this one.
+pub(crate) fn kept(dest: &Path, from: &str) -> PathBuf {
     let name = dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    dest.with_file_name(format!(".{name}.previous"))
+    dest.with_file_name(format!(".{name}.previous-{from}"))
 }

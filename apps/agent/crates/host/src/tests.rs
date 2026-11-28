@@ -20,11 +20,13 @@ struct Fake {
     acls: RefCell<BTreeMap<String, Vec<String>>>,
     /// The test unit: enabled, running; `None` when systemd cannot be read.
     unit: RefCell<Option<(bool, bool)>>,
+    /// An `ActiveState` systemd reports instead, such as a unit stuck `activating`.
+    transition: RefCell<Option<&'static str>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))) }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default() }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -77,23 +79,42 @@ impl System for Fake {
                 listing
             })),
             Some(&"/usr/bin/setfacl") => {
-                let entry = words[words.iter().position(|arg| *arg == "-m").expect("-m") + 1];
-                let (tag, rest) = entry.strip_prefix("d:").map_or(("", entry), |rest| ("default:", rest));
-                let (user, perms) = rest.strip_prefix("u:").expect("a user entry").split_once(':').expect("perms");
-                let line = format!("{tag}user:{user}:{perms}");
+                // Each `-m` entry in turn; without an explicit mask (or `-n`), setfacl recomputes the access mask as the union of
+                // every group-class entry, as the real one does.
+                let entries = words[words.iter().position(|arg| *arg == "-m").expect("-m") + 1];
+                let explicit = words.contains(&"-n") || entries.split(',').any(|entry| entry.trim_start_matches("d:").starts_with("m::"));
                 for path in tail {
                     let mut acls = self.acls.borrow_mut();
                     let lines = acls.entry((*path).to_owned()).or_default();
-                    lines.retain(|held| !held.starts_with(&format!("{tag}user:{user}:")) && !held.starts_with(&format!("{tag}mask::")));
-                    lines.push(line.clone());
+                    for entry in entries.split(',') {
+                        let (tag, rest) = entry.strip_prefix("d:").map_or(("", entry), |rest| ("default:", rest));
+                        if let Some(mask) = rest.strip_prefix("m::") {
+                            lines.retain(|held| !held.starts_with(&format!("{tag}mask::")));
+                            lines.push(format!("{tag}mask::{mask}"));
+                        } else {
+                            let (user, perms) = rest.strip_prefix("u:").expect("a user entry").split_once(':').expect("perms");
+                            lines.retain(|held| !held.starts_with(&format!("{tag}user:{user}:")));
+                            lines.push(format!("{tag}user:{user}:{perms}"));
+                        }
+                    }
+                    if !explicit {
+                        let group_class = lines.iter().filter(|line| (line.starts_with("user:") && !line.starts_with("user::")) || line.starts_with("group:"));
+                        let mask = group_class.fold("---".to_owned(), |held, line| {
+                            let perms = line.rsplit(':').next().unwrap_or("---");
+                            held.chars().zip(perms.chars()).map(|(a, b)| if a == '-' { b } else { a }).collect()
+                        });
+                        lines.retain(|held| !held.starts_with("mask::"));
+                        lines.push(format!("mask::{mask}"));
+                    }
                 }
                 Ok(String::new())
             }
             Some(&"/usr/bin/systemctl") => {
                 let mut unit = self.unit.borrow_mut();
                 let Some((enabled, running)) = unit.as_mut() else { return Err("Failed to connect to bus".to_owned()) };
+                let active = self.transition.borrow().unwrap_or(if *running { "active" } else { "inactive" });
                 match words[1] {
-                    "show" => Ok(format!("LoadState=loaded\nActiveState={}\nUnitFileState={}\n", if *running { "active" } else { "inactive" }, if *enabled { "enabled" } else { "disabled" })),
+                    "show" => Ok(format!("LoadState=loaded\nActiveState={active}\nUnitFileState={}\n", if *enabled { "enabled" } else { "disabled" })),
                     "enable" => { *enabled = true; Ok(String::new()) }
                     "disable" => { *enabled = false; Ok(String::new()) }
                     "start" => { *running = true; Ok(String::new()) }
@@ -104,24 +125,37 @@ impl System for Fake {
             Some(&"/usr/bin/openssl") => {
                 let file = words.last().expect("a file");
                 let file = if file.starts_with(&*self.root().to_string_lossy()) { Path::new(file).to_path_buf() } else { self.path(file) };
-                if fs::read(file).is_ok_and(|bytes| bytes.starts_with(b"-----BEGIN CERTIFICATE-----")) { Ok(String::new()) } else { Err("unable to load certificate".to_owned()) }
+                match fs::read(file) {
+                    Ok(bytes) if bytes.starts_with(b"-----BEGIN CERTIFICATE-----") => Ok(format!("{}\n", &sha256(&bytes)[..8])),
+                    _ => Err("unable to load certificate".to_owned()),
+                }
             }
             Some(&"/usr/sbin/update-ca-certificates") => {
+                // Name links `<stem>.pem`, subject-hash links `<hash>.0` (the fake hash is the content's), and the bundle built
+                // from every name link. `--fresh` drops every link first.
                 let store = self.path("/usr/local/share/ca-certificates");
                 let links = self.path("/etc/ssl/certs");
                 fs::create_dir_all(&links).expect("links");
                 for link in fs::read_dir(&links).expect("links") {
                     let link = link.expect("link").path();
-                    if fs::metadata(&link).is_err() { fs::remove_file(&link).expect("stale link"); }
+                    let is_link = fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink());
+                    if is_link && (words.contains(&"--fresh") || fs::metadata(&link).is_err()) { fs::remove_file(&link).expect("stale link"); }
                 }
-                for cert in fs::read_dir(&store).expect("store") {
-                    let cert = cert.expect("cert").path();
+                let mut bundle = Vec::new();
+                let mut certs: Vec<_> = fs::read_dir(&store).expect("store").map(|cert| cert.expect("cert").path()).collect();
+                certs.sort();
+                for cert in certs {
                     let name = cert.file_name().expect("name").to_string_lossy().into_owned();
                     if let Some(stem) = name.strip_suffix(".crt").filter(|stem| !stem.starts_with('.')) {
+                        let bytes = fs::read(&cert).expect("cert");
                         let link = links.join(format!("{stem}.pem"));
                         if fs::symlink_metadata(&link).is_err() { std::os::unix::fs::symlink(&cert, &link).expect("link"); }
+                        let hashed = links.join(format!("{}.0", &sha256(&bytes)[..8]));
+                        if fs::symlink_metadata(&hashed).is_err() { std::os::unix::fs::symlink(&link, &hashed).expect("hash link"); }
+                        bundle.extend_from_slice(&bytes);
                     }
                 }
+                fs::write(links.join("ca-certificates.crt"), bundle).expect("bundle");
                 Ok(String::new())
             }
             _ => Ok(String::new()),
@@ -307,7 +341,7 @@ fn acl_ensure_reads_first_and_sets_only_a_differing_entry() {
     fs::create_dir_all(fake.path("/srv/site")).expect("folder");
     let input = json!({"path": "/srv/site", "user": "web", "perms": "r-x", "run_as": "app"});
     assert_eq!(acl_ensure(&fake, &input), Ok(1));
-    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/", "/usr/bin/setfacl", "-P", "-m", "u:web:r-x", "--", "/srv/site"])));
+    assert!(fake.ran.borrow().iter().any(|argv| argv == &strings(&["/usr/sbin/runuser", "-u", "app", "--", "/usr/bin/env", "-C", "/", "/usr/bin/setfacl", "-P", "-n", "-m", "u:web:r-x,m::r-x", "--", "/srv/site"])));
     assert_eq!(acl_ensure(&fake, &input), Ok(0));
     assert_eq!(fake.ran("/usr/bin/setfacl"), 1);
     assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/missing", "user": "web", "perms": "r-x", "optional": true})), Ok(0));
@@ -328,7 +362,7 @@ fn acl_ensure_compares_exact_effective_permissions_on_every_path_and_counts_them
     // Recursive: every path is counted, `X` is search on folders only, and a repeat writes nothing.
     let recursive = json!({"path": "/srv/tree", "user": "web", "perms": "r-X", "recursive": true});
     assert_eq!(acl_ensure(&fake, &recursive), Ok(2), "the sub folder and the file change; the root already holds r-x");
-    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned()]));
+    assert_eq!(fake.acls.borrow().get("/srv/tree/sub/file").cloned(), Some(vec!["user:web:r--".to_owned(), "mask::r--".to_owned()]), "the mask is written explicitly");
     let writes = fake.ran("/usr/bin/setfacl");
     assert_eq!(acl_ensure(&fake, &recursive), Ok(0));
     assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
@@ -337,11 +371,11 @@ fn acl_ensure_compares_exact_effective_permissions_on_every_path_and_counts_them
 #[test]
 fn unit_ensure_changes_only_what_differs() {
     let fake = Fake::new();
-    let input = json!({"unit": "web.service", "enabled": true, "state": "running"});
+    let input = json!({"unit": "web.service", "enabled": true, "state": "running", "budget_ms": 600});
     assert_eq!(unit_ensure(&fake, &input), Ok(0));
     assert_eq!(fake.ran("start") + fake.ran("enable"), 0);
-    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped"})), Ok(2));
-    assert_eq!(unit_ensure(&fake, &json!({"unit": "--now.service", "enabled": true, "state": "running"})).expect_err("flag").code, "host.input_invalid");
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped", "budget_ms": 600})), Ok(2));
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "--now.service", "enabled": true, "state": "running", "budget_ms": 600})).expect_err("flag").code, "host.input_invalid");
 }
 
 #[test]
@@ -349,7 +383,7 @@ fn unit_ensure_fails_when_systemd_cannot_be_read() {
     let fake = Fake::new();
     *fake.unit.borrow_mut() = None;
     // An unread unit is no stopped unit (review counterexample: a read error passed as disabled and stopped).
-    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped"})).expect_err("unread").code, "unit.ensure_failed");
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": false, "state": "stopped", "budget_ms": 600})).expect_err("unread").code, "unit.ensure_failed");
 }
 
 #[test]
@@ -397,13 +431,13 @@ fn config_apply_replay_after_a_stop_keeps_the_rendered_from_bytes_as_previous() 
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
     // A stop between the move and the validation leaves the candidate live and the kept copy beside it.
     fake.write("/conf/site.conf", b"new\n");
-    fake.write("/conf/.site.conf.previous", b"old\n");
+    fake.write(&format!("/conf/.site.conf.previous-{}", sha256(b"old\n")), b"old\n");
     assert_eq!(apply(&mut fake, b"new\n", b"old\n", &validators).expect_err("still invalid").code, "config.validate_failed");
     assert_eq!(fake.read("/conf/site.conf"), b"old\n", "the replay restores the rendered-from bytes, not the unvalidated candidate");
     // A run that loads drops the kept copy.
     fake.fail.borrow_mut().clear();
     assert_eq!(apply(&mut fake, b"new\n", b"old\n", &validators), Ok(1));
-    assert!(!fake.path("/conf/.site.conf.previous").exists());
+    assert!(!fake.path(&format!("/conf/.site.conf.previous-{}", sha256(b"old\n"))).exists());
 }
 
 #[test]
@@ -529,4 +563,130 @@ fn config_apply_checks_dnsmasq_with_the_configuration_it_loads_and_refuses_befor
     assert_eq!(fake.read("/conf/site.conf"), b"old\n");
     let comma = json!({"lock": "/tmp-lock/given.lock", "files": input["files"].clone(), "validators": [{"kind": "dnsmasq", "conf_file": "/conf/dnsmasq.conf", "conf_dir": "/conf,*.x"}]});
     assert_eq!(config_apply(&fake, &comma).expect_err("an extra list item").code, "host.input_invalid");
+}
+
+#[test]
+fn config_apply_restores_the_last_usable_state_and_never_deletes_a_file_that_existed() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    // Review counterexample: a file already live with the desired bytes and no rendered-from digest, then a failing validator.
+    fake.write("/conf/site.conf", b"live\n");
+    fake.fail.borrow_mut().push("validate");
+    let content = fake.put(b"live\n");
+    let validators = json!([{"kind": "caddy", "config": "/conf/site.conf", "user": "web"}]);
+    let input = json!({"lock": "/tmp-lock/given.lock", "files": [{"path": "/conf/site.conf", "content": content, "from_sha256": null, "owner": owner()}], "validators": validators});
+    assert_eq!(config_apply(&fake, &input).expect_err("invalid").code, "config.validate_failed");
+    assert_eq!(fake.read("/conf/site.conf"), b"live\n", "a file that existed before the run is never deleted");
+    // Review counterexample: A→B loads, B→C fails, and a replay of A→B must not meet a false conflict.
+    fake.fail.borrow_mut().clear();
+    fake.write("/conf/site.conf", b"A\n");
+    assert_eq!(apply(&mut fake, b"B\n", b"A\n", &validators), Ok(1));
+    fake.fail.borrow_mut().push("validate");
+    assert_eq!(apply(&mut fake, b"C\n", b"B\n", &validators).expect_err("invalid").code, "config.validate_failed");
+    fake.fail.borrow_mut().clear();
+    assert_eq!(apply(&mut fake, b"B\n", b"A\n", &validators), Ok(0));
+    assert_eq!(fake.read("/conf/site.conf"), b"B\n");
+    assert!(fs::read_dir(fake.path("/conf")).expect("folder").all(|entry| !entry.expect("entry").file_name().to_string_lossy().contains("previous")));
+}
+
+#[test]
+fn scratch_work_never_touches_a_declared_file_the_lock_or_an_unmanaged_sibling() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/a", b"old\n");
+    let from = sha256(b"old\n");
+    let content = fake.put(b"new\n");
+    let file = |path: &str, from: Option<&str>| json!({"path": path, "content": content.clone(), "from_sha256": from, "owner": owner()});
+    let kept = format!("/conf/.a.previous-{from}");
+    // A declared file, or the lock, under the kept copy's name refuses before anything changes.
+    let both = json!({"lock": "/tmp-lock/given.lock", "files": [file("/conf/a", Some(&from)), file(&kept, None)]});
+    assert_eq!(config_apply(&fake, &both).expect_err("a kept name declared").code, "host.input_invalid");
+    let lock = json!({"lock": kept, "files": [file("/conf/a", Some(&from))]});
+    assert_eq!(config_apply(&fake, &lock).expect_err("the lock under a kept name").code, "host.input_invalid");
+    // An unrelated file under the kept name is not ours: the run refuses and leaves it.
+    fake.write(&kept, b"someone else's\n");
+    let one = json!({"lock": "/tmp-lock/given.lock", "files": [file("/conf/a", Some(&from))]});
+    assert_eq!(config_apply(&fake, &one).expect_err("a taken name").code, "config.write_failed");
+    assert_eq!(fake.read(&kept), b"someone else's\n");
+    assert_eq!(fake.read("/conf/a"), b"old\n");
+    fs::remove_file(fake.path(&kept)).expect("clear");
+    // Siblings under the old fixed scratch names survive a successful run.
+    let partial = format!("/conf/.a.partial-{}", std::process::id());
+    fake.write(&partial, b"mine\n");
+    assert_eq!(config_apply(&fake, &one), Ok(1));
+    assert_eq!(fake.read(&partial), b"mine\n");
+    fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
+    fake.write("/usr/local/share/ca-certificates/.r.crt.candidate", b"mine\n");
+    let certificate = fake.put(b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+    assert_eq!(trust_ensure(&fake, &json!({"state": "present", "name": "r.crt", "certificate": certificate, "owner": owner()})), Ok(1));
+    assert_eq!(fake.read("/usr/local/share/ca-certificates/.r.crt.candidate"), b"mine\n");
+}
+
+#[test]
+fn acl_ensure_keeps_every_other_entry_effective_permissions() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path("/srv/shared")).expect("folder");
+    let start = vec!["group::r--".to_owned(), "user:other:rw-".to_owned(), "mask::r--".to_owned()];
+    fake.acls.borrow_mut().insert("/srv/shared".to_owned(), start.clone());
+    // Review counterexample: granting one user read recomputed the mask and let another's masked write take effect.
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/shared", "user": "web", "perms": "r--"})), Ok(1));
+    let held = fake.acls.borrow().get("/srv/shared").cloned().expect("acl");
+    assert!(held.contains(&"mask::r--".to_owned()), "the mask stays: {held:?}");
+    // An entry the mask could only grant by widening another's effective permissions refuses, before any change.
+    fake.acls.borrow_mut().insert("/srv/shared".to_owned(), start.clone());
+    let writes = fake.ran("/usr/bin/setfacl");
+    assert_eq!(acl_ensure(&fake, &json!({"path": "/srv/shared", "user": "web", "perms": "rw-"})).expect_err("would widen").code, "acl.ensure_failed");
+    assert_eq!(fake.ran("/usr/bin/setfacl"), writes);
+    assert_eq!(fake.acls.borrow().get("/srv/shared").cloned(), Some(start));
+}
+
+#[test]
+fn trust_ensure_reads_back_the_bundle_and_hash_links_after_rotation_and_removal() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
+    let first = b"-----BEGIN CERTIFICATE-----\nFIRST\n-----END CERTIFICATE-----\n";
+    let second = b"-----BEGIN CERTIFICATE-----\nSECOND\n-----END CERTIFICATE-----\n";
+    let present = |fake: &mut Fake, bytes: &[u8]| json!({"state": "present", "name": "r.crt", "certificate": fake.put(bytes), "owner": owner()});
+    let bundle = |fake: &Fake| String::from_utf8(fake.read("/etc/ssl/certs/ca-certificates.crt")).expect("text");
+    let input = present(&mut fake, first);
+    assert_eq!(trust_ensure(&fake, &input), Ok(1));
+    // Review counterexample: a rotation whose rebuild failed left the new file under the old links and the old bundle.
+    fake.write("/usr/local/share/ca-certificates/r.crt", second);
+    fs::set_permissions(fake.path("/usr/local/share/ca-certificates/r.crt"), fs::Permissions::from_mode(0o644)).expect("mode");
+    let input = present(&mut fake, second);
+    assert_eq!(trust_ensure(&fake, &input), Ok(1));
+    assert!(bundle(&fake).contains("SECOND") && !bundle(&fake).contains("FIRST"));
+    assert!(fake.path(&format!("/etc/ssl/certs/{}.0", &sha256(second)[..8])).exists(), "the new subject's hash link");
+    // Review counterexample: a removal that stopped after the file and its link went, with the bundle still trusting it.
+    fs::remove_file(fake.path("/usr/local/share/ca-certificates/r.crt")).expect("file");
+    fs::remove_file(fake.path("/etc/ssl/certs/r.pem")).expect("link");
+    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "r.crt"})), Ok(1));
+    assert!(!bundle(&fake).contains("SECOND"));
+    assert_eq!(trust_ensure(&fake, &json!({"state": "absent", "name": "r.crt"})), Ok(0));
+}
+
+#[test]
+fn trust_ensure_takes_exactly_one_pem_certificate() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
+    let two = b"-----BEGIN CERTIFICATE-----\nONE\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nTWO\n-----END CERTIFICATE-----\n";
+    let der = [0x30_u8, 0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01];
+    for bytes in [two.as_slice(), der.as_slice()] {
+        let input = json!({"state": "present", "name": "r.crt", "certificate": fake.put(bytes), "owner": owner()});
+        assert_eq!(trust_ensure(&fake, &input).expect_err("not one PEM certificate").code, "trust.ensure_failed");
+        assert!(!fake.path("/usr/local/share/ca-certificates/r.crt").exists());
+        assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 0);
+    }
+}
+
+#[test]
+fn unit_ensure_never_counts_a_transitional_state_as_the_one_asked_for() {
+    let fake = Fake::new();
+    *fake.unit.borrow_mut() = Some((true, false));
+    // Review counterexample: a notify service stuck `activating` reported running.
+    *fake.transition.borrow_mut() = Some("activating");
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "running", "budget_ms": 300})).expect_err("still activating").code, "unit.ensure_failed");
+    *fake.transition.borrow_mut() = Some("deactivating");
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped", "budget_ms": 300})).expect_err("still deactivating").code, "unit.ensure_failed");
+    assert_eq!(unit_ensure(&fake, &json!({"unit": "web.service", "enabled": true, "state": "stopped"})).expect_err("no budget").code, "host.input_invalid");
 }

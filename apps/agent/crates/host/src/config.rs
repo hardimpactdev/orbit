@@ -137,47 +137,66 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
     for file in &input.files {
         desired.push((file, file.content.bytes(system)?, file.owner.ids(system, "config.write_failed")?));
     }
-    // The same check through links: a folder reached by two names holds the same files.
-    let mut places: Vec<PathBuf> = input.files.iter().map(|file| file.path.as_str()).chain([input.lock.as_str()]).map(|path| resolved(&system.path(path))).collect();
+    // The same check through links: a folder reached by two names holds the same files. A kept copy's name counts too, so
+    // scratch work never lands on a declared file or on the lock.
+    let kept = |file: &File| file.from_sha256.as_ref().map(|from| fs::kept(&system.path(&file.path), from));
+    let mut places: Vec<PathBuf> = input.files.iter().map(|file| system.path(&file.path)).chain(input.files.iter().filter_map(kept)).chain([system.path(&input.lock)]).map(|path| resolved(&path)).collect();
+    let named = places.len();
     places.sort_unstable();
     places.dedup();
-    if places.len() != input.files.len() + 1 {
-        return Err(invalid("two names of one file, or of the lock"));
+    if places.len() != named {
+        return Err(invalid("two names of one file, a kept copy's name, or the lock"));
     }
     let _lock = lock::exclusive(system, &input.lock, lock::WAIT)?;
 
-    // Every guard holds before the first write. The last usable bytes of a guarded file are its rendered-from bytes: the live file
-    // while it still holds them, or the copy kept beside it when a stopped run already moved the unvalidated candidate in place.
+    // Every guard holds before the first write. Each file's restore point is the last usable state: what it held before this
+    // run, or, when a stopped run already moved the unvalidated candidate in place, the rendered-from bytes kept beside it. A
+    // file that existed is never restored to absence. Only a live file that holds neither digest refuses.
     let mut replaced: Vec<(PathBuf, Previous)> = Vec::new();
+    let mut keep: Vec<Option<PathBuf>> = Vec::new();
     let mut changes = 0;
     for (file, content, _) in &desired {
         let dest = system.path(&file.path);
         let read = |path: &std::path::Path| fs::read(path).map_err(|error| Failure::new("config.write_failed", format!("{}: {error}", path.display())));
         let live = read(&dest)?;
         let current = live.as_ref().map(|(bytes, _)| bytes.as_slice());
+        let copy = kept(file);
+        // A kept copy is this render's only when it holds the rendered-from bytes; any other file under that name is not ours.
+        let held = match (&copy, &file.from_sha256) {
+            (Some(copy), Some(from)) => match read(copy)? {
+                Some(bytes) if sha256(&bytes.0) == *from => Some(bytes),
+                Some(_) => return Err(Failure::new("config.write_failed", format!("{} is taken", copy.display()))),
+                None => None,
+            },
+            _ => None,
+        };
         let previous = match (&file.from_sha256, current) {
             (None, None) => None,
-            (None, Some(bytes)) if bytes == content.as_slice() => None,
+            (None, Some(bytes)) if bytes == content.as_slice() => live.clone(),
             (Some(from), Some(bytes)) if sha256(bytes) == *from => live.clone(),
-            (Some(from), Some(bytes)) if bytes == content.as_slice() => match read(&fs::kept(&dest))? {
-                Some(kept) if sha256(&kept.0) == *from => Some(kept),
-                // No kept copy: an earlier run loaded the set and dropped it, so the live file is the last usable one.
-                None => live.clone(),
-                Some(_) => return Err(Failure::new("owned_revision_conflict", format!("{} has a kept copy of other bytes", file.path))),
-            },
+            (Some(_), Some(bytes)) if bytes == content.as_slice() => held.or_else(|| live.clone()),
             _ => return Err(Failure::new("owned_revision_conflict", format!("{} changed outside this render", file.path))),
         };
         replaced.push((dest, Previous { content: previous }));
+        keep.push(copy);
     }
+    let drop_kept = |keep: &[Option<PathBuf>]| {
+        for copy in keep.iter().flatten() {
+            let _ = std::fs::remove_file(copy);
+        }
+    };
     let undo = |code: &'static str, detail: String, replaced: &[(PathBuf, Previous)]| match fs::restore(replaced) {
-        Ok(()) => Failure::new(code, detail),
+        Ok(()) => {
+            drop_kept(&keep);
+            Failure::new(code, detail)
+        }
         Err(restore) => Failure::new("config.restore_failed", format!("{detail}; restore: {restore}")),
     };
-    for ((dest, previous), (file, content, ids)) in replaced.iter().zip(&desired) {
+    for (((dest, previous), (file, content, ids)), copy) in replaced.iter().zip(&desired).zip(&keep) {
         // The rendered-from bytes are kept beside the file before it changes, so a replay after a stop still knows them.
-        if let Some((bytes, held)) = &previous.content {
-            if bytes != content {
-                if let Err(error) = fs::replace(&fs::kept(dest), bytes, *held) {
+        if let (Some((bytes, held)), Some(copy)) = (&previous.content, copy) {
+            if bytes != content && fs::read(copy).ok().flatten().is_none() {
+                if let Err(error) = fs::replace(copy, bytes, *held) {
                     return Err(undo("config.write_failed", format!("{}: {error}", file.path), &replaced));
                 }
             }
@@ -211,9 +230,7 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
         }
     }
     // The set is live: the kept copies are no longer the last usable bytes.
-    for (dest, _) in &replaced {
-        let _ = std::fs::remove_file(fs::kept(dest));
-    }
+    drop_kept(&keep);
     Ok(changes)
 }
 
