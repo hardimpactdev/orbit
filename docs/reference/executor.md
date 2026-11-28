@@ -333,12 +333,16 @@ It reads `GET /1.0/instances/<name>?project=<project>`; a 404 is a missing insta
 | Missing, without `source` | `running` or `stopped` | Refuses `incus.instance_missing` |
 | Present, with `source` | `running` or `stopped` | Refuses `incus.source_conflict` unless `user.source_snapshot` names that same snapshot, so a copy never replaces an instance from another source |
 | `Stopped` or `Running` | the other state | `PUT …/state`: `start`; `stop` with the time left as its clean-shutdown timeout, or a forced stop with `force` |
-| Present, not `Stopped` | `absent` | Refuses `incus.instance_running` without `force`; with it, a forced stop, then the delete |
-| `Stopped` | `absent` | `DELETE /1.0/instances/<name>?project=<project>`, exactly that instance with its snapshots |
+| `Running` and ephemeral | `stopped` | Refuses `incus.instance_ephemeral` before any stop, because the stop would delete it |
+| Present, attaching a custom volume | `absent` | Refuses `incus.instance_volumes_attached` before any stop or delete |
+| Present, not `Stopped`, such as `Running` or `Frozen` | `absent` | Refuses `incus.instance_running` without `force`; with it, a forced stop, then the delete unless the stop already removed an ephemeral instance |
+| `Stopped` | `absent` | `DELETE /1.0/instances/<name>?project=<project>`, exactly that instance with its snapshots; a 404 means it is already gone |
 | Missing | `absent` | Nothing: 0 changes |
-| Any other status, such as `Frozen` | any | Refuses `incus.instance_state_unsupported` |
+| Any status but `Running` or `Stopped`, such as `Frozen` | `running` or `stopped` | Refuses `incus.instance_state_unsupported` |
 
-A repeat changes nothing and answers 0. Each background operation is awaited with `GET /1.0/operations/<uuid>/wait?timeout=<seconds left>`, and every socket read is bounded by the time left, all within `timeout_seconds`. An operation still running at the deadline fails `incus.operation_timeout` and is left to Incus. A failed or cancelled operation fails `incus.operation_failed`. An Incus error, an unreachable socket or an answer that is not an Incus envelope fails `incus.api_failed`. A final read that is not the ordered state fails `incus.readback_mismatch`.
+A repeat changes nothing and answers 0. `absent` succeeds only when the final read finds no instance. A custom volume is any disk device in the instance's expanded devices with a `pool` and a `source`, `dependent` or not. The root disk and host folders are not custom volumes. An instance-only order never deletes a separate volume; a flow detaches it first with `incus.device.ensure`.
+
+The order has one absolute deadline, `timeout_seconds` after it starts. The connect, every write, every read and the acceptance of each answer must finish before it, so an answer that arrives in slow fragments still fails at the deadline. Each background operation is awaited with `GET /1.0/operations/<uuid>/wait?timeout=<seconds left>`. An operation still running at the deadline fails `incus.operation_timeout` and is left to Incus. A failed or cancelled operation fails `incus.operation_failed`. An Incus error, an unreachable socket or an answer that is not an Incus envelope fails `incus.api_failed`. A final read that is not the ordered state fails `incus.readback_mismatch`.
 
 It does not hold the id-map shift of the root filesystem or the ZFS dataset repair yet. They join it in the `instance.clone` rewrite group, before any flow uses it ([the catalogue's notes](#the-catalogue)).
 

@@ -1,6 +1,6 @@
 //! `incus.instance.ensure` against a fake Incus that answers its REST API on a unix socket in a scratch folder.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read as _, Write as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
@@ -28,6 +28,14 @@ struct State {
     refuse: Option<String>,
     requests: Vec<String>,
     pending: Option<Pending>,
+    /// Ephemeral instance names: a stop deletes them.
+    ephemeral: BTreeSet<String>,
+    /// Instance names to their expanded devices.
+    devices: BTreeMap<String, Value>,
+    /// A method and path prefix the fake answers slowly, a few bytes at a time.
+    slow: Option<String>,
+    /// A delete finds the instance already gone: the fake removes it and answers 404.
+    gone_on_delete: bool,
 }
 
 /// What a background operation does to the fake when it finishes.
@@ -55,6 +63,10 @@ impl Fake {
             refuse: None,
             requests: Vec::new(),
             pending: None,
+            ephemeral: BTreeSet::new(),
+            devices: BTreeMap::new(),
+            slow: None,
+            gone_on_delete: false,
         }));
         let shared = Arc::clone(&state);
         std::thread::spawn(move || {
@@ -148,11 +160,22 @@ fn serve(mut stream: UnixStream, state: &Mutex<State>) {
         serde_json::from_str(&body).expect("a JSON body")
     };
     let (code, envelope) = answer(&mut state.lock().expect("state"), method, target, &body);
+    let slow = state.lock().expect("state").slow.as_ref().is_some_and(|slow| format!("{method} {target}").starts_with(slow.as_str()));
     let text = envelope.to_string();
     let reply = format!(
         "HTTP/1.0 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{text}",
         text.len()
     );
+    if slow {
+        // Each fragment comes well within an idle read timeout, but the whole answer outlasts a 1 s order.
+        for fragment in reply.as_bytes().chunks(16) {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            if stream.write_all(fragment).is_err() {
+                return;
+            }
+        }
+        return;
+    }
     let _ = stream.write_all(reply.as_bytes());
 }
 
@@ -215,7 +238,9 @@ fn answer(state: &mut State, method: &str, target: &str, body: &Value) -> (u16, 
                 let config = source
                     .as_ref()
                     .map_or_else(|| json!({}), |source| json!({SOURCE_KEY: source}));
-                sync(&json!({"name": name, "type": "container", "status": status, "config": config}))
+                let ephemeral = state.ephemeral.contains(*name);
+                let devices = state.devices.get(*name).cloned().unwrap_or_else(|| json!({"root": {"type": "disk", "path": "/", "pool": "default"}}));
+                sync(&json!({"name": name, "type": "container", "status": status, "config": config, "ephemeral": ephemeral, "expanded_devices": devices}))
             }
             None => error(404, "Instance not found"),
         },
@@ -237,7 +262,9 @@ fn answer(state: &mut State, method: &str, target: &str, body: &Value) -> (u16, 
                 "Stopped"
             };
             state.pending = Some(Box::new(move |state: &mut State| {
-                if let Some(found) = state.instances.get_mut(&key) {
+                if status == "Stopped" && state.ephemeral.contains(&key.1) {
+                    state.instances.remove(&key);
+                } else if let Some(found) = state.instances.get_mut(&key) {
                     status.clone_into(&mut found.0);
                 }
             }));
@@ -245,6 +272,10 @@ fn answer(state: &mut State, method: &str, target: &str, body: &Value) -> (u16, 
         }
         ("DELETE", ["instances", name]) => {
             let key = (project, (*name).to_owned());
+            if state.gone_on_delete {
+                state.instances.remove(&key);
+                return error(404, "Instance not found");
+            }
             if state
                 .instances
                 .get(&key)
@@ -530,4 +561,88 @@ fn refuses_input_outside_its_shape() {
         fake.state.lock().expect("state").requests.is_empty(),
         "a refused input sends nothing"
     );
+}
+
+#[test]
+fn refuses_to_remove_an_instance_that_attaches_a_custom_volume() {
+    let fake = Fake::new();
+    let devices = json!({
+        "root": {"type": "disk", "path": "/", "pool": "default"},
+        "data": {"type": "disk", "path": "/data", "pool": "default", "source": "data", "dependent": "true"},
+    });
+    for status in ["Stopped", "Running"] {
+        fake.with("throwaway", "copy-1", status, None);
+        fake.state.lock().expect("state").devices.insert("copy-1".to_owned(), devices.clone());
+        for force in [false, true] {
+            let refused = instance_ensure(&fake.order(&json!({"state": "absent", "force": force}))).expect_err("a volume is attached");
+            assert_eq!(refused.code, "incus.instance_volumes_attached", "{status} force={force}");
+            assert!(refused.detail.contains("default/data"), "{}", refused.detail);
+        }
+        assert!(fake.changing().is_empty(), "neither the stop nor the delete runs: {:?}", fake.changing());
+        assert_eq!(fake.status("throwaway", "copy-1").as_deref(), Some(status));
+    }
+    // A host folder (no pool) and the root disk (no source) are not separate volumes.
+    let mut state = fake.state.lock().expect("state");
+    state.devices.insert(
+        "copy-1".to_owned(),
+        json!({"root": {"type": "disk", "path": "/", "pool": "default"}, "host": {"type": "disk", "path": "/host", "source": "/srv"}}),
+    );
+    drop(state);
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(2));
+}
+
+#[test]
+fn refuses_to_stop_an_ephemeral_instance() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", None);
+    fake.state.lock().expect("state").ephemeral.insert("copy-1".to_owned());
+    for force in [false, true] {
+        let refused = instance_ensure(&fake.order(&json!({"state": "stopped", "force": force}))).expect_err("ephemeral");
+        assert_eq!(refused.code, "incus.instance_ephemeral");
+    }
+    assert!(fake.changing().is_empty(), "no stop runs: {:?}", fake.changing());
+    assert_eq!(fake.status("throwaway", "copy-1").as_deref(), Some("Running"));
+}
+
+#[test]
+fn removes_an_ephemeral_instance_whose_stop_deleted_it() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", None);
+    fake.state.lock().expect("state").ephemeral.insert("copy-1".to_owned());
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(1));
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
+    let changing = fake.changing();
+    assert_eq!(changing.len(), 1, "the stop removed it, so no delete runs: {changing:?}");
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(0));
+}
+
+#[test]
+fn a_delete_that_finds_the_instance_gone_is_absent() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    // Something else removes the instance between the read and the delete: Incus answers the delete 404.
+    fake.state.lock().expect("state").gone_on_delete = true;
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent"}))), Ok(1));
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
+}
+
+#[test]
+fn a_slow_fragmented_operation_wait_fails_at_the_deadline() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    fake.state.lock().expect("state").slow = Some("GET /1.0/operations/".to_owned());
+    let started = Instant::now();
+    let failed = instance_ensure(&fake.order(&json!({"state": "running", "timeout_seconds": 1}))).expect_err("past the deadline");
+    assert_eq!(failed.code, "incus.operation_timeout");
+    assert!(started.elapsed().as_millis() < 1400, "the whole order ends at its deadline: {:?}", started.elapsed());
+}
+
+#[test]
+fn a_slow_fragmented_absence_read_fails_at_the_deadline() {
+    let fake = Fake::new();
+    fake.state.lock().expect("state").slow = Some("GET /1.0/instances/copy-1".to_owned());
+    let started = Instant::now();
+    let failed = instance_ensure(&fake.order(&json!({"state": "absent", "timeout_seconds": 1}))).expect_err("past the deadline");
+    assert_eq!(failed.code, "incus.operation_timeout");
+    assert!(started.elapsed().as_millis() < 1400, "the whole order ends at its deadline: {:?}", started.elapsed());
 }

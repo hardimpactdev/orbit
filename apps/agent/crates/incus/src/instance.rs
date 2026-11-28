@@ -67,6 +67,10 @@ impl Source {
 struct Found {
     status: String,
     source: Option<String>,
+    /// Whether stopping it deletes it.
+    ephemeral: bool,
+    /// The custom storage volumes its devices attach, as `<pool>/<volume>`, `dependent` or not.
+    volumes: Vec<String>,
 }
 
 /// Converges the instance to the order's state and answers the number of changes; a repeat answers 0.
@@ -80,6 +84,8 @@ struct Found {
 /// `incus.input_invalid` for an input outside the admitted shape; `incus.instance_missing` for a missing instance without a
 /// source; `incus.source_missing` for a source snapshot Incus does not hold; `incus.source_conflict` for an existing instance
 /// from another source; `incus.instance_running` for a running instance to remove without `force`;
+/// `incus.instance_volumes_attached` for an instance to remove whose devices attach a custom storage volume;
+/// `incus.instance_ephemeral` for a running ephemeral instance ordered `stopped`, which the stop would delete;
 /// `incus.instance_state_unsupported` for an instance neither running nor stopped; `incus.api_failed` for a request Incus
 /// refuses or answers unexpectedly; `incus.operation_failed` for a background operation that fails;
 /// `incus.operation_timeout` for one that outlasts the budget; `incus.readback_mismatch` when the instance does not read
@@ -99,24 +105,27 @@ pub fn instance_ensure(input: &Value) -> Result<u32, Failure> {
 
     if input.state == State::Absent {
         let Some(instance) = found else { return Ok(0) };
+        if !instance.volumes.is_empty() {
+            return Err(Failure::new("incus.instance_volumes_attached", format!("{url} attaches {}", instance.volumes.join(", "))));
+        }
         if instance.status != "Stopped" {
             if !input.force {
-                return Err(Failure::new(
-                    "incus.instance_running",
-                    format!("{url} is {}", instance.status),
-                ));
+                return Err(Failure::new("incus.instance_running", format!("{url} is {}", instance.status)));
             }
             change(&incus, &input, Change::Kill)?;
             changes += 1;
         }
-        settle(&incus, incus.request("DELETE", &url, None)?, &url)?;
-        changes += 1;
+        // Stopping an ephemeral instance deletes it, so the delete runs only while the instance is still there.
+        if read(&incus, &url)?.is_some() {
+            match incus.request("DELETE", &url, None)? {
+                Answer::Error(404, _) => {}
+                answer => settle(&incus, answer, &url)?,
+            }
+            changes += 1;
+        }
         return match read(&incus, &url)? {
             None => Ok(changes),
-            Some(_) => Err(Failure::new(
-                "incus.readback_mismatch",
-                format!("{url} is still there"),
-            )),
+            Some(_) => Err(Failure::new("incus.readback_mismatch", format!("{url} is still there"))),
         };
     }
 
@@ -147,14 +156,11 @@ pub fn instance_ensure(input: &Value) -> Result<u32, Failure> {
         (Some(_), _) => {}
     }
 
-    let status = found
-        .ok_or_else(|| {
-            Failure::new(
-                "incus.readback_mismatch",
-                format!("{url} is missing after its copy"),
-            )
-        })?
-        .status;
+    let instance = found.ok_or_else(|| Failure::new("incus.readback_mismatch", format!("{url} is missing after its copy")))?;
+    let status = instance.status;
+    if input.state == State::Stopped && status == "Running" && instance.ephemeral {
+        return Err(Failure::new("incus.instance_ephemeral", format!("{url} is ephemeral: stopping it would delete it")));
+    }
     let action = match (input.state, status.as_str()) {
         (State::Running, "Running") | (State::Stopped, "Stopped") => None,
         (State::Running, "Stopped") => Some(Change::Start),
@@ -232,10 +238,20 @@ fn read(incus: &NodeSystem, url: &str) -> Result<Option<Found>, Failure> {
                 .and_then(|config| config.get(SOURCE_KEY))
                 .and_then(Value::as_str)
                 .map(str::to_owned);
-            Ok(Some(Found {
-                status: status.to_owned(),
-                source,
-            }))
+            let ephemeral = metadata.get("ephemeral").and_then(Value::as_bool).unwrap_or(false);
+            // A device a profile adds counts too, so the expanded devices are read when Incus answers them.
+            let devices = metadata.get("expanded_devices").or_else(|| metadata.get("devices")).and_then(Value::as_object);
+            let volumes = devices
+                .into_iter()
+                .flatten()
+                .filter(|(_, device)| device.get("type").and_then(Value::as_str) == Some("disk"))
+                .filter_map(|(_, device)| {
+                    let pool = device.get("pool").and_then(Value::as_str)?;
+                    let volume = device.get("source").and_then(Value::as_str)?;
+                    Some(format!("{pool}/{volume}"))
+                })
+                .collect();
+            Ok(Some(Found { status: status.to_owned(), source, ephemeral, volumes }))
         }
         Answer::Error(404, _) => Ok(None),
         other => Err(unexpected(url, &other)),
