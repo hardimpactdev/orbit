@@ -151,12 +151,13 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
             ));
         }
     }
-    // A complete destination with this provenance needs no source: a seed deleted since must not fail a repeat. Any other
-    // destination is copied from the source, so a missing one refuses before any write.
+    // A complete destination with this provenance is done once its source is gone: a seed deleted since must not fail a
+    // repeat, and the order changes nothing, a drifted key included. Any other destination is copied from the source, so a
+    // missing one refuses before any write.
     let complete = existing.as_ref().is_some_and(|(found, _)| found["config"].get(COPYING_KEY).is_none());
     let settings = checked_source(&client, source, project, &record)?;
-    if settings.is_none() && !complete {
-        return Err(Failure::new("incus.volume_source_missing", record));
+    if settings.is_none() {
+        return if complete { Ok(0) } else { Err(Failure::new("incus.volume_source_missing", record)) };
     }
     if let Some((found, _)) = existing {
         if found["config"].get(COPYING_KEY).is_some() {

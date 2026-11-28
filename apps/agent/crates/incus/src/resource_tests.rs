@@ -624,11 +624,15 @@ fn volume_recovery_checks_the_source_before_it_deletes_the_marked_copy() {
 
 #[test]
 fn volume_complete_destination_answers_zero_when_its_source_is_gone() {
-    // The seed volume, or its snapshot, was deleted after the copy finished: the complete volume repeats 0, with no write.
-    for source in [vec![missing()], vec![parent(), missing()]] {
-        let fake = Fake::new([vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))], source, vec![ok(stored_volume("p1/pool1/v1/s1", json!([])))]].into_iter().flatten().collect());
-        assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
-        assert_eq!(writes(&fake), Vec::<String>::new());
+    // The seed volume, or its snapshot, was deleted after the copy finished: the complete volume is done. It repeats 0 with
+    // no write, also when a key has drifted from the input (size 1GiB stored, 2GiB asked).
+    for (gone, size) in [("volume", "1GiB"), ("snapshot", "1GiB"), ("volume", "2GiB"), ("snapshot", "2GiB")] {
+        let source = if gone == "volume" { vec![missing()] } else { vec![parent(), missing()] };
+        let fake = Fake::new([vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))], source].into_iter().flatten().collect());
+        let mut input = volume(&fake, "present");
+        input["config"] = json!({"size": size});
+        assert_eq!(volume_ensure(&input), Ok(0), "{gone} gone, size {size}");
+        assert_eq!(writes(&fake), Vec::<String>::new(), "{gone} gone, size {size}: no PUT");
     }
 }
 
