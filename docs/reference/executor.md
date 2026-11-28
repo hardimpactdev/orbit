@@ -234,7 +234,7 @@ A `file.ensure` file with `from_sha256` that holds neither that digest nor the d
 
 `posix.acl.ensure` writes the mask explicitly, so `setfacl` never recomputes it. It widens the mask only by bits no other entry holds, and reads back that every other subject keeps its effective permissions. The first default entry of a folder seeds the default list from the access list: owner, group and other, with the group-class bits as the mask.
 
-`ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Route creation needs it: it installs the managed root CA, as `route.publish_site` does today. After a change it runs the plain `update-ca-certificates`, never `--fresh`. It then checks with `openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt` that the certificate is trusted and has a subject-hash link (`present`), or is not trusted (`absent`).
+`ca.trust.ensure` takes the certificate for `present` and `absent` alike, and refuses anything but exactly one PEM certificate before any change. Route creation needs it: it installs the managed root CA, as `route.publish_site` does today. After a change it runs the plain `update-ca-certificates`, never `--fresh`. It then checks with `openssl verify -no-CApath -no-CAstore -CAfile /etc/ssl/certs/ca-certificates.crt`, so only the named bundle counts, that the certificate is trusted and has a subject-hash link (`present`), or is not trusted (`absent`). Only a conclusive answer counts: a timeout, a command that cannot start or another failure answers `trust.ensure_failed`.
 
 `absent` removes the named source only when it holds the given certificate; other bytes fail `trust.source_mismatch` and nothing changes. When the plain updater leaves the trust other than asked, for example after the last source's removal or a rotation it does not converge, the primitive fails `trust.not_converged` and changes nothing more. It never rebuilds the whole store.
 
@@ -250,7 +250,9 @@ A `file.ensure` file with `from_sha256` that holds neither that digest nor the d
 
 Paths have one spelling: no `.`, `..` or empty part. A file named twice, also through a linked folder, or as the lock refuses.
 
-Before the first write, the executor records each file's prior state in the order's `recovery_dir`, an absolute folder outside every managed path, under `<sha256 of the lock path>/`: absent, or its bytes with owner and mode. The record carries the order's identity (the SHA-256 of its input) and the units the run reached. A replay of the same order restores the prior state, loads it again in those units, then applies.
+Before the first write, the executor records each file's prior state in the order's `recovery_dir`, an absolute folder outside every managed path, under `<sha256 of the lock path>/`: absent, or its bytes with owner and mode. The record carries the order's identity (the SHA-256 of its input) and the units the run reached.
+
+A unit is recorded as reached before it loads; when that write fails, the unit is not loaded. After any unit has loaded, a failure restores the files and loads them again in every reached unit, and the record goes only once both hold. A replay of the same order restores the prior state, loads it again in those units, then applies.
 
 Any other order that finds a pending record refuses `config.recovery_pending` and touches nothing, so it never restores over a later writer; the Gateway retries the same step with the same input. Nothing is kept beside a managed file. Temporary files take a new name the run creates exclusively, so scratch work never touches a file it did not make.
 

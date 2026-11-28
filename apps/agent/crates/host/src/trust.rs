@@ -73,19 +73,26 @@ fn converge(system: &impl System, input: &Input, dest: &std::path::Path, candida
         return Err(failed("openssl gave no subject hash".to_owned()));
     }
     let bundle = system.path(BUNDLE).to_string_lossy().into_owned();
-    let trusted = || system.run(30, &strings(&["/usr/bin/openssl", "verify", "-CAfile", &bundle, &candidate])).is_ok_and(|out| out.trim_end().ends_with(": OK"));
+    // Trust in the named bundle only: openssl's default folder and store stay out. Only a conclusive answer counts; a
+    // timeout, a command that cannot start or any other failure fails the action.
+    let trusted = || match system.run(30, &strings(&["/usr/bin/openssl", "verify", "-no-CApath", "-no-CAstore", "-CAfile", &bundle, &candidate])) {
+        Ok(out) if out.trim_end().ends_with(": OK") => Ok(true),
+        Err(detail) if detail.contains("verification failed") => Ok(false),
+        Ok(out) => Err(failed(format!("openssl verify gave no answer: {out}"))),
+        Err(detail) => Err(failed(format!("openssl verify: {detail}"))),
+    };
     let hashed = || (0..10).any(|index| std::fs::read(system.path(&format!("{TRUSTED}{hash}.{index}"))).is_ok_and(|held| one_certificate(&held).as_deref() == Some(body)));
     let update = || system.run(60, &strings(&["/usr/sbin/update-ca-certificates"])).map_err(failed);
     match input {
         Input::Present { owner, .. } => {
             let ids = owner.ids(system, "trust.ensure_failed")?;
             let changed = fs::ensure(dest, bytes, ids).map_err(|error| failed(error.to_string()))?;
-            let held = || trusted() && hashed();
-            if !changed && held() {
+            let held = || Ok::<bool, Failure>(trusted()? && hashed());
+            if !changed && held()? {
                 return Ok(0);
             }
             update()?;
-            if !held() {
+            if !held()? {
                 return Err(unconverged("the update left the certificate untrusted or without its subject-hash link"));
             }
             Ok(1)
@@ -100,11 +107,11 @@ fn converge(system: &impl System, input: &Input, dest: &std::path::Path, candida
                 }
                 None => false,
             };
-            if !removed && !trusted() {
+            if !removed && !trusted()? {
                 return Ok(0);
             }
             update()?;
-            if trusted() {
+            if trusted()? {
                 return Err(unconverged("the update left the certificate trusted"));
             }
             Ok(1)

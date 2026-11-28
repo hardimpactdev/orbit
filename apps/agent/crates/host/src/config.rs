@@ -212,27 +212,31 @@ pub fn config_apply(system: &impl System, input: &serde_json::Value) -> Result<u
             return Err(undo("config.validate_failed", detail, &replaced));
         }
     }
+    // After a unit has loaded the candidate, a failure restores the old files and loads them again in every unit reached.
+    // The record goes only once both hold, so a replay finishes a recovery that failed, and no other order is admitted
+    // while a reached unit may still serve the candidate.
+    let recover_reached = |code: &'static str, detail: String, reached: &[Unit]| {
+        let mut failure = match fs::restore(&replaced) {
+            Ok(()) => Failure::new(code, detail),
+            Err(restore) => return Failure::new("config.restore_failed", format!("{detail}; restore: {restore}")),
+        };
+        for unit in reached {
+            if let Err(again) = load(system, unit) {
+                failure = Failure::new("config.restore_failed", format!("{}; reload {}: {again}", failure.detail, unit.unit));
+            }
+        }
+        if failure.code == code {
+            record.drop();
+        }
+        failure
+    };
     for (index, unit) in input.units.iter().enumerate() {
-        // The record names the units reached before each one loads, so a replay loads the prior state in them again.
+        // The record names a unit as reached before it loads; when that write fails, the unit is not loaded.
         if let Err(error) = record.reach(index + 1) {
-            return Err(undo("config.write_failed", format!("recovery record: {error}"), &replaced));
+            return Err(recover_reached("config.write_failed", format!("recovery record: {error}"), &input.units[..index]));
         }
         if let Err(detail) = load(system, unit) {
-            // The old files go back and load again in the units this run reached, so each runs what it ran before. The
-            // record goes only once both hold, so a replay finishes a recovery that failed here.
-            let mut failure = match fs::restore(&replaced) {
-                Ok(()) => Failure::new("config.load_failed", detail),
-                Err(restore) => return Err(Failure::new("config.restore_failed", format!("{detail}; restore: {restore}"))),
-            };
-            for reached in &input.units[..=index] {
-                if let Err(again) = load(system, reached) {
-                    failure = Failure::new("config.restore_failed", format!("{}; reload {}: {again}", failure.detail, reached.unit));
-                }
-            }
-            if failure.code == "config.load_failed" {
-                record.drop();
-            }
-            return Err(failure);
+            return Err(recover_reached("config.load_failed", detail, &input.units[..=index]));
         }
     }
     // The set is live: its prior state is no longer the one to restore.

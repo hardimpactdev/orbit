@@ -24,11 +24,13 @@ struct Fake {
     transition: RefCell<Option<&'static str>>,
     /// A program whose run stops the action, as a crash would.
     stop: RefCell<Option<&'static str>>,
+    /// A program after whose run a folder turns read-only, so the next write in it fails.
+    seal: RefCell<Option<(&'static str, std::path::PathBuf)>>,
 }
 
 impl Fake {
     fn new() -> Self {
-        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default() }
+        Self { root: tempfile::tempdir().expect("a scratch root"), blobs: BTreeMap::new(), fail: RefCell::default(), answers: RefCell::default(), ran: RefCell::default(), acls: RefCell::default(), unit: RefCell::new(Some((true, true))), transition: RefCell::default(), stop: RefCell::default(), seal: RefCell::default() }
     }
 
     fn put(&mut self, content: &[u8]) -> serde_json::Value {
@@ -46,6 +48,13 @@ impl Fake {
 
     fn read(&self, path: &str) -> Vec<u8> {
         fs::read(self.path(path)).expect("read")
+    }
+
+    /// Turns the sealed folder read-only once its program runs.
+    fn seal_after(&self, argv: &[String]) {
+        if let Some((_, folder)) = self.seal.borrow().as_ref().filter(|(program, _)| argv.iter().any(|arg| arg == program)) {
+            fs::set_permissions(folder, fs::Permissions::from_mode(0o500)).expect("seal");
+        }
     }
 
     fn ran(&self, program: &str) -> usize {
@@ -68,6 +77,7 @@ impl System for Fake {
     fn run(&self, _seconds: u32, argv: &[String]) -> Result<String, String> {
         self.ran.borrow_mut().push(argv.to_vec());
         assert!(!self.stop.borrow().is_some_and(|program| argv.iter().any(|arg| arg == program)), "the executor stopped");
+        self.seal_after(argv);
         if self.fail.borrow().iter().any(|program| argv.iter().any(|arg| arg == program)) {
             return Err("scripted failure".to_owned());
         }
@@ -130,8 +140,9 @@ impl System for Fake {
                 if words.contains(&"verify") {
                     let squash = |bytes: Vec<u8>| String::from_utf8_lossy(&bytes).split_whitespace().collect::<String>().replace("-----BEGINCERTIFICATE-----", "").replace("-----ENDCERTIFICATE-----", "");
                     let held = squash(fs::read(&file).unwrap_or_default());
-                    let bundle = squash(fs::read(words[3]).unwrap_or_default());
-                    return if !held.is_empty() && bundle.contains(&held) { Ok(format!("{}: OK\n", file.display())) } else { Err("unable to get local issuer certificate".to_owned()) };
+                    let named = words[words.iter().position(|arg| *arg == "-CAfile").expect("-CAfile") + 1];
+                    let bundle = squash(fs::read(named).unwrap_or_default());
+                    return if !held.is_empty() && bundle.contains(&held) { Ok(format!("{}: OK\n", file.display())) } else { Err(format!("error 20 at 0 depth lookup: unable to get local issuer certificate\nerror {}: verification failed", file.display())) };
                 }
                 match fs::read(file) {
                     Ok(bytes) if bytes.starts_with(b"-----BEGIN CERTIFICATE-----") => Ok(format!("{}\n", &sha256(&bytes)[..8])),
@@ -836,4 +847,42 @@ fn trust_ensure_removes_only_a_source_that_holds_the_given_certificate() {
     assert_eq!(trust_ensure(&fake, &absent).expect_err("mismatch").code, "trust.source_mismatch");
     assert!(fake.read("/usr/local/share/ca-certificates/r.crt").windows(6).any(|window| window == b"THEIRS"));
     assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 0);
+}
+
+#[test]
+fn config_apply_reloads_the_reached_units_when_its_progress_cannot_be_recorded() {
+    let mut fake = Fake::new();
+    lock_folder(&fake);
+    fake.write("/conf/site.conf", b"A\n");
+    let input = json!({"lock": "/tmp-lock/given.lock", "recovery_dir": "/recovery",
+        "files": [{"path": "/conf/site.conf", "content": fake.put(b"B\n"), "from_sha256": sha256(b"A\n"), "owner": owner()}],
+        "units": [{"unit": "first.service", "load": "reload"}, {"unit": "second.service", "load": "restart"}]});
+    // Review counterexample: the first unit loads B, then the progress record cannot be written before the second.
+    let folder = fake.path("/recovery").join(sha256(b"/tmp-lock/given.lock"));
+    *fake.seal.borrow_mut() = Some(("first.service", folder.clone()));
+    let failure = config_apply(&fake, &input).expect_err("the record cannot be written");
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).expect("unseal");
+    assert_eq!(failure.code, "config.write_failed");
+    assert_eq!(fake.read("/conf/site.conf"), b"A\n");
+    assert_eq!(fake.ran("first.service"), 2, "the reached unit loads the restored file again");
+    assert_eq!(fake.ran("second.service"), 0, "a unit the record does not know is never loaded");
+}
+
+#[test]
+fn trust_ensure_counts_only_a_conclusive_answer_from_the_named_bundle() {
+    let mut fake = Fake::new();
+    fs::create_dir_all(fake.path("/usr/local/share/ca-certificates")).expect("store");
+    let bytes = b"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n";
+    let present = json!({"state": "present", "name": "r.crt", "certificate": fake.put(bytes), "owner": owner()});
+    let absent = json!({"state": "absent", "name": "r.crt", "certificate": fake.put(bytes)});
+    assert_eq!(trust_ensure(&fake, &present), Ok(1));
+    // Review counterexample 3: the bundle lost the CA while its hash link stays; only the named bundle counts.
+    fs::write(fake.path("/etc/ssl/certs/ca-certificates.crt"), b"").expect("bundle");
+    assert_eq!(trust_ensure(&fake, &present), Ok(1), "a bundle without the CA is not trust");
+    assert!(fake.ran.borrow().iter().filter(|argv| argv.contains(&"verify".to_owned())).all(|argv| argv.contains(&"-no-CApath".to_owned()) && argv.contains(&"-no-CAstore".to_owned())));
+    // Review counterexample 2: a verify that times out is no answer, for removal and for its retry.
+    fake.fail.borrow_mut().push("verify");
+    assert_eq!(trust_ensure(&fake, &absent).expect_err("no answer").code, "trust.ensure_failed");
+    assert_eq!(trust_ensure(&fake, &absent).expect_err("still no answer").code, "trust.ensure_failed");
+    assert_eq!(trust_ensure(&fake, &present).expect_err("no answer").code, "trust.ensure_failed");
 }
