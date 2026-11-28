@@ -375,7 +375,7 @@ class CloneLane:
         return found[0] if found else None
 
     def steps(self, operation):
-        return self.db(f'''SELECT name,action,target,status,sends,first_sent_ms,first_order_expires_ms,done_ms,error_code
+        return self.db(f'''SELECT name,action,target,status,sends,first_sent_ms,first_order_expires_ms,done_ms,error_code,output
             FROM operation_engine_steps WHERE operation_id={operation} ORDER BY id''')
 
     def journal(self, operation):
