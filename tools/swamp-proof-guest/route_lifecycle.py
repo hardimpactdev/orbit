@@ -565,7 +565,7 @@ print("\\n".join(sorted(names)))'''
                                f'route.destroy {operation} did not leave the expected queued receipt', 50)
             # The interrupted checkpoint: DNS and Caddy are withdrawn, the leaf is still there (its removal follows the poll, which the
             # stopped engine never sent), and the fence is open. Complete removal is required only after the replay.
-            withdrawn = wait_for(lambda: (found := self.state(domain, scope)) if not found['caddy_admin'] else None,
+            withdrawn = wait_for(lambda: None if (found := self.state(domain, scope))['caddy_admin'] else found,
                                  f'route.destroy {operation} did not withdraw the site from Caddy', 15, interval=0.5)
             row = self.db(f'SELECT status, lock_key FROM operations WHERE id={operation}')[0]
             replay = self.admitted('DELETE', path, {}, key)
