@@ -19,9 +19,36 @@ pub(crate) struct Previous {
     pub(crate) content: Option<(Vec<u8>, Ids)>,
 }
 
+/// A file's device and inode: the same file under any of its names.
+pub(crate) type Identity = (u64, u64);
+
+/// Why a write refused: the destination is the file it must leave alone, under another name.
+#[derive(Debug)]
+pub(crate) struct Alias;
+
+impl std::fmt::Display for Alias {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the destination is the source file")
+    }
+}
+
+impl std::error::Error for Alias {}
+
+impl Alias {
+    /// Whether `error` is this refusal.
+    pub(crate) fn is(error: &std::io::Error) -> bool {
+        error.get_ref().is_some_and(<dyn std::error::Error + Send + Sync>::is::<Self>)
+    }
+}
+
 /// The plain file at `dest` with its owner and mode, `None` when nothing is there, and an error for anything that is not
 /// a plain file or cannot be read.
 pub(crate) fn read(dest: &Path) -> std::io::Result<Option<(Vec<u8>, Ids)>> {
+    Ok(read_held(dest)?.map(|(content, ids, _)| (content, ids)))
+}
+
+/// [`read`] with the identity of the file it read: owner, mode and identity come from the opened file, not its name.
+pub(crate) fn read_held(dest: &Path) -> std::io::Result<Option<(Vec<u8>, Ids, Identity)>> {
     let meta = match fs::symlink_metadata(dest) {
         Ok(meta) => meta,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -31,19 +58,33 @@ pub(crate) fn read(dest: &Path) -> std::io::Result<Option<(Vec<u8>, Ids)>> {
         return Err(std::io::Error::other("not a plain file"));
     }
     let mut stream = File::options().read(true).custom_flags(NOFOLLOW).open(dest)?;
+    let held = stream.metadata()?;
+    if !held.file_type().is_file() {
+        return Err(std::io::Error::other("not a plain file"));
+    }
     let mut content = Vec::new();
     stream.read_to_end(&mut content)?;
-    Ok(Some((content, Ids { uid: meta.uid(), gid: meta.gid(), mode: meta.mode() & 0o7777 })))
+    Ok(Some((content, Ids { uid: held.uid(), gid: held.gid(), mode: held.mode() & 0o7777 }, (held.dev(), held.ino()))))
 }
 
 /// Writes a file only when its bytes differ, and repairs owner and mode on an unchanged one. Answers whether it changed.
 pub(crate) fn ensure(dest: &Path, content: &[u8], ids: Ids) -> std::io::Result<bool> {
+    ensure_apart(dest, content, ids, None)
+}
+
+/// [`ensure`] that never keeps or changes the file `apart` names: when the opened destination is that file, it refuses
+/// with [`Alias`]. Every decision and change acts on the opened file, never on a second lookup of its name.
+pub(crate) fn ensure_apart(dest: &Path, content: &[u8], ids: Ids, apart: Option<Identity>) -> std::io::Result<bool> {
     if let Ok(meta) = fs::symlink_metadata(dest) {
         if meta.file_type().is_file() {
             let mut stream = File::options().read(true).custom_flags(NOFOLLOW).open(dest)?;
+            let meta = stream.metadata()?;
+            if apart == Some((meta.dev(), meta.ino())) {
+                return Err(std::io::Error::other(Alias));
+            }
             let mut current = Vec::new();
             stream.read_to_end(&mut current)?;
-            if current == content {
+            if meta.file_type().is_file() && current == content {
                 let drift = (meta.uid(), meta.gid(), meta.mode() & 0o7777) != (ids.uid, ids.gid, ids.mode);
                 if drift {
                     fchown(&stream, Some(ids.uid), Some(ids.gid))?;
