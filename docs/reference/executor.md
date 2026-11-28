@@ -157,7 +157,7 @@ Three notes apply to every row.
 | Note | Rule |
 | --- | --- |
 | Where it acts | The input names the machine and the user: the Node, or one Incus instance on it. An Incus primitive can also address the Incus server inside an instance. |
-| Starting and removing an instance | The id-map shift of the root filesystem and the ZFS dataset repair are part of starting or removing one instance, so they belong to `incus.instance.ensure`. The built primitive does not hold them yet. They join it in the `instance.clone` rewrite group, before any flow uses it. |
+| Starting and removing an instance | The id-map shift and the ZFS dataset repair belong to `incus.instance.ensure`, but it does not hold them yet. They join it in the `instance.clone` rewrite group, before any flow uses it. |
 | Programs with their own interface | ufw, Incus, Docker, Git and the Conn Server are programs on the host, so each has typed primitives. A record that only the Gateway holds has none. |
 
 A rewrite may refine a planned primitive's input. It may not weaken the five conditions.
