@@ -334,7 +334,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
 
     /**
      * A VPN Node's records and catalog without the Route. Each must still hold the bytes the Gateway rendered from at admission,
-     * unless its read already found the desired bytes; a link that `dnsunlink` removed is written without a guard. Before the
+     * unless its read already found the desired bytes; the catalog may hold that state as Swamp's withdrawal or the canonical form
+     * writes it; a link that `dnsunlink` removed is written without a guard. Before the
      * reads, a null run renders the order only to measure it.
      *
      * @return array<string, mixed>
@@ -349,6 +350,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineS
                 $read === null => self::digest($guard, $admitted),
                 $read['kind'] === 'link' => null,
                 $read['kind'] === 'file' && $read['sha256'] === hash('sha256', $content) => $read['sha256'],
+                // The admitted catalog in another writer's bytes: Swamp's withdrawal, or the canonical form.
+                $read['kind'] === 'file' && $file === 'catalog' && in_array($read['sha256'], array_filter([$guard['catalog_swamp'] ?? null, $guard['catalog'] ?? null]), true) => $read['sha256'],
                 default => self::digest($guard, $admitted),
             };
 

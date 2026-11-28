@@ -1,0 +1,5 @@
+{
+  "writer": "swamp/ansible/module_utils/orbit_route_withdraw.py merge_dns",
+  "gateway_render": "{\"requesters\":{\"10.44.0.9\":\"app-dev\"},\"records\":{\"other.example\":\"10.44.0.8\",\"caf\\u00e9.example\":\"10.44.0.6\"},\"suffixes\":[],\"overrides\":[]}\n",
+  "written": "{\"requesters\":{\"10.44.0.9\":\"app-dev\"},\"records\":{\"other.example\":\"10.44.0.8\",\"café.example\":\"10.44.0.6\"},\"suffixes\":{},\"overrides\":{}}\n"
+}

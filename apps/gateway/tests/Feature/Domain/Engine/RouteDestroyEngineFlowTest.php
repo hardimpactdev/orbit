@@ -47,7 +47,8 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
             'nodes' => [['node_id' => 3, 'production_instance_ids' => []]]],
         'route_lifecycle' => ['plan' => $plan],
         'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4', 'php_versions_after' => '8.4'],
-            '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n"), 'catalog_file' => hash('sha256', "{\"shop\":1}\n")]],
+            '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n"), 'catalog_file' => hash('sha256', "{\"shop\":1}\n"),
+                'catalog_swamp' => hash('sha256', "{\"shop\":1,\"x\":{}}\n")]],
     ], ...$input]]);
 }
 
@@ -156,6 +157,15 @@ it('keeps main\'s DNS refusal: a file changed after admission, such as a sibling
         // A retry that finds the desired bytes already written keeps them.
         ->and(array_column($files(plainFile("address=/other.example/10.44.0.8\n"), plainFile("{}\n")), 'from_sha256'))
         ->toBe([hash('sha256', "address=/other.example/10.44.0.8\n"), hash('sha256', "{}\n")]);
+});
+
+it('takes the admitted catalog in Swamp\'s bytes as the state it rendered from, and nothing else', function (): void {
+    $flow = app(RouteDestroyEngineFlow::class);
+    $catalog = fn (string $live): ?string => $flow->input(routeDestroyOperation(), 'dns-0', destroyRun([
+        'dnsread-0-records' => plainFile("address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'dnsread-0-catalog' => plainFile($live)]))['files'][1]['from_sha256'];
+
+    expect($catalog("{\"shop\":1,\"x\":{}}\n"))->toBe(hash('sha256', "{\"shop\":1,\"x\":{}}\n"))
+        ->and($catalog("{\"shop\":1,\"new\":1}\n"))->toBe(hash('sha256', "{\"shop\":1}\n"));
 });
 
 it('removes a link in a file\'s place without following it, then writes the file without a guard', function (): void {
