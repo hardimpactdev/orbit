@@ -74,7 +74,8 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['site-3-url-0', 3, 'dotenv.ensure', ['sign-0']],
         ['site-3-link-0', 3, 'file.ensure', ['site-3-url-0']],
         ['site-3-read-pool-0', 3, 'file.read', ['site-3-link-0']],
-        ['site-3-pools', 3, 'config.apply', ['site-3-read-pool-0']],
+        ['site-3-unlink-pool-0', 3, 'file.ensure', ['site-3-read-pool-0']],
+        ['site-3-pools', 3, 'config.apply', ['site-3-unlink-pool-0']],
         ['site-3-unit-0', 3, 'systemd.unit.ensure', ['site-3-pools']],
         ['site-3-reload', 3, 'config.apply', ['site-3-unit-0']],
         ['site-3-cert-0', 3, 'file.ensure', ['site-3-reload']],
@@ -85,7 +86,8 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s host steps i
         ['site-3-copylink-0', 3, 'file.ensure', ['site-3-copy-0']],
         ['site-3-trust', 3, 'ca.trust.ensure', ['site-3-copylink-0']],
         ['site-3-read-caddy', 3, 'file.read', ['site-3-trust']],
-        ['site-3-caddy', 3, 'config.apply', ['site-3-read-caddy']],
+        ['site-3-unlink-caddy', 3, 'file.ensure', ['site-3-read-caddy']],
+        ['site-3-caddy', 3, 'config.apply', ['site-3-unlink-caddy']],
         ['probe-0', 0, 'route.probe', ['site-3-caddy']],
     ])
         ->and(array_values(array_filter(array_map(static fn ($step): ?array => $step->features === [] ? null : [$step->name, $step->features], $steps))))
@@ -118,7 +120,7 @@ it('sends APP_URL, links, the leaf, the account\'s copies and the root trust wit
         ->and($input('site-3-copy-0'))->toBe(['state' => 'file', 'path' => $copy.'/versions/0123456789abcdef/cert.pem', 'content' => $leaf,
             'owner' => ['user' => 'orbit', 'group' => 'orbit', 'mode' => '0600']])
         ->and($input('site-3-copylink-0'))->toBe(['state' => 'link', 'path' => $copy.'/current', 'target' => 'versions/0123456789abcdef', 'user' => 'orbit', 'group' => 'orbit'])
-        ->and($input('site-3-trust'))->toBe(['state' => 'present', 'name' => 'orbit-managed-root-ca.crt', 'certificate' => ['blob' => ['content' => routePlan()['root_certificate']]],
+        ->and($input('site-3-trust'))->toBe(['state' => 'present', 'name' => RouteHostSteps::trustName(routePlan()['root_certificate']), 'certificate' => ['blob' => ['content' => routePlan()['root_certificate']]],
             'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]);
 });
 
@@ -127,13 +129,16 @@ it('renders the pools whole under the publication lock, starts each unit, then r
     $input = static fn (string $step): array => $flow->input(routeOperation(routePlan()), $step, routeRun());
     $pool = ['path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf', 'content' => ['blob' => ['content' => "[shop]\ngroup = orbit\nchdir = /home/orbit/apps/shop\n"]],
         'from_sha256' => str_repeat('1', 64), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']];
-    $base = ['lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery', 'files' => [$pool],
+    $base = ['lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery/pool-install', 'files' => [$pool],
         'validators' => [['kind' => 'php-fpm', 'version' => '8.4']]];
+    // The reload's guard is the bytes the install left, so it rewrites nothing and refuses a change made since.
+    $installed = [...$pool, 'from_sha256' => hash('sha256', "[shop]\ngroup = orbit\nchdir = /home/orbit/apps/shop\n")];
 
     expect($input('site-3-pools'))->toBe([...$base, 'units' => []])
         ->and($input('site-3-unit-0'))->toBe(['unit' => 'php8.4-fpm.service', 'enabled' => true, 'state' => 'running', 'budget_ms' => 30_000])
-        ->and($input('site-3-reload'))->toBe([...$base, 'units' => [['unit' => 'php8.4-fpm.service', 'load' => 'reload']]])
-        ->and($input('site-3-caddy'))->toBe(['lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery',
+        ->and($input('site-3-reload'))->toBe([...$base, 'recovery_dir' => '/var/lib/orbit/executor/config-recovery/pool-reload', 'files' => [$installed],
+            'units' => [['unit' => 'php8.4-fpm.service', 'load' => 'reload']]])
+        ->and($input('site-3-caddy'))->toBe(['lock' => '/etc/caddy/.orbit-publish.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery/caddy',
             'files' => [['path' => '/etc/caddy/Caddyfile', 'content' => ['blob' => ['content' => "shop.orbit {\n}\n"]], 'from_sha256' => str_repeat('c', 64),
                 'owner' => ['user' => 'root', 'group' => 'caddy', 'mode' => '0640']]],
             'validators' => [['kind' => 'caddy', 'config' => '/etc/caddy/Caddyfile', 'user' => 'caddy']], 'units' => [['unit' => 'caddy.service', 'load' => 'reload']]]);
@@ -147,7 +152,7 @@ it('gives a production pool its own configuration and ini folders, and keeps it 
     $input = app(RouteEngineFlow::class)->input(routeOperation(routePlan($production)), 'site-3-reload', routeRun());
 
     expect($input['files'])->toBe([['path' => '/etc/orbit/php-fpm/shop/generated/pool.conf', 'content' => ['blob' => ['content' => "[shop]\n"]],
-        'from_sha256' => str_repeat('1', 64), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]])
+        'from_sha256' => hash('sha256', "[shop]\n"), 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']]])
         ->and($input['validators'])->toBe([['kind' => 'php-fpm', 'version' => '8.4', 'fpm_config' => '/etc/orbit/php-fpm/shop/generated/php-fpm.conf',
             'ini_scan_dir' => ['/etc/php/8.4/fpm/conf.d', '/etc/orbit/php-fpm/shop/generated']]])
         ->and($input['units'])->toBe([['unit' => 'orbit-shop-php8.4-fpm.service', 'load' => 'reload']]);
@@ -186,12 +191,14 @@ it('publishes private DNS on the VPN Node under its lock after the signature, be
         array_filter($steps, static fn ($step): bool => str_starts_with($step->name, 'dns-')))))->toBe([
             ['dns-0-read-records', 1, 'file.read', ['sign-0']],
             ['dns-0-read-catalog', 1, 'file.read', ['dns-0-read-records']],
-            ['dns-0', 1, 'config.apply', ['dns-0-read-catalog']],
+            ['dns-0-unlink-records', 1, 'file.ensure', ['dns-0-read-catalog']],
+            ['dns-0-unlink-catalog', 1, 'file.ensure', ['dns-0-unlink-records']],
+            ['dns-0', 1, 'config.apply', ['dns-0-unlink-catalog']],
         ])
         ->and(app(RouteEngineFlow::class)->input(routeOperation($plan), 'dns-0-read-catalog', routeRun()))->toBe(['path' => '/var/lib/orbit/private-dns/catalog.json'])
         ->and(end($steps)->after)->toBe(['site-3-caddy'])
         ->and(app(RouteEngineFlow::class)->input(routeOperation($plan), 'dns-0', routeRun()))->toBe([
-            'lock' => '/run/lock/orbit-dnsmasq.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery', 'files' => [
+            'lock' => '/run/lock/orbit-dnsmasq.lock', 'recovery_dir' => '/var/lib/orbit/executor/config-recovery/dns', 'files' => [
                 ['path' => '/etc/dnsmasq.d/orbit-records.conf', 'content' => ['blob' => ['content' => "address=/.test/10.44.0.7\n"]], 'from_sha256' => str_repeat('2', 64),
                     'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
                 ['path' => '/var/lib/orbit/private-dns/catalog.json', 'content' => ['blob' => ['content' => "{}\n"]], 'from_sha256' => str_repeat('3', 64),
@@ -296,4 +303,73 @@ it('leaves a Route to Swamp when a leaf or account is outside the executor\'s sh
 it('renders a shared pool with the account\'s group and home in place of the render\'s placeholders', function (): void {
     expect(RouteHostSteps::render("group = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/app-1\n", 'orbit', '/home/orbit'))
         ->toBe("group = orbit\nchdir = /home/orbit/app-1\n");
+});
+
+it('removes a link found in place of each file it writes, without following it, then writes it with no guard', function (string $read, string $unlink, string $write, string $path): void {
+    $flow = app(RouteEngineFlow::class);
+    $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n"]]]);
+    $link = json_encode(['state' => 'present', 'type' => 'symlink', 'uid' => 0, 'gid' => 0, 'mode' => '0777']);
+    $linked = routeRun([$read => $link]);
+    $files = $flow->input(routeOperation($plan), $write, $linked)['files'];
+
+    expect($flow->skips(routeOperation($plan), $unlink, $linked))->toBeFalse()
+        ->and($flow->input(routeOperation($plan), $unlink, $linked))->toBe(['state' => 'absent', 'path' => $path])
+        ->and(array_values(array_filter($files, static fn (array $file): bool => $file['path'] === $path))[0])->not->toHaveKey('from_sha256')
+        // A plain file is never removed: its unlink step is done without an order, and its write keeps the read digest.
+        ->and($flow->skips(routeOperation($plan), $unlink, routeRun()))->toBeTrue();
+})->with([
+    'the Caddyfile' => ['site-3-read-caddy', 'site-3-unlink-caddy', 'site-3-caddy', '/etc/caddy/Caddyfile'],
+    'a pool' => ['site-3-read-pool-0', 'site-3-unlink-pool-0', 'site-3-pools', '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf'],
+    'the records' => ['dns-0-read-records', 'dns-0-unlink-records', 'dns-0', '/etc/dnsmasq.d/orbit-records.conf'],
+    'the catalog' => ['dns-0-read-catalog', 'dns-0-unlink-catalog', 'dns-0', '/var/lib/orbit/private-dns/catalog.json'],
+]);
+
+it('gives each config.apply step its own recovery folder, so a pending record blocks only a replay of its own order', function (): void {
+    $flow = app(RouteEngineFlow::class);
+    $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "r\n", 'catalog' => "{}\n"]]]);
+    $folders = array_map(static fn (string $step): string => $flow->input(routeOperation($plan), $step, routeRun())['recovery_dir'], ['site-3-pools', 'site-3-reload', 'site-3-caddy', 'dns-0']);
+
+    expect($folders)->toBe(['/var/lib/orbit/executor/config-recovery/pool-install', '/var/lib/orbit/executor/config-recovery/pool-reload',
+        '/var/lib/orbit/executor/config-recovery/caddy', '/var/lib/orbit/executor/config-recovery/dns'])
+        // An ordinary retry after a failed reload sends the reload byte for byte, so the executor replays its recorded order.
+        ->and(json_encode($flow->input(routeOperation($plan), 'site-3-reload', new EngineRun(41, routeRun()->steps, 99_000, null))))
+        ->toBe(json_encode($flow->input(routeOperation($plan), 'site-3-reload', routeRun())));
+});
+
+it('names the trust source after the root\'s fingerprint, so a new root gets its own name and hash link', function (): void {
+    $old = "-----BEGIN CERTIFICATE-----\nT0xE\n-----END CERTIFICATE-----\n";
+    $new = "-----BEGIN CERTIFICATE-----\nTkVX\n-----END CERTIFICATE-----\n";
+    $input = app(RouteEngineFlow::class)->input(routeOperation(routePlan(['root_certificate' => $new])), 'site-3-trust', routeRun());
+
+    expect(RouteHostSteps::trustName($new))->not->toBe(RouteHostSteps::trustName($old))
+        ->and(RouteHostSteps::trustName($new))->toBe('orbit-managed-root-ca-'.substr(hash('sha256', 'NEW'), 0, 16).'.crt')
+        ->and($input['name'])->toBe(RouteHostSteps::trustName($new));
+});
+
+it('sizes each order with real 64-hex guards: every admitted pool count fits at run time, and an order over the signer limit runs on Swamp', function (): void {
+    $pools = static fn (int $count): array => ['php_files' => array_map(static fn (int $i): array => ['node_id' => 3, 'path' => "/etc/orbit/php-fpm/shop{$i}/generated/pool.conf",
+        'content' => "[shop{$i}]\n", 'owner' => 'root'], range(1, $count)),
+        'php_tests' => array_map(static fn (int $i): array => ['node_id' => 3, 'argv' => ['/usr/bin/env', "PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/shop{$i}/generated",
+            '/usr/sbin/php-fpm8.4', '-t', '--fpm-config', "/etc/orbit/php-fpm/shop{$i}/generated/php-fpm.conf"]], range(1, $count)),
+        'php_reloads' => array_map(static fn (int $i): array => ['node_id' => 3, 'unit' => "orbit-shop{$i}-php8.4-fpm.service"], range(1, $count))];
+    $admitted = 0;
+    foreach (range(1, 8) as $count) {
+        try {
+            app(RouteEngineFlow::class)->steps(routeOperation(routePlan($pools($count))));
+        } catch (EngineUnsupported) {
+            continue;
+        }
+        $admitted = $count;
+        $reads = [];
+        foreach (range(0, $count - 1) as $i) {
+            $reads["site-3-read-pool-{$i}"] = routeRead(str_repeat('f', 64));
+        }
+        // Whatever admission lets through stays under the limit with the real guards it carries at run time.
+        foreach (['site-3-pools', 'site-3-reload'] as $step) {
+            RouteEngineFlow::fits(app(RouteEngineFlow::class)->input(routeOperation(routePlan($pools($count))), $step, routeRun($reads)));
+        }
+    }
+
+    expect($admitted)->toBeGreaterThan(0)
+        ->and(fn () => app(RouteEngineFlow::class)->steps(routeOperation(routePlan($pools(16)))))->toThrow(EngineUnsupported::class);
 });

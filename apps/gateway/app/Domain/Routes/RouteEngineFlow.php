@@ -9,6 +9,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\EngineAdmission;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
@@ -34,7 +35,7 @@ use RuntimeException;
  * A Route that needs the Ingress edge, a LAN rule, a production `.env` or awake markers starts on Swamp
  * ([EngineUnsupported]). Step labels map onto the chart's, so a failure records the same `failed_step` and error code.
  */
-final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinition
+final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinition, EngineSkip
 {
     /** Each step prefix's chart label (NativeRouteConvergenceProjection::StepCodes). */
     private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
@@ -57,8 +58,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
 
     public const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
 
-    /** Earlier outputs as a step's shape check reads them before anything runs: a certificate, and an absent file. */
-    private const array PlannedOutput = ['sign' => "-----BEGIN CERTIFICATE-----\n", 'site' => '{"state":"absent"}'];
+    /** Earlier outputs as a step's shape check reads them before anything runs: a certificate, and a present file, so each order is sized with a real 64-hex guard. */
+    private const array PlannedOutput = ['sign' => "-----BEGIN CERTIFICATE-----\n",
+        'site' => '{"state":"present","type":"file","sha256":"0000000000000000000000000000000000000000000000000000000000000000","uid":0,"gid":0,"mode":"0644"}'];
 
     /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
     private const int OrderOverhead = 400;
@@ -106,13 +108,23 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             // Each file's live digest, read under the hold, is the guard its write sends.
             $steps[] = new StepSpec("dns-{$index}-read-records", $vpn, 'file.read', (string) $vpn, $signed, budgetMs: 30_000, resendMs: 10_000);
             $steps[] = new StepSpec("dns-{$index}-read-catalog", $vpn, 'file.read', (string) $vpn, ["dns-{$index}-read-records"], budgetMs: 30_000, resendMs: 10_000);
-            $steps[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, ["dns-{$index}-read-catalog"], budgetMs: 120_000, resendMs: 20_000);
+            // A link in a file's place is removed first, never followed (EngineSkip runs it only for a link the read found).
+            $steps[] = new StepSpec("dns-{$index}-unlink-records", $vpn, 'file.ensure', (string) $vpn, ["dns-{$index}-read-catalog"], budgetMs: 30_000, resendMs: 10_000);
+            $steps[] = new StepSpec("dns-{$index}-unlink-catalog", $vpn, 'file.ensure', (string) $vpn, ["dns-{$index}-unlink-records"], budgetMs: 30_000, resendMs: 10_000);
+            self::fits(self::dnsInput(RouteExecutionProof::objects($plan['dns'])[$index], self::PlannedOutput['site'], self::PlannedOutput['site']));
+            $steps[] = new StepSpec("dns-{$index}", $vpn, 'config.apply', (string) $vpn, ["dns-{$index}-unlink-catalog"], budgetMs: 120_000, resendMs: 20_000);
         }
         foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
             $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $last, budgetMs: 60_000);
         }
 
         return $steps;
+    }
+
+    /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked). */
+    public function skips(Operation $operation, string $step, EngineRun $run): bool
+    {
+        return str_contains($step, '-unlink-') && ! RouteHostSteps::linked($run->output(str_replace('-unlink-', '-read-', $step)));
     }
 
     /**
@@ -184,6 +196,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         if ($pools !== []) {
             foreach (array_keys($pools) as $index) {
                 $parts[] = ["read-pool-{$index}", 'file.read', [], 30_000];
+                $parts[] = ["unlink-pool-{$index}", 'file.ensure', [], 30_000];
             }
             $parts[] = ['pools', 'config.apply', [], 180_000];
             foreach (array_keys($pools) as $index) {
@@ -203,6 +216,7 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
         }
         if ($mine('caddy') !== []) {
             $parts[] = ['read-caddy', 'file.read', [], 30_000];
+            $parts[] = ['unlink-caddy', 'file.ensure', [], 30_000];
             $parts[] = ['caddy', 'config.apply', [], 180_000];
         }
 
@@ -220,6 +234,8 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'dns' => match ($parts[2] ?? null) {
                 'read-records' => RouteHostSteps::read(RouteHostSteps::Records),
                 'read-catalog' => RouteHostSteps::read(RouteHostSteps::Catalog),
+                'unlink-records' => RouteHostSteps::absent(RouteHostSteps::Records),
+                'unlink-catalog' => RouteHostSteps::absent(RouteHostSteps::Catalog),
                 null => self::dnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $parts[1]], $run->output("{$step}-read-records"), $run->output("{$step}-read-catalog")),
                 default => throw new LogicException("Step [{$step}] has no input."),
             },
@@ -391,9 +407,11 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'link' => ValidatedData::string($mine('links')[$index]['owner']) === $account
                 ? RouteHostSteps::link(ValidatedData::string($mine('links')[$index]['path']), ValidatedData::string($mine('links')[$index]['target']), $account, $group)
                 : throw new EngineUnsupported('A link owned by another account runs on Swamp.'),
-            'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators']),
+            'pools' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, 'pool-install', $pools()['files'], $pools()['validators']),
             'unit' => RouteHostSteps::running($pools()['units'][$index]),
-            'reload' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, $pools()['files'], $pools()['validators'],
+            // The reload writes nothing: each file's guard is the bytes the install left, so a change since then refuses.
+            'reload' => RouteHostSteps::apply(RouteHostSteps::CaddyLock, 'pool-reload', array_map(static fn (array $file): array => [...$file,
+                'from_sha256' => hash('sha256', ValidatedData::string(ValidatedData::object(ValidatedData::object($file['content'])['blob'])['content']))], $pools()['files']), $pools()['validators'],
                 array_map(static fn (string $unit): array => ['unit' => $unit, 'load' => 'reload'], $pools()['units'])),
             'cert' => RouteHostSteps::plain($leaf()[2].'/cert.pem', self::leafPem($signed($index)), 'root', 'caddy', '0644'),
             'current' => RouteHostSteps::link($leaf()[3], $leaf()[1], 'root', 'root'),
@@ -402,8 +420,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
             'key' => RouteHostSteps::copy(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/key.pem', $leaf()[2].'/key.pem', $account, $group, '0600'),
             'copy' => RouteHostSteps::plain(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/'.$leaf()[1].'/cert.pem', self::leafPem($signed($index)), $account, $group, '0600'),
             'copylink' => RouteHostSteps::link(rtrim($home, '/').'/.orbit/certificates/'.$leaf()[0].'/current', $leaf()[1], $account, $group),
-            'trust' => ['state' => 'present', 'name' => RouteHostSteps::TrustName, 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
+            'trust' => ['state' => 'present', 'name' => RouteHostSteps::trustName(ValidatedData::string($plan['root_certificate'])), 'certificate' => ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]],
                 'owner' => ['user' => 'root', 'group' => 'root', 'mode' => '0644']],
+            'unlink' => RouteHostSteps::absent(ValidatedData::string($this->hostInput($plan, $node, 'read-'.substr($part, strlen('unlink-')), $output)['path'])),
             // A read names the file its write replaces: the Caddyfile, or the pool at an index.
             'read' => RouteHostSteps::read($part === 'read-caddy' ? RouteHostSteps::Caddyfile : ValidatedData::string(RouteHostSteps::pools(
                 self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')), $group, $home, static fn (): ?string => null)['files'][(int) substr($part, strlen('read-pool-'))]['path'] ?? null)),

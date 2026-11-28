@@ -343,6 +343,12 @@ final readonly class Engine
                 if (! $ready && ! $overdue) {
                     continue;
                 }
+                // A Node step the kind's recorded outputs do not ask for is done without an order (EngineSkip).
+                if ($ready && $step->node_id > 0 && $definition instanceof EngineSkip && $definition->skips($operation, $step->name, new EngineRun($operation->id, $steps, 0, null))) {
+                    $step->update(['status' => 'done', 'done_ms' => $now]);
+
+                    continue;
+                }
                 // A wait keeps its time on the step and its deadline on the bus: nothing holds a process, so a restart resumes
                 // what is left, and a cancel ends the run before the step runs.
                 $wait = $until($step);

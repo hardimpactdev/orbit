@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineSkip;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\SignedExecutorOrder;
@@ -68,9 +69,15 @@ final class RouteCreateReceiptBus implements MachineBus
 }
 
 /** route.create's two Node steps on one Node, with its actions: not a receipt-bound kind. */
-final class RouteCreateReceiptDefinition implements EngineDefinition
+final class RouteCreateReceiptDefinition implements EngineDefinition, EngineSkip
 {
     public static ?string $finished = null;
+
+    /** The site step is skipped when the request's recorded output says so, as an unlink step is when its read found no link. */
+    public function skips(Operation $operation, string $step, EngineRun $run): bool
+    {
+        return str_starts_with($step, 'site-') && $run->output('csr-0') === 'SKIP-SITE';
+    }
 
     public function __construct(private int $node) {}
 
@@ -156,3 +163,12 @@ it('records a file.read receipt in the executor\'s shape as the step output whos
     'a link, which has no digest' => ['{"state":"present","type":"symlink","uid":0,"gid":0,"mode":"0777"}', null],
     'nothing at the path' => ['{"state":"absent"}', null],
 ]);
+
+it('marks a Node step the kind skips done without an order, and the run goes on', function (): void {
+    ($this->receipt)('csr-0', ['status' => 'output', 'stdout' => 'SKIP-SITE']);
+
+    $site = OperationEngineStep::query()->where('operation_id', $this->operation->id)->where('name', $this->site)->firstOrFail();
+    expect($this->bus->sent)->toBe(['csr-0' => 1])
+        ->and($site->status)->toBe('done')->and($site->sends)->toBe(0)
+        ->and(RouteCreateReceiptDefinition::$finished)->toBe('succeeded');
+});

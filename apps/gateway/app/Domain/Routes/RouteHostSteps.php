@@ -22,9 +22,9 @@ final readonly class RouteHostSteps
     public const string DnsLock = '/run/lock/orbit-dnsmasq.lock';
 
     /**
-     * config.apply's recovery folder, one per Node for every lock: the executor keeps each lock's record under
-     * `<sha256 of the lock path>/`, so the Caddy and DNS records never share a folder. It lies beside the executor's blob
-     * cache, outside every file a Route manages.
+     * config.apply's recovery folders lie beside the executor's blob cache, outside every file a Route manages. Each config.apply
+     * step has its own subfolder (`pool-install`, `pool-reload`, `caddy`, `dns`), so a pending record blocks only a replay of
+     * that same order, never another step's.
      */
     public const string RecoveryDir = '/var/lib/orbit/executor/config-recovery';
 
@@ -34,8 +34,31 @@ final readonly class RouteHostSteps
 
     public const string Catalog = '/var/lib/orbit/private-dns/catalog.json';
 
-    /** Where Caddy's trust of the Orbit root lives, as `route.publish_site` placed it. */
-    public const string TrustName = 'orbit-managed-root-ca.crt';
+    /**
+     * The trust source of an Orbit root, named after its certificate's fingerprint: a new root gets a new name and so its own
+     * subject-hash link, as `route.publish_site`'s replacement did. Other roots in the store are left as they are.
+     */
+    public static function trustName(string $pem): string
+    {
+        $body = preg_replace('/-----(BEGIN|END) CERTIFICATE-----|\s+/', '', $pem);
+        $der = base64_decode((string) $body, true);
+
+        return 'orbit-managed-root-ca-'.substr(hash('sha256', $der === false ? $pem : $der), 0, 16).'.crt';
+    }
+
+    /** @return array{state: string, path: string} */
+    public static function absent(string $path): array
+    {
+        return ['state' => 'absent', 'path' => $path];
+    }
+
+    /** Whether a recorded `file.read` found a link at the path: the write removes it first, never following it. */
+    public static function linked(?string $read): bool
+    {
+        $answer = is_string($read) ? json_decode($read, true) : null;
+
+        return is_array($answer) && ($answer['state'] ?? null) === 'present' && ($answer['type'] ?? null) === 'symlink';
+    }
 
     /** The configuration dnsmasq.service loads: Debian's unit reads the folder without its package leftovers. */
     private const array DnsmasqSkip = ['.dpkg-dist', '.dpkg-old', '.dpkg-new'];
@@ -48,9 +71,9 @@ final readonly class RouteHostSteps
      * @param  list<array{unit: string, load: string}>  $units
      * @return array<string, mixed>
      */
-    public static function apply(string $lock, array $files, array $validators, array $units = []): array
+    public static function apply(string $lock, string $step, array $files, array $validators, array $units = []): array
     {
-        return ['lock' => $lock, 'recovery_dir' => self::RecoveryDir, 'files' => $files, 'validators' => $validators, 'units' => $units];
+        return ['lock' => $lock, 'recovery_dir' => self::RecoveryDir.'/'.$step, 'files' => $files, 'validators' => $validators, 'units' => $units];
     }
 
     /**
@@ -108,7 +131,7 @@ final readonly class RouteHostSteps
      */
     public static function caddy(string $content, ?string $from): array
     {
-        return self::apply(self::CaddyLock, [self::file(self::Caddyfile, $content, $from, 'root', 'caddy', '0640')],
+        return self::apply(self::CaddyLock, 'caddy', [self::file(self::Caddyfile, $content, $from, 'root', 'caddy', '0640')],
             [['kind' => 'caddy', 'config' => self::Caddyfile, 'user' => 'caddy']], [['unit' => 'caddy.service', 'load' => 'reload']]);
     }
 
@@ -120,7 +143,7 @@ final readonly class RouteHostSteps
      */
     public static function dns(string $records, string $catalog, ?string $recordsFrom, ?string $catalogFrom): array
     {
-        return self::apply(self::DnsLock, [
+        return self::apply(self::DnsLock, 'dns', [
             self::file(self::Records, $records, $recordsFrom, 'root', 'root', '0644'),
             self::file(self::Catalog, $catalog, $catalogFrom, 'root', 'root', '0644'),
         ], [['kind' => 'dnsmasq', 'conf_file' => '/etc/dnsmasq.conf', 'conf_dir' => '/etc/dnsmasq.d', 'skip_suffixes' => self::DnsmasqSkip]],
