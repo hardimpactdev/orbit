@@ -151,10 +151,10 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
-            | Action::ConfigApply | Action::HttpProbe => host(order),
+            Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure | Action::ConfigApply | Action::HttpProbe => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
             Action::SystemdUnitRestart | Action::SystemdUnitSignal => unit_once(order),
+            Action::GitFetch | Action::GitCheckout | Action::GitRefEnsure | Action::GitWorktreeRead => git(order),
             Action::IncusInstanceEnsure | Action::IncusAclEnsure | Action::IncusDeviceEnsure | Action::IncusVolumeEnsure => incus(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
@@ -433,6 +433,26 @@ fn unit_once(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |stdout| Outcome::Output { stdout },
+    )
+}
+
+/// The git family (ADR 0271 N3): one repository, work tree or ref per order, every path, ref and URL from the input. Each
+/// answers its JSON in the receipt's output; a failure's code goes to the Gateway, its detail only to the log.
+fn git(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_git::NodeSystem::new(bus::BLOBS_PATH);
+    let input = order.input();
+    let answer = match order.action() {
+        Action::GitFetch => orbit_executor_git::fetch(&system, input).map(|fetched| serde_json::json!(fetched)),
+        Action::GitCheckout => orbit_executor_git::checkout(&system, input).map(|checked| serde_json::json!(checked)),
+        Action::GitRefEnsure => orbit_executor_git::ref_ensure(&system, input).map(|ensured| serde_json::json!(ensured)),
+        _ => orbit_executor_git::worktree_read(&system, input).map(|read| serde_json::json!(read)),
+    };
+    answer.map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |answer| Outcome::Output { stdout: answer.to_string() },
     )
 }
 

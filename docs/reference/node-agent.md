@@ -32,12 +32,15 @@ Recent agent versions changed the executor as follows. This tree builds agent `0
 - **Account read:** Agent `0.37.0` adds `account.read`, which reads one account's uid, primary group and home through the host's NSS ([the host family](/reference/executor#the-host-family)).
 - **ACL tree scope:** Agent `0.38.0` adds `scope: tree` to `posix.acl.ensure`, one entry over one folder tree, and reports the `posix.acl.tree` feature ([the host family](/reference/executor#the-host-family)).
 - **ACL read-back:** Agent `0.38.0` makes `posix.acl.ensure` read and write each list through the path's own descriptor and take a `user` or a `group`. It answers its changes and skipped paths as output.
-Later versions add catalogue primitives.
+
+The Incus and Git families follow, each on app-dev Nodes only.
 
 - **Incus instance:** Agent `0.39.0` turns on the [incus family](/reference/executor#the-incus-family) on app-dev Nodes with `incus.instance.ensure`, one Incus instance through the Incus API over its unix socket.
-- **Unit restart and signal:** Agent `0.45.0` adds `systemd.unit.restart` and `systemd.unit.signal` to the host family, one run of one unit restarted or signalled at most once per order ([the host family](/reference/executor#the-host-family)).
+- **Git primitives:** Agent `0.41.0` adds the [git family](/reference/executor#the-git-family) with `git.fetch`, `git.checkout`, `git.ref.ensure` and `git.worktree.read` on app-dev Nodes.
 
 Agent `0.40.0` adds `incus.acl.ensure`, `incus.device.ensure` and `incus.volume.ensure` to the [incus family](/reference/executor#the-incus-family) on app-dev. They speak the Incus API over its socket.
+
+Agent `0.45.0` adds `systemd.unit.restart` and `systemd.unit.signal` to the [host family](/reference/executor#the-host-family): one run of one unit, restarted or signalled at most once per order.
 
 The pinned executor has the host catalogue primitives `config.apply`, `file.ensure` (with a host-side `source_path`), `dotenv.ensure`, `posix.acl.ensure`, `ca.trust.ensure`, `systemd.unit.ensure` and `http.probe`.
 

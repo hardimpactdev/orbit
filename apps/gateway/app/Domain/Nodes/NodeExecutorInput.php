@@ -33,10 +33,12 @@ final readonly class NodeExecutorInput
      * primitives (files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes) that the Route flows compose
      * (ADR 0271, Actions that predate the rule), so it goes where Route steps run: app-dev and vpn. `incus` holds the Incus primitives (instances, network
      * ACLs, instance devices, storage volumes) and goes where Incus holds the instances: app-dev.
+     * `git` holds the Git primitives (one ref fetched, one work tree's branch, one ref compared and set, one work tree read) that
+     * replace the Instance checkout and task sync actions, which run on app-dev only.
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'host', 'incus', 'instance', 'power', 'process', 'proof', 'route'], RoleName::Vpn->value => ['dns', 'host'],
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'git', 'host', 'incus', 'instance', 'power', 'process', 'proof', 'route'], RoleName::Vpn->value => ['dns', 'host'],
         // The Gateway's own Node runs the executor too: it joins the bus and reports its clock (ADR 0271 N7).
         RoleName::Gateway->value => ['proof']];
 
@@ -46,7 +48,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0', 'process' => '0.31.0', 'host' => '0.36.0', 'incus' => '0.39.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0', 'process' => '0.31.0', 'host' => '0.36.0', 'incus' => '0.39.0', 'git' => '0.41.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
