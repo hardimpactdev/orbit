@@ -319,7 +319,10 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::HttpProbe
             | orbit_executor_core::action::Action::FileRead
             | orbit_executor_core::action::Action::AccountRead
-            | orbit_executor_core::action::Action::IncusInstanceEnsure => {
+            | orbit_executor_core::action::Action::IncusInstanceEnsure
+            | orbit_executor_core::action::Action::IncusAclEnsure
+            | orbit_executor_core::action::Action::IncusDeviceEnsure
+            | orbit_executor_core::action::Action::IncusVolumeEnsure => {
                 panic!("power actions only")
             }
         }

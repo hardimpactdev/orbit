@@ -2,18 +2,36 @@
 //! through the Incus REST API over its unix socket. No primitive here runs the `incus` command.
 //!
 //! - [`instance_ensure`] (`incus.instance.ensure`): one Incus instance, copied from a snapshot, running, stopped or absent.
+//! - [`acl_ensure`] (`incus.acl.ensure`): one network ACL in one project, or its absence.
+//! - [`device_ensure`] (`incus.device.ensure`): one device key of one instance, or its absence.
+//! - [`volume_ensure`] (`incus.volume.ensure`): one custom storage volume copied from a source volume or snapshot, or its absence.
 //!
 //! The Gateway sends every project, instance, snapshot and profile name. The socket is the Incus default unless the input
 //! names another one.
 
+mod acl;
 mod api;
+mod device;
 mod instance;
+mod volume;
 
+#[cfg(test)]
+mod resource_tests;
 #[cfg(test)]
 mod tests;
 
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+
+use regex::Regex;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+pub use acl::acl_ensure;
 pub use api::NodeSystem;
+pub use device::device_ensure;
 pub use instance::instance_ensure;
+pub use volume::volume_ensure;
 
 /// Why a primitive failed: a stable code, and a detail for the executor's log only.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,4 +49,71 @@ impl Failure {
             detail: detail.into(),
         }
     }
+}
+
+/// The Incus daemon's own socket when the input names none.
+pub const DEFAULT_SOCKET: &str = "/var/lib/incus/unix.socket";
+
+/// A project, pool, instance, volume, snapshot, ACL or device name: one URL path part, never `.`, `..` or a separator.
+pub(crate) static NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$").expect("a valid pattern"));
+
+/// Whether the resource must exist or be gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum State {
+    Present,
+    Absent,
+}
+
+/// Parses an input into its typed shape; an unknown field or a wrong type refuses before any request.
+pub(crate) fn input<T: DeserializeOwned>(input: &Value) -> Result<T, Failure> {
+    serde_json::from_value(input.clone())
+        .map_err(|error| Failure::new("incus.input_invalid", error.to_string()))
+}
+
+/// Checks each name, the socket and the time limit, and opens the client.
+pub(crate) fn connect(
+    socket: Option<&str>,
+    timeout_ms: u64,
+    names: &[&str],
+) -> Result<NodeSystem, Failure> {
+    if let Some(name) = names.iter().find(|name| !NAME.is_match(name)) {
+        return Err(Failure::new(
+            "incus.input_invalid",
+            format!("{name:?} is not an Incus name"),
+        ));
+    }
+    if !(1_000..=600_000).contains(&timeout_ms) {
+        return Err(Failure::new(
+            "incus.input_invalid",
+            "timeout_ms is outside 1000..=600000",
+        ));
+    }
+    let socket = socket.unwrap_or(DEFAULT_SOCKET);
+    if !socket.starts_with('/')
+        || socket
+            .split('/')
+            .skip(1)
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(Failure::new(
+            "incus.input_invalid",
+            "socket is not a plain absolute path",
+        ));
+    }
+    Ok(NodeSystem::new(socket, Instant::now() + Duration::from_millis(timeout_ms)))
+}
+
+/// A value Incus stores as given: not empty, which Incus reads as unset, and not padded, which it trims.
+pub(crate) fn plain(value: &str) -> bool {
+    !value.is_empty() && value.trim() == value
+}
+
+/// The read-back after a change found the resource other than asked.
+pub(crate) fn not_converged(what: &str) -> Failure {
+    Failure::new(
+        "incus.not_converged",
+        format!("{what} reads back other than asked"),
+    )
 }
