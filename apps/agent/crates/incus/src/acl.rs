@@ -70,7 +70,7 @@ struct Rule {
 ///
 /// # Errors
 ///
-/// `incus.input_invalid`, `incus.acl_in_use`, `incus.unreachable`, `incus.timeout`, `incus.api_failed` or
+/// `incus.input_invalid`, `incus.acl_in_use`, `incus.operation_timeout`, `incus.api_failed` or
 /// `incus.not_converged`.
 pub fn acl_ensure(raw: &Value) -> Result<u32, Failure> {
     let input: Input = input(raw)?;

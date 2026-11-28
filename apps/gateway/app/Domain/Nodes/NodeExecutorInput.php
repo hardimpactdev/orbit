@@ -31,9 +31,8 @@ final readonly class NodeExecutorInput
      * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`). `process`
      * (Process start and stop, Node-timer enable) is on app-dev only; app-prod joins in a later rollout. `host` holds the host-resource
      * primitives (files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes) that the Route flows compose
-     * (ADR 0271, Actions that predate the rule), so it goes where Route steps run: app-dev and vpn.
-     * `incus` holds the Incus primitives (network ACLs, instance devices, storage volumes) that the Instance flows compose; Incus
-     * runs on app-dev only.
+     * (ADR 0271, Actions that predate the rule), so it goes where Route steps run: app-dev and vpn. `incus` holds the Incus primitives (instances, network
+     * ACLs, instance devices, storage volumes) and goes where Incus holds the instances: app-dev.
      *
      * @var array<string, list<string>>
      */
@@ -47,7 +46,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0', 'process' => '0.31.0', 'host' => '0.36.0', 'incus' => '0.40.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0', 'process' => '0.31.0', 'host' => '0.36.0', 'incus' => '0.39.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array

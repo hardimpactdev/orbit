@@ -1,42 +1,37 @@
-//! The incus family of the executor (ADR 0271 N3): desired-state primitives on one Incus resource each, through the Incus
-//! REST API on its unix socket. No Incus command runs.
+//! The incus family of the executor (ADR 0271 N3; docs/reference/executor.md#primitives): primitives on one Incus resource,
+//! through the Incus REST API over its unix socket. No primitive here runs the `incus` command.
 //!
+//! - [`instance_ensure`] (`incus.instance.ensure`): one Incus instance, copied from a snapshot, running, stopped or absent.
 //! - [`acl_ensure`] (`incus.acl.ensure`): one network ACL in one project, or its absence.
 //! - [`device_ensure`] (`incus.device.ensure`): one device key of one instance, or its absence.
 //! - [`volume_ensure`] (`incus.volume.ensure`): one custom storage volume copied from a source volume or snapshot, or its absence.
 //!
-//! Every project, pool, name, device and rule comes from the Gateway. Each primitive reads the resource, changes only what
-//! differs, reads it back and answers the number of changes; a repeat answers 0. Every request and every wait for a
-//! background operation shares one deadline, `timeout_ms` from the input.
+//! The Gateway sends every project, instance, snapshot and profile name. The socket is the Incus default unless the input
+//! names another one.
 
 mod acl;
-mod client;
+mod api;
 mod device;
+mod instance;
 mod volume;
 
 #[cfg(test)]
+mod resource_tests;
+#[cfg(test)]
 mod tests;
 
-use std::path::PathBuf;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub use acl::acl_ensure;
+pub use api::NodeSystem;
 pub use device::device_ensure;
+pub use instance::instance_ensure;
 pub use volume::volume_ensure;
-
-use client::Client;
-
-/// The Incus daemon's own socket when the input names none.
-pub const DEFAULT_SOCKET: &str = "/var/lib/incus/unix.socket";
-
-/// A project, pool, instance, volume, snapshot, ACL or device name: one URL path part, never `.`, `..` or a separator.
-pub(crate) static NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$").expect("a valid pattern"));
 
 /// Why a primitive failed: a stable code, and a detail for the executor's log only.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +50,13 @@ impl Failure {
         }
     }
 }
+
+/// The Incus daemon's own socket when the input names none.
+pub const DEFAULT_SOCKET: &str = "/var/lib/incus/unix.socket";
+
+/// A project, pool, instance, volume, snapshot, ACL or device name: one URL path part, never `.`, `..` or a separator.
+pub(crate) static NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$").expect("a valid pattern"));
 
 /// Whether the resource must exist or be gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -75,7 +77,7 @@ pub(crate) fn connect(
     socket: Option<&str>,
     timeout_ms: u64,
     names: &[&str],
-) -> Result<Client, Failure> {
+) -> Result<NodeSystem, Failure> {
     if let Some(name) = names.iter().find(|name| !NAME.is_match(name)) {
         return Err(Failure::new(
             "incus.input_invalid",
@@ -100,10 +102,7 @@ pub(crate) fn connect(
             "socket is not a plain absolute path",
         ));
     }
-    Ok(Client::new(
-        PathBuf::from(socket),
-        Duration::from_millis(timeout_ms),
-    ))
+    Ok(NodeSystem::new(socket, Instant::now() + Duration::from_millis(timeout_ms)))
 }
 
 /// A value Incus stores as given: not empty, which Incus reads as unset, and not padded, which it trims.

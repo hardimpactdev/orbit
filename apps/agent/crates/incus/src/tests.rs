@@ -1,674 +1,648 @@
-//! The primitives against a fake Incus: a unix socket in a scratch folder that answers scripted replies in order and
-//! records each request.
+//! `incus.instance.ensure` against a fake Incus that answers its REST API on a unix socket in a scratch folder.
 
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Read as _, Write as _};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
-use super::*;
+use super::instance::SOURCE_KEY;
+use super::instance_ensure;
 
-/// One request the fake saw: method, path, `If-Match`, the body's length and the body as JSON.
-#[derive(Debug, Clone)]
-struct Seen {
-    method: String,
-    path: String,
-    if_match: Option<String>,
-    length: usize,
-    body: Value,
+/// How the fake finishes a background operation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ops {
+    Succeed,
+    Fail,
+    /// Still running when the wait ends.
+    Hang,
 }
 
-/// One scripted answer: status and JSON body, or a silence that never answers.
-enum Reply {
-    Json(u16, Value),
-    Chunked(u16, Value),
-    Silent,
-    /// A reply written one byte at a time, each after a pause: a server whose every read is short.
-    Drip(Duration, Value),
-    /// A reply after a delay, as Incus answers a wait only when its timeout ends.
-    After(Duration, Box<Reply>),
+struct State {
+    /// `(project, name)` to `(status, recorded source)`.
+    instances: BTreeMap<(String, String), (String, Option<String>)>,
+    ops: Ops,
+    /// A method and path prefix the fake answers with an Incus error.
+    refuse: Option<String>,
+    requests: Vec<String>,
+    pending: Option<Pending>,
+    /// Ephemeral instance names: a stop deletes them.
+    ephemeral: BTreeSet<String>,
+    /// Instance names to their expanded devices.
+    devices: BTreeMap<String, Value>,
+    /// A method and path prefix the fake answers slowly, a few bytes at a time.
+    slow: Option<String>,
+    /// A delete finds the instance already gone: the fake removes it and answers 404.
+    gone_on_delete: bool,
 }
+
+/// What a background operation does to the fake when it finishes.
+type Pending = Box<dyn FnOnce(&mut State) + Send>;
 
 struct Fake {
     _dir: tempfile::TempDir,
-    socket: PathBuf,
-    seen: Arc<Mutex<Vec<Seen>>>,
+    socket: String,
+    state: Arc<Mutex<State>>,
 }
 
 impl Fake {
-    fn new(replies: Vec<Reply>) -> Self {
+    fn new() -> Self {
         let dir = tempfile::tempdir().expect("a scratch folder");
         let socket = dir.path().join("unix.socket");
-        let listener = UnixListener::bind(&socket).expect("a socket");
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&seen);
-        thread::spawn(move || {
-            for reply in replies {
-                let Ok((stream, _)) = listener.accept() else {
-                    return;
-                };
-                let mut reader = BufReader::new(stream.try_clone().expect("a stream"));
-                let mut line = String::new();
-                reader.read_line(&mut line).expect("a request line");
-                let mut parts = line.split_whitespace();
-                let (method, path) = (
-                    parts.next().unwrap_or("").to_owned(),
-                    parts.next().unwrap_or("").to_owned(),
-                );
-                let (mut length, mut if_match) = (0, None);
-                loop {
-                    let mut header = String::new();
-                    reader.read_line(&mut header).expect("a header");
-                    if header == "\r\n" {
-                        break;
-                    }
-                    let (name, value) = header.split_once(':').expect("a header");
-                    match name.to_ascii_lowercase().as_str() {
-                        "content-length" => length = value.trim().parse().expect("a length"),
-                        "if-match" => if_match = Some(value.trim().to_owned()),
-                        _ => {}
-                    }
-                }
-                let mut body = vec![0; length];
-                reader.read_exact(&mut body).expect("a body");
-                let body = if body.is_empty() {
-                    Value::Null
-                } else {
-                    serde_json::from_slice(&body).expect("JSON")
-                };
-                log.lock().expect("the log").push(Seen {
-                    method,
-                    path,
-                    if_match,
-                    length,
-                    body,
-                });
-                let mut stream = stream;
-                let reply = match reply {
-                    Reply::After(delay, reply) => {
-                        thread::sleep(delay);
-                        *reply
-                    }
-                    reply => reply,
-                };
-                match reply {
-                    Reply::Json(status, value) => {
-                        let text = value.to_string();
-                        let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nETag: \"e1\"\r\nContent-Length: {}\r\n\r\n{text}", text.len());
-                    }
-                    Reply::Chunked(status, value) => {
-                        let text = value.to_string();
-                        let (a, b) = text.split_at(text.len() / 2);
-                        let _ = write!(stream, "HTTP/1.1 {status} X\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{a}\r\n{:x}\r\n{b}\r\n0\r\n\r\n", a.len(), b.len());
-                    }
-                    Reply::Drip(pause, value) => {
-                        let text = value.to_string();
-                        let answer = format!("HTTP/1.1 200 X\r\nContent-Length: {}\r\n\r\n{text}", text.len());
-                        for byte in answer.bytes() {
-                            thread::sleep(pause);
-                            if stream.write_all(&[byte]).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Reply::Silent | Reply::After(..) => thread::sleep(Duration::from_secs(5)),
-                }
+        let listener = UnixListener::bind(&socket).expect("the fake socket");
+        let mut instances = BTreeMap::new();
+        instances.insert(
+            ("seeds".to_owned(), "seed".to_owned()),
+            ("Stopped".to_owned(), None),
+        );
+        let state = Arc::new(Mutex::new(State {
+            instances,
+            ops: Ops::Succeed,
+            refuse: None,
+            requests: Vec::new(),
+            pending: None,
+            ephemeral: BTreeSet::new(),
+            devices: BTreeMap::new(),
+            slow: None,
+            gone_on_delete: false,
+        }));
+        let shared = Arc::clone(&state);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { return };
+                serve(stream, &shared);
             }
         });
         Self {
             _dir: dir,
-            socket,
-            seen,
+            socket: socket.display().to_string(),
+            state,
         }
     }
 
-    fn socket(&self) -> String {
-        self.socket.display().to_string()
-    }
-
-    fn seen(&self) -> Vec<Seen> {
-        self.seen.lock().expect("the log").clone()
-    }
-}
-
-fn ok(metadata: Value) -> Reply {
-    let mut envelope = json!({"type": "sync", "status_code": 200});
-    envelope["metadata"] = metadata;
-    Reply::Json(200, envelope)
-}
-
-fn missing() -> Reply {
-    Reply::Json(
-        404,
-        json!({"type": "error", "error_code": 404, "error": "not found"}),
-    )
-}
-
-fn queued() -> Reply {
-    Reply::Json(
-        202,
-        json!({"type": "async", "status_code": 100, "operation": "/1.0/operations/op1"}),
-    )
-}
-
-fn finished(code: u64) -> Reply {
-    ok(
-        json!({"status_code": code, "status": if code == 200 { "Success" } else { "Failure" }, "err": if code == 200 { "" } else { "copy failed" }}),
-    )
-}
-
-fn rule() -> Value {
-    json!({"action": "allow", "state": "enabled", "destination": "10.0.0.1", "protocol": "tcp", "destination_port": "443"})
-}
-
-/// The rule as Incus answers it: every field, empty when unset.
-fn stored_rule() -> Value {
-    json!({"action": "allow", "state": "enabled", "description": "", "source": "", "destination": "10.0.0.1", "protocol": "tcp",
-        "source_port": "", "destination_port": "443", "icmp_type": "", "icmp_code": ""})
-}
-
-fn acl(fake: &Fake, state: &str) -> Value {
-    let mut input = json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": state, "timeout_ms": 2000});
-    if state == "present" {
-        input["egress"] = json!([rule()]);
-    }
-    input
-}
-
-fn stored_acl(used_by: Value) -> Value {
-    let mut acl = json!({"name": "a1", "description": "", "config": {}, "ingress": [], "egress": [stored_rule()]});
-    acl["used_by"] = used_by;
-    acl
-}
-
-#[test]
-fn acl_present_creates_and_reads_back() {
-    let fake = Fake::new(vec![missing(), ok(json!({})), ok(stored_acl(json!([])))]);
-    assert_eq!(acl_ensure(&acl(&fake, "present")), Ok(1));
-    let seen = fake.seen();
-    assert_eq!(
-        (seen[0].method.as_str(), seen[0].path.as_str()),
-        ("GET", "/1.0/network-acls/a1?project=p1")
-    );
-    assert_eq!(
-        (seen[1].method.as_str(), seen[1].path.as_str()),
-        ("POST", "/1.0/network-acls?project=p1")
-    );
-    assert_eq!(seen[1].body["name"], "a1");
-    assert_eq!(seen[1].body["egress"][0]["destination_port"], "443");
-    assert_eq!(seen[2].method, "GET");
-}
-
-#[test]
-fn acl_repeat_answers_zero() {
-    let fake = Fake::new(vec![Reply::Chunked(
-        200,
-        json!({"type": "sync", "metadata": stored_acl(json!([]))}),
-    )]);
-    assert_eq!(acl_ensure(&acl(&fake, "present")), Ok(0));
-    assert_eq!(fake.seen().len(), 1);
-}
-
-#[test]
-fn acl_that_differs_is_replaced_under_its_etag() {
-    let mut old = stored_acl(json!([]));
-    old["egress"] = json!([]);
-    let fake = Fake::new(vec![ok(old), ok(json!({})), ok(stored_acl(json!([])))]);
-    assert_eq!(acl_ensure(&acl(&fake, "present")), Ok(1));
-    let seen = fake.seen();
-    assert_eq!(
-        (seen[1].method.as_str(), seen[1].if_match.as_deref()),
-        ("PUT", Some("\"e1\""))
-    );
-}
-
-#[test]
-fn acl_absent_deletes_only_an_unused_acl() {
-    let fake = Fake::new(vec![ok(stored_acl(json!([]))), ok(json!({})), missing()]);
-    assert_eq!(acl_ensure(&acl(&fake, "absent")), Ok(1));
-    assert_eq!(
-        (fake.seen()[1].method.as_str(), fake.seen()[1].path.as_str()),
-        ("DELETE", "/1.0/network-acls/a1?project=p1")
-    );
-    // A DELETE carries no body: Incus answers without reading one, and an unread body resets the connection.
-    assert_eq!(fake.seen()[1].length, 0);
-
-    let fake = Fake::new(vec![missing()]);
-    assert_eq!(acl_ensure(&acl(&fake, "absent")), Ok(0));
-
-    let fake = Fake::new(vec![ok(stored_acl(json!(["/1.0/instances/c1"])))]);
-    assert_eq!(
-        acl_ensure(&acl(&fake, "absent")).map_err(|failure| failure.code),
-        Err("incus.acl_in_use")
-    );
-    assert_eq!(fake.seen().len(), 1);
-}
-
-#[test]
-fn acl_refuses_unknown_fields_bad_names_and_rules_before_any_request() {
-    let fake = Fake::new(vec![]);
-    for input in [
-        json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": "present", "timeout_ms": 2000, "command": "rm"}),
-        json!({"socket": fake.socket(), "project": "p1", "name": "../a1", "state": "present", "timeout_ms": 2000}),
-        json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": "present", "timeout_ms": 0}),
-        json!({"socket": "relative.socket", "project": "p1", "name": "a1", "state": "present", "timeout_ms": 2000}),
-        json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": "present", "timeout_ms": 2000, "egress": [{"action": "run", "state": "enabled"}]}),
-        json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": "present", "timeout_ms": 2000, "egress": [{"action": "allow", "state": "enabled", "argv": "x"}]}),
-        json!({"socket": fake.socket(), "project": "p1", "name": "a1", "state": "absent", "timeout_ms": 2000, "egress": [rule()]}),
-    ] {
-        assert_eq!(
-            acl_ensure(&input).map_err(|failure| failure.code),
-            Err("incus.input_invalid"),
-            "{input}"
+    fn with(&self, project: &str, name: &str, status: &str, source: Option<&str>) {
+        self.state.lock().expect("state").instances.insert(
+            (project.to_owned(), name.to_owned()),
+            (status.to_owned(), source.map(str::to_owned)),
         );
     }
-    assert!(fake.seen().is_empty());
+
+    fn status(&self, project: &str, name: &str) -> Option<String> {
+        self.state
+            .lock()
+            .expect("state")
+            .instances
+            .get(&(project.to_owned(), name.to_owned()))
+            .map(|found| found.0.clone())
+    }
+
+    fn changing(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .expect("state")
+            .requests
+            .iter()
+            .filter(|request| !request.starts_with("GET"))
+            .cloned()
+            .collect()
+    }
+
+    fn order(&self, extra: &Value) -> Value {
+        let mut order = json!({"socket": self.socket, "project": "throwaway", "name": "copy-1", "timeout_seconds": 5});
+        for (key, value) in extra.as_object().expect("an object") {
+            order[key] = value.clone();
+        }
+        order
+    }
 }
 
-#[test]
-fn an_api_error_and_a_wrong_read_back_fail() {
-    let fake = Fake::new(vec![
-        missing(),
-        Reply::Json(
-            400,
-            json!({"type": "error", "error_code": 400, "error": "bad rule"}),
-        ),
-    ]);
-    assert_eq!(
-        acl_ensure(&acl(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.api_failed")
-    );
-
-    let fake = Fake::new(vec![missing(), ok(json!({})), ok(json!({"egress": []}))]);
-    assert_eq!(
-        acl_ensure(&acl(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.not_converged")
-    );
-
-    let fake = Fake::new(vec![Reply::Json(
-        500,
-        json!({"type": "error", "error": "database"}),
-    )]);
-    assert_eq!(
-        acl_ensure(&acl(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.api_failed")
-    );
+fn copy_order(fake: &Fake, state: &str) -> Value {
+    fake.order(&json!({"state": state, "source": {"project": "seeds", "instance": "seed", "snapshot": "base"}, "profiles": ["default"]}))
 }
 
-#[test]
-fn a_missing_socket_is_unreachable() {
-    let input = json!({"socket": "/nonexistent/unix.socket", "project": "p1", "name": "a1", "state": "absent", "timeout_ms": 2000});
-    assert_eq!(
-        acl_ensure(&input).map_err(|failure| failure.code),
-        Err("incus.unreachable")
-    );
-}
-
-#[test]
-fn a_silent_incus_times_out_within_the_input_bound() {
-    let fake = Fake::new(vec![Reply::Silent]);
-    let mut input = acl(&fake, "present");
-    input["timeout_ms"] = json!(1000);
-    let started = std::time::Instant::now();
-    assert_eq!(
-        acl_ensure(&input).map_err(|failure| failure.code),
-        Err("incus.timeout")
-    );
+fn serve(mut stream: UnixStream, state: &Mutex<State>) {
+    let mut raw = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let (head, body) = loop {
+        let read = stream.read(&mut buffer).expect("a request");
+        raw.extend_from_slice(&buffer[..read]);
+        if let Some(split) = raw.windows(4).position(|window| window == b"\r\n\r\n") {
+            let head = String::from_utf8(raw[..split].to_vec()).expect("UTF-8 headers");
+            let length: usize = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .map_or(0, |n| n.parse().expect("a length"));
+            while raw.len() < split + 4 + length {
+                let read = stream.read(&mut buffer).expect("a body");
+                raw.extend_from_slice(&buffer[..read]);
+            }
+            break (
+                head,
+                String::from_utf8(raw[split + 4..].to_vec()).expect("a UTF-8 body"),
+            );
+        }
+    };
+    let line = head.lines().next().expect("a request line");
     assert!(
-        started.elapsed() < Duration::from_secs(3),
-        "bounded by timeout_ms"
+        line.ends_with(" HTTP/1.0"),
+        "one request per connection: {line}"
     );
-}
-
-fn instance(devices: Value) -> Value {
-    let mut instance = json!({"name": "c1", "status": "Stopped", "architecture": "x86_64", "config": {"limits.cpu": "1"},
-        "ephemeral": false, "profiles": ["default"], "stateful": false, "description": "", "expanded_devices": {"root": {}}});
-    instance["devices"] = devices;
-    instance
-}
-
-fn device(fake: &Fake, state: &str) -> Value {
-    let mut input = json!({"socket": fake.socket(), "project": "p1", "instance": "c1", "device": "data", "state": state, "timeout_ms": 2000});
-    if state == "present" {
-        input["config"] = json!({"type": "disk", "pool": "pool1", "source": "v1", "path": "/data"});
+    let mut parts = line.split(' ');
+    let (method, target) = (
+        parts.next().expect("a method"),
+        parts.next().expect("a target"),
+    );
+    let body: Value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&body).expect("a JSON body")
+    };
+    let (code, envelope) = answer(&mut state.lock().expect("state"), method, target, &body);
+    let slow = state.lock().expect("state").slow.as_ref().is_some_and(|slow| format!("{method} {target}").starts_with(slow.as_str()));
+    let text = envelope.to_string();
+    let reply = format!(
+        "HTTP/1.0 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{text}",
+        text.len()
+    );
+    if slow {
+        // Each fragment comes well within an idle read timeout, but the whole answer outlasts a 1 s order.
+        for fragment in reply.as_bytes().chunks(16) {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            if stream.write_all(fragment).is_err() {
+                return;
+            }
+        }
+        return;
     }
-    input
+    let _ = stream.write_all(reply.as_bytes());
 }
 
-fn data() -> Value {
-    json!({"type": "disk", "pool": "pool1", "source": "v1", "path": "/data"})
+fn sync(metadata: &Value) -> (u16, Value) {
+    (
+        200,
+        json!({"type": "sync", "status": "Success", "status_code": 200, "metadata": metadata}),
+    )
+}
+
+fn error(code: u16, message: &str) -> (u16, Value) {
+    (
+        code,
+        json!({"type": "error", "error": message, "error_code": code}),
+    )
+}
+
+fn answer(state: &mut State, method: &str, target: &str, body: &Value) -> (u16, Value) {
+    state.requests.push(format!("{method} {target} {body}"));
+    if state
+        .refuse
+        .as_ref()
+        .is_some_and(|refused| format!("{method} {target}").starts_with(refused.as_str()))
+    {
+        return error(500, "refused");
+    }
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let project = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("project="))
+        .unwrap_or("default")
+        .to_owned();
+    let segments: Vec<&str> = path.trim_start_matches("/1.0/").split('/').collect();
+    let accepted = (
+        202,
+        json!({"type": "async", "status": "Operation created", "status_code": 100, "operation": "/1.0/operations/op-1"}),
+    );
+    match (method, segments.as_slice()) {
+        ("GET", ["operations", _, "wait"]) => {
+            let status = match state.ops {
+                Ops::Succeed => "Success",
+                Ops::Fail => "Failure",
+                Ops::Hang => "Running",
+            };
+            if state.ops == Ops::Succeed {
+                if let Some(pending) = state.pending.take() {
+                    pending(state);
+                }
+            }
+            sync(
+                &json!({"id": "op-1", "status": status, "err": if status == "Failure" { "boom" } else { "" }}),
+            )
+        }
+        ("GET", ["instances", "seed", "snapshots", "base"]) if project == "seeds" => {
+            sync(&json!({"name": "base"}))
+        }
+        ("GET", ["instances", _, "snapshots", _]) => error(404, "Not Found"),
+        ("GET", ["instances", name]) => match state.instances.get(&(project, (*name).to_owned())) {
+            Some((status, source)) => {
+                let config = source
+                    .as_ref()
+                    .map_or_else(|| json!({}), |source| json!({SOURCE_KEY: source}));
+                let ephemeral = state.ephemeral.contains(*name);
+                let devices = state.devices.get(*name).cloned().unwrap_or_else(|| json!({"root": {"type": "disk", "path": "/", "pool": "default"}}));
+                sync(&json!({"name": name, "type": "container", "status": status, "config": config, "ephemeral": ephemeral, "expanded_devices": devices}))
+            }
+            None => error(404, "Instance not found"),
+        },
+        ("POST", ["instances"]) => {
+            let name = body["name"].as_str().expect("a name").to_owned();
+            let source = body["config"][SOURCE_KEY].as_str().map(str::to_owned);
+            state.pending = Some(Box::new(move |state: &mut State| {
+                state
+                    .instances
+                    .insert((project, name), ("Stopped".to_owned(), source));
+            }));
+            accepted
+        }
+        ("PUT", ["instances", name, "state"]) => {
+            let key = (project, (*name).to_owned());
+            let status = if body["action"] == "start" {
+                "Running"
+            } else {
+                "Stopped"
+            };
+            state.pending = Some(Box::new(move |state: &mut State| {
+                if status == "Stopped" && state.ephemeral.contains(&key.1) {
+                    state.instances.remove(&key);
+                } else if let Some(found) = state.instances.get_mut(&key) {
+                    status.clone_into(&mut found.0);
+                }
+            }));
+            accepted
+        }
+        ("DELETE", ["instances", name]) => {
+            let key = (project, (*name).to_owned());
+            if state.gone_on_delete {
+                state.instances.remove(&key);
+                return error(404, "Instance not found");
+            }
+            if state
+                .instances
+                .get(&key)
+                .is_some_and(|found| found.0 != "Stopped")
+            {
+                return error(400, "Instance is running");
+            }
+            state.pending = Some(Box::new(move |state: &mut State| {
+                state.instances.remove(&key);
+            }));
+            accepted
+        }
+        _ => error(404, "not found"),
+    }
 }
 
 #[test]
-fn device_present_writes_only_its_key_and_waits_for_the_operation() {
-    let other = json!({"eth0": {"type": "nic", "network": "br0"}});
-    let mut both = other.clone();
-    both["data"] = data();
-    let fake = Fake::new(vec![
-        ok(instance(other)),
-        queued(),
-        finished(200),
-        ok(instance(both.clone())),
-    ]);
-    assert_eq!(device_ensure(&device(&fake, "present")), Ok(1));
-    let seen = fake.seen();
+fn copies_a_snapshot_and_starts_it_then_a_repeat_changes_nothing() {
+    let fake = Fake::new();
+    assert_eq!(instance_ensure(&copy_order(&fake, "running")), Ok(2));
     assert_eq!(
-        (
-            seen[1].method.as_str(),
-            seen[1].path.as_str(),
-            seen[1].if_match.as_deref()
-        ),
-        ("PUT", "/1.0/instances/c1?project=p1", Some("\"e1\""))
+        fake.status("throwaway", "copy-1").as_deref(),
+        Some("Running")
     );
-    assert_eq!(seen[1].body["devices"], both);
-    assert_eq!(seen[1].body["config"], json!({"limits.cpu": "1"}));
-    assert!(seen[1].body.get("expanded_devices").is_none() && seen[1].body.get("status").is_none());
-    assert_eq!(seen[2].path, "/1.0/operations/op1/wait?timeout=1");
+    let changing = fake.changing();
+    assert_eq!(changing.len(), 2, "{changing:?}");
+    let copy: Value =
+        serde_json::from_str(changing[0].splitn(3, ' ').nth(2).expect("a body")).expect("JSON");
+    assert!(
+        changing[0].starts_with("POST /1.0/instances?project=throwaway "),
+        "{changing:?}"
+    );
+    assert_eq!(
+        copy["source"],
+        json!({"type": "copy", "source": "seed/base", "project": "seeds"})
+    );
+    assert_eq!(copy["profiles"], json!(["default"]));
+    assert_eq!(copy["config"][SOURCE_KEY], "seeds/seed/base");
+    assert!(
+        changing[1].starts_with("PUT /1.0/instances/copy-1/state?project=throwaway "),
+        "{changing:?}"
+    );
+
+    assert_eq!(instance_ensure(&copy_order(&fake, "running")), Ok(0));
+    assert_eq!(fake.changing().len(), 2, "a repeat sends no change");
 }
 
 #[test]
-fn device_repeat_answers_zero_and_absent_removes_only_its_key() {
-    let fake = Fake::new(vec![ok(instance(json!({"data": data()})))]);
-    assert_eq!(device_ensure(&device(&fake, "present")), Ok(0));
-
-    let fake = Fake::new(vec![
-        ok(instance(json!({"data": data(), "eth0": {"type": "nic"}}))),
-        ok(json!({})),
-        ok(instance(json!({"eth0": {"type": "nic"}}))),
-    ]);
-    assert_eq!(device_ensure(&device(&fake, "absent")), Ok(1));
+fn copies_a_snapshot_stopped() {
+    let fake = Fake::new();
+    assert_eq!(instance_ensure(&copy_order(&fake, "stopped")), Ok(1));
     assert_eq!(
-        fake.seen()[1].body["devices"],
-        json!({"eth0": {"type": "nic"}})
+        fake.status("throwaway", "copy-1").as_deref(),
+        Some("Stopped")
     );
-
-    let fake = Fake::new(vec![ok(instance(json!({"eth0": {"type": "nic"}})))]);
-    assert_eq!(device_ensure(&device(&fake, "absent")), Ok(0));
+    assert_eq!(instance_ensure(&copy_order(&fake, "stopped")), Ok(0));
 }
 
 #[test]
-fn device_refusals() {
-    let fake = Fake::new(vec![missing()]);
+fn starts_and_stops_an_existing_instance() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
     assert_eq!(
-        device_ensure(&device(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.instance_missing")
+        instance_ensure(&fake.order(&json!({"state": "running"}))),
+        Ok(1)
     );
+    assert_eq!(
+        fake.status("throwaway", "copy-1").as_deref(),
+        Some("Running")
+    );
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "running"}))),
+        Ok(0)
+    );
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "stopped"}))),
+        Ok(1)
+    );
+    assert_eq!(
+        fake.status("throwaway", "copy-1").as_deref(),
+        Some("Stopped")
+    );
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "stopped"}))),
+        Ok(0)
+    );
+    let changing = fake.changing();
+    assert!(
+        changing[1].contains(r#""action":"stop""#)
+            && changing[1].contains(r#""force":false"#)
+            && changing[1].contains(r#""timeout":"#),
+        "{changing:?}"
+    );
+}
 
-    let fake = Fake::new(vec![]);
-    let mut untyped = device(&fake, "present");
-    untyped["config"] = json!({"path": "/data"});
-    let mut absent_with_config = device(&fake, "present");
-    absent_with_config["state"] = json!("absent");
-    for input in [untyped, absent_with_config] {
+#[test]
+fn removes_exactly_the_named_instance() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    fake.with("throwaway", "copy-2", "Stopped", None);
+    fake.with("other", "copy-1", "Stopped", None);
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "absent"}))),
+        Ok(1)
+    );
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
+    assert_eq!(
+        fake.status("throwaway", "copy-2").as_deref(),
+        Some("Stopped")
+    );
+    assert_eq!(fake.status("other", "copy-1").as_deref(), Some("Stopped"));
+    assert_eq!(
+        fake.changing(),
+        vec!["DELETE /1.0/instances/copy-1?project=throwaway null".to_owned()]
+    );
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "absent"}))),
+        Ok(0)
+    );
+}
+
+#[test]
+fn removes_a_running_instance_only_with_force() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", None);
+    let refused = instance_ensure(&fake.order(&json!({"state": "absent"})))
+        .expect_err("a running instance needs force");
+    assert_eq!(refused.code, "incus.instance_running");
+    assert!(fake.changing().is_empty(), "a refusal changes nothing");
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))),
+        Ok(2)
+    );
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
+    assert!(
+        fake.changing()[0].contains(r#""force":true"#),
+        "{:?}",
+        fake.changing()
+    );
+}
+
+#[test]
+fn refuses_an_existing_instance_from_another_source() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", Some("seeds/seed/older"));
+    let refused = instance_ensure(&copy_order(&fake, "running")).expect_err("another source");
+    assert_eq!(refused.code, "incus.source_conflict");
+    fake.with("throwaway", "copy-1", "Running", None);
+    assert_eq!(
+        instance_ensure(&copy_order(&fake, "running"))
+            .expect_err("no recorded source")
+            .code,
+        "incus.source_conflict"
+    );
+    assert!(fake.changing().is_empty(), "a refusal changes nothing");
+}
+
+#[test]
+fn refuses_a_missing_instance_or_snapshot() {
+    let fake = Fake::new();
+    assert_eq!(
+        instance_ensure(&fake.order(&json!({"state": "running"})))
+            .expect_err("no source")
+            .code,
+        "incus.instance_missing"
+    );
+    let order = fake.order(&json!({"state": "running", "source": {"project": "seeds", "instance": "seed", "snapshot": "gone"}, "profiles": ["default"]}));
+    assert_eq!(
+        instance_ensure(&order).expect_err("no snapshot").code,
+        "incus.source_missing"
+    );
+    assert!(fake.changing().is_empty(), "a refusal changes nothing");
+}
+
+#[test]
+fn fails_on_api_errors_and_failed_operations() {
+    let fake = Fake::new();
+    fake.state.lock().expect("state").refuse = Some("POST /1.0/instances".to_owned());
+    assert_eq!(
+        instance_ensure(&copy_order(&fake, "running"))
+            .expect_err("refused")
+            .code,
+        "incus.api_failed"
+    );
+    fake.state.lock().expect("state").refuse = Some("GET /1.0/instances/copy-1".to_owned());
+    assert_eq!(
+        instance_ensure(&copy_order(&fake, "running"))
+            .expect_err("refused read")
+            .code,
+        "incus.api_failed"
+    );
+    let mut state = fake.state.lock().expect("state");
+    state.refuse = None;
+    state.ops = Ops::Fail;
+    drop(state);
+    assert_eq!(
+        instance_ensure(&copy_order(&fake, "running"))
+            .expect_err("failed")
+            .code,
+        "incus.operation_failed"
+    );
+    let missing = instance_ensure(
+        &json!({"socket": "/nonexistent/unix.socket", "project": "p", "name": "c", "state": "running", "timeout_seconds": 1}),
+    );
+    assert_eq!(missing.expect_err("no socket").code, "incus.api_failed");
+}
+
+#[test]
+fn fails_an_operation_that_outlasts_the_budget() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    fake.state.lock().expect("state").ops = Ops::Hang;
+    let started = Instant::now();
+    let failed = instance_ensure(&fake.order(&json!({"state": "running", "timeout_seconds": 1})))
+        .expect_err("timeout");
+    assert_eq!(failed.code, "incus.operation_timeout");
+    assert!(started.elapsed().as_secs() < 5, "bounded by the budget");
+    let wait = fake
+        .state
+        .lock()
+        .expect("state")
+        .requests
+        .iter()
+        .find(|request| request.contains("/wait?"))
+        .cloned();
+    assert!(
+        wait.is_some_and(|wait| wait.starts_with("GET /1.0/operations/op-1/wait?timeout=1 ")),
+        "the wait carries the budget"
+    );
+}
+
+#[test]
+fn fails_a_socket_that_never_answers_within_the_budget() {
+    let dir = tempfile::tempdir().expect("a scratch folder");
+    let socket = dir.path().join("unix.socket");
+    let listener = UnixListener::bind(&socket).expect("a silent socket");
+    let started = Instant::now();
+    let order = json!({"socket": socket.display().to_string(), "project": "p", "name": "c", "state": "running", "timeout_seconds": 1});
+    assert_eq!(
+        instance_ensure(&order).expect_err("silent").code,
+        "incus.operation_timeout"
+    );
+    assert!(started.elapsed().as_secs() < 5, "bounded by the budget");
+    drop(listener);
+}
+
+#[test]
+fn refuses_input_outside_its_shape() {
+    let fake = Fake::new();
+    let base = fake.order(&json!({"state": "running"}));
+    let cases = [
+        json!({"command": "incus delete --all"}),
+        json!({"argv": ["incus", "delete"]}),
+        json!({"name": "*"}),
+        json!({"name": "copy-*"}),
+        json!({"name": "../x"}),
+        json!({"project": "a/b"}),
+        json!({"project": ""}),
+        json!({"state": "frozen"}),
+        json!({"timeout_seconds": 0}),
+        json!({"timeout_seconds": 601}),
+        json!({"socket": "relative.socket"}),
+        json!({"socket": "/a/../b"}),
+        json!({"source": {"project": "seeds", "instance": "seed", "snapshot": "base"}}),
+        json!({"source": {"project": "seeds", "instance": "seed", "snapshot": "base"}, "profiles": []}),
+        json!({"source": {"project": "seeds", "instance": "seed", "snapshot": "*"}, "profiles": ["default"]}),
+        json!({"source": {"project": "seeds", "instance": "seed", "snapshot": "base", "extra": 1}, "profiles": ["default"]}),
+        json!({"state": "absent", "source": {"project": "seeds", "instance": "seed", "snapshot": "base"}, "profiles": ["default"]}),
+        json!({"profiles": ["default"]}),
+    ];
+    for case in cases {
+        let mut order = base.clone();
+        for (key, value) in case.as_object().expect("an object") {
+            order[key] = value.clone();
+        }
         assert_eq!(
-            device_ensure(&input).map_err(|failure| failure.code),
-            Err("incus.input_invalid")
+            instance_ensure(&order).expect_err("refused").code,
+            "incus.input_invalid",
+            "{case}"
         );
     }
-    assert!(fake.seen().is_empty());
-}
-
-#[test]
-fn a_failed_operation_fails_and_a_running_one_times_out() {
-    let fake = Fake::new(vec![ok(instance(json!({}))), queued(), finished(400)]);
-    assert_eq!(
-        device_ensure(&device(&fake, "present")).map_err(|failure| failure.code),
-        Err("incus.api_failed")
-    );
-
-    let running = || Reply::After(Duration::from_millis(400), Box::new(finished(103)));
-    let fake = Fake::new(vec![
-        ok(instance(json!({}))),
-        queued(),
-        running(),
-        running(),
-        running(),
-        running(),
-    ]);
-    let mut input = device(&fake, "present");
-    input["timeout_ms"] = json!(1000);
-    assert_eq!(
-        device_ensure(&input).map_err(|failure| failure.code),
-        Err("incus.timeout")
+    assert!(
+        fake.state.lock().expect("state").requests.is_empty(),
+        "a refused input sends nothing"
     );
 }
 
-fn volume(fake: &Fake, state: &str) -> Value {
-    let mut input = json!({"socket": fake.socket(), "project": "p1", "pool": "pool1", "name": "v2", "state": state, "timeout_ms": 2000});
-    if state == "present" {
-        input["source"] = json!({"pool": "pool1", "volume": "v1", "snapshot": "s1"});
-        input["config"] = json!({"size": "1GiB"});
-    }
-    input
-}
-
-fn stored_volume(source: &str, used_by: Value) -> Value {
-    let mut volume = json!({"name": "v2", "type": "custom", "config": {"size": "1GiB", "user.source": source, "volatile.uuid": "u"}});
-    volume["used_by"] = used_by;
-    volume
-}
-
-fn project(volumes: &str) -> Reply {
-    ok(json!({"name": "p1", "config": {"features.storage.volumes": volumes}}))
-}
-
-fn no_operations() -> Reply {
-    ok(json!({"running": []}))
-}
-
-fn copying() -> Reply {
-    // As Incus lists a copy: by its description, with no resource named.
-    ok(json!({"running": [{"id": "op9", "description": "Copying storage volume", "resources": {}}, {"id": "op8", "description": "Updating instance", "resources": {}}]}))
-}
-
-fn codes(result: Result<u32, Failure>) -> Result<u32, &'static str> {
-    result.map_err(|failure| failure.code)
-}
-
-fn marked() -> Value {
-    let mut volume = stored_volume("p1/pool1/v1/s1", json!([]));
-    volume["config"]["user.source.copying"] = json!("true");
-    volume
-}
-
 #[test]
-fn volume_present_copies_from_the_snapshot_keeping_its_settings() {
-    let snapshot = json!({"name": "s1", "config": {"size": "512MiB", "block.filesystem": "ext4", "volatile.uuid": "x", "user.source": "older"}});
-    let fake = Fake::new(vec![project("true"), missing(), ok(snapshot), queued(), finished(200), ok(marked()), ok(json!({})), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
-    assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(1));
-    let seen = fake.seen();
-    assert_eq!(seen[0].path, "/1.0/projects/p1");
-    assert_eq!(seen[1].path, "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1");
-    assert_eq!(seen[2].path, "/1.0/storage-pools/pool1/volumes/custom/v1/snapshots/s1?project=p1");
-    assert_eq!((seen[3].method.as_str(), seen[3].path.as_str()), ("POST", "/1.0/storage-pools/pool1/volumes/custom?project=p1"));
-    // The source's settings stay, the input's keys win, only the source's volatile keys and provenance go, and the copy
-    // carries its mark until its operation succeeds.
-    assert_eq!(
-        seen[3].body,
-        json!({"name": "v2", "type": "custom",
-            "config": {"block.filesystem": "ext4", "size": "1GiB", "user.source": "p1/pool1/v1/s1", "user.source.copying": "true"},
-            "source": {"type": "copy", "pool": "pool1", "name": "v1/s1", "project": "p1", "volume_only": true}})
+fn refuses_to_remove_an_instance_that_attaches_a_custom_volume() {
+    let fake = Fake::new();
+    let devices = json!({
+        "root": {"type": "disk", "path": "/", "pool": "default"},
+        "data": {"type": "disk", "path": "/data", "pool": "default", "source": "data", "dependent": "true"},
+    });
+    for status in ["Stopped", "Running"] {
+        fake.with("throwaway", "copy-1", status, None);
+        fake.state.lock().expect("state").devices.insert("copy-1".to_owned(), devices.clone());
+        for force in [false, true] {
+            let refused = instance_ensure(&fake.order(&json!({"state": "absent", "force": force}))).expect_err("a volume is attached");
+            assert_eq!(refused.code, "incus.instance_volumes_attached", "{status} force={force}");
+            assert!(refused.detail.contains("default/data"), "{}", refused.detail);
+        }
+        assert!(fake.changing().is_empty(), "neither the stop nor the delete runs: {:?}", fake.changing());
+        assert_eq!(fake.status("throwaway", "copy-1").as_deref(), Some(status));
+    }
+    // A host folder (no pool) and the root disk (no source) are not separate volumes.
+    let mut state = fake.state.lock().expect("state");
+    state.devices.insert(
+        "copy-1".to_owned(),
+        json!({"root": {"type": "disk", "path": "/", "pool": "default"}, "host": {"type": "disk", "path": "/host", "source": "/srv"}}),
     );
-    assert_eq!((seen[6].method.as_str(), seen[6].if_match.as_deref()), ("PUT", Some("\"e1\"")));
-    assert_eq!(seen[6].body, json!({"config": {"size": "1GiB", "user.source": "p1/pool1/v1/s1"}, "description": ""}));
+    drop(state);
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(2));
 }
 
 #[test]
-fn volume_repeat_answers_zero_and_a_changed_key_keeps_the_description() {
-    let fake = Fake::new(vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
-    assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(0));
-
-    let mut described = stored_volume("p1/pool1/v1/s1", json!([]));
-    described["description"] = json!("kept");
-    let mut grown = described.clone();
-    grown["config"]["size"] = json!("2GiB");
-    let fake = Fake::new(vec![project("true"), ok(described), ok(json!({})), ok(grown)]);
-    let mut input = volume(&fake, "present");
-    input["config"] = json!({"size": "2GiB"});
-    assert_eq!(volume_ensure(&input), Ok(1));
-    let put = &fake.seen()[2];
-    assert_eq!((put.method.as_str(), put.if_match.as_deref()), ("PUT", Some("\"e1\"")));
-    assert_eq!(put.body, json!({"config": {"size": "2GiB", "user.source": "p1/pool1/v1/s1"}, "description": "kept"}));
-}
-
-#[test]
-fn volume_whose_copy_no_order_saw_end_waits_for_it_before_it_counts() {
-    let fake = Fake::new(vec![project("true"), ok(marked()), copying(), finished(200), ok(marked()), ok(json!({})), ok(stored_volume("p1/pool1/v1/s1", json!([])))]);
-    assert_eq!(volume_ensure(&volume(&fake, "present")), Ok(1));
-    let seen = fake.seen();
-    assert_eq!(seen[2].path, "/1.0/operations?project=p1&recursion=1");
-    assert!(seen[3].path.starts_with("/1.0/operations/op9/wait?timeout="));
-    assert_eq!(seen[5].method, "PUT");
-
-    let running = || Reply::After(Duration::from_millis(400), Box::new(finished(103)));
-    let fake = Fake::new(vec![project("true"), ok(marked()), copying(), running(), running(), running(), running()]);
-    let mut input = volume(&fake, "present");
-    input["timeout_ms"] = json!(1000);
-    assert_eq!(codes(volume_ensure(&input)), Err("incus.copy_in_progress"));
-    assert!(fake.seen().iter().all(|seen| seen.method == "GET"), "nothing written");
-
-    let fake = Fake::new(vec![project("true"), ok(marked()), copying(), finished(400)]);
-    assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.api_failed"));
-
-    // A copy that failed is gone: Incus removes it, and nothing counts it as made.
-    let fake = Fake::new(vec![project("true"), ok(marked()), no_operations(), missing()]);
-    assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.not_converged"));
-}
-
-#[test]
-fn volume_refuses_a_project_that_keeps_its_volumes_in_default() {
-    for state in ["present", "absent"] {
-        let fake = Fake::new(vec![project("false")]);
-        assert_eq!(codes(volume_ensure(&volume(&fake, state))), Err("incus.project_storage_not_owned"));
-        assert_eq!(fake.seen().len(), 1, "only the project read");
+fn refuses_to_stop_an_ephemeral_instance() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", None);
+    fake.state.lock().expect("state").ephemeral.insert("copy-1".to_owned());
+    for force in [false, true] {
+        let refused = instance_ensure(&fake.order(&json!({"state": "stopped", "force": force}))).expect_err("ephemeral");
+        assert_eq!(refused.code, "incus.instance_ephemeral");
     }
-    // A source in another project must own its volumes too.
-    let fake = Fake::new(vec![project("true"), project("false")]);
-    let mut input = volume(&fake, "present");
-    input["source"]["project"] = json!("p2");
-    assert_eq!(codes(volume_ensure(&input)), Err("incus.project_storage_not_owned"));
-    assert_eq!(fake.seen()[1].path, "/1.0/projects/p2");
+    assert!(fake.changing().is_empty(), "no stop runs: {:?}", fake.changing());
+    assert_eq!(fake.status("throwaway", "copy-1").as_deref(), Some("Running"));
 }
 
 #[test]
-fn volume_from_another_source_refuses_and_is_never_written() {
-    for found in [stored_volume("p1/pool1/v9/s1", json!([])), json!({"name": "v2", "config": {}, "used_by": []})] {
-        let fake = Fake::new(vec![project("true"), ok(found)]);
-        assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_conflict"));
-        assert_eq!(fake.seen().len(), 2, "only reads");
-    }
+fn removes_an_ephemeral_instance_whose_stop_deleted_it() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Running", None);
+    fake.state.lock().expect("state").ephemeral.insert("copy-1".to_owned());
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(1));
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
+    let changing = fake.changing();
+    assert_eq!(changing.len(), 1, "the stop removed it, so no delete runs: {changing:?}");
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent", "force": true}))), Ok(0));
 }
 
 #[test]
-fn volume_with_a_missing_source_refuses() {
-    let fake = Fake::new(vec![project("true"), missing(), missing()]);
-    assert_eq!(codes(volume_ensure(&volume(&fake, "present"))), Err("incus.volume_source_missing"));
-    assert_eq!(fake.seen().len(), 3);
+fn a_delete_that_finds_the_instance_gone_is_absent() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    // Something else removes the instance between the read and the delete: Incus answers the delete 404.
+    fake.state.lock().expect("state").gone_on_delete = true;
+    assert_eq!(instance_ensure(&fake.order(&json!({"state": "absent"}))), Ok(1));
+    assert_eq!(fake.status("throwaway", "copy-1"), None);
 }
 
 #[test]
-fn volume_absent_deletes_exactly_that_unused_volume() {
-    let fake = Fake::new(vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!([]))), ok(json!([])), ok(json!([])), queued(), finished(200), missing()]);
-    assert_eq!(volume_ensure(&volume(&fake, "absent")), Ok(1));
-    let seen = fake.seen();
-    assert_eq!(seen[2].path, "/1.0/storage-pools/pool1/volumes/custom/v2/snapshots?project=p1");
-    assert_eq!(seen[3].path, "/1.0/storage-pools/pool1/volumes/custom/v2/backups?project=p1");
-    assert_eq!((seen[4].method.as_str(), seen[4].path.as_str()), ("DELETE", "/1.0/storage-pools/pool1/volumes/custom/v2?project=p1"));
-    // A DELETE carries no body: Incus answers without reading one, and an unread body resets the connection.
-    assert_eq!(seen[4].length, 0);
-
-    let fake = Fake::new(vec![project("true"), missing()]);
-    assert_eq!(volume_ensure(&volume(&fake, "absent")), Ok(0));
+fn a_slow_fragmented_operation_wait_fails_at_the_deadline() {
+    let fake = Fake::new();
+    fake.with("throwaway", "copy-1", "Stopped", None);
+    fake.state.lock().expect("state").slow = Some("GET /1.0/operations/".to_owned());
+    let started = Instant::now();
+    let failed = instance_ensure(&fake.order(&json!({"state": "running", "timeout_seconds": 1}))).expect_err("past the deadline");
+    assert_eq!(failed.code, "incus.operation_timeout");
+    assert!(started.elapsed().as_millis() < 1400, "the whole order ends at its deadline: {:?}", started.elapsed());
 }
 
 #[test]
-fn volume_absent_refuses_while_used_copied_or_holding_snapshots_or_backups() {
-    let stored = || ok(stored_volume("p1/pool1/v1/s1", json!([])));
-    let cases = [
-        (vec![project("true"), ok(stored_volume("p1/pool1/v1/s1", json!(["/1.0/instances/c1?project=p1"])))], "incus.volume_in_use"),
-        (vec![project("true"), ok(marked()), copying()], "incus.copy_in_progress"),
-        (vec![project("true"), stored(), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/snapshots/s1"]))], "incus.volume_has_snapshots"),
-        (vec![project("true"), stored(), ok(json!([])), ok(json!(["/1.0/storage-pools/pool1/volumes/custom/v2/backups/b1"]))], "incus.volume_has_backups"),
-    ];
-    for (replies, code) in cases {
-        let fake = Fake::new(replies);
-        assert_eq!(codes(volume_ensure(&volume(&fake, "absent"))), Err(code));
-        assert!(fake.seen().iter().all(|seen| seen.method == "GET"), "{code}: nothing deleted");
-    }
-}
-
-#[test]
-fn volume_refusals_before_any_request() {
-    let fake = Fake::new(vec![]);
-    let base = volume(&fake, "present");
-    let mut cases = Vec::new();
-    let mut no_source = base.clone();
-    no_source.as_object_mut().expect("an object").remove("source");
-    cases.push(no_source);
-    let mut own = base.clone();
-    own["source"] = json!({"pool": "pool1", "volume": "v2"});
-    cases.push(own);
-    for config in [json!({"user.source": "x"}), json!({"user.source.copying": "x"}), json!({"size": " 1GiB"}), json!({"size": ""})] {
-        let mut odd = base.clone();
-        odd["config"] = config;
-        cases.push(odd);
-    }
-    let mut unknown = base.clone();
-    unknown["source"]["argv"] = json!(["incus"]);
-    cases.push(unknown);
-    let mut absent = base;
-    absent["state"] = json!("absent");
-    cases.push(absent);
-    for input in cases {
-        assert_eq!(codes(volume_ensure(&input)), Err("incus.input_invalid"), "{input}");
-    }
-    assert!(fake.seen().is_empty());
-}
-
-#[test]
-fn device_refuses_a_dependent_disk_and_padded_values() {
-    let fake = Fake::new(vec![]);
-    for config in [json!({"type": "disk", "pool": "pool1", "source": "v1", "path": "/data", "dependent": "true"}), json!({"type": "disk", "path": "/data "}), json!({"type": "disk", "path": ""})] {
-        let mut input = device(&fake, "present");
-        input["config"] = config;
-        assert_eq!(codes(device_ensure(&input)), Err("incus.input_invalid"));
-    }
-    assert!(fake.seen().is_empty());
-
-    // An existing dependent disk is never changed or removed: Incus would remove its volume with it.
-    let mut dependent = data();
-    dependent["dependent"] = json!("yes");
-    for state in ["present", "absent"] {
-        let fake = Fake::new(vec![ok(instance(json!({"data": dependent.clone()})))]);
-        assert_eq!(codes(device_ensure(&device(&fake, state))), Err("incus.device_dependent"));
-        assert_eq!(fake.seen().len(), 1);
-    }
-}
-
-#[test]
-fn acl_refuses_forms_incus_would_store_otherwise() {
-    let fake = Fake::new(vec![]);
-    for (field, value) in [("destination", "10.0.0.1, 10.0.0.2"), ("destination", "10.0.0.1,"), ("destination_port", " 443"), ("protocol", "tcp "), ("description", "padded ")] {
-        let mut input = acl(&fake, "present");
-        input["egress"][0][field] = json!(value);
-        assert_eq!(codes(acl_ensure(&input)), Err("incus.input_invalid"), "{field}");
-    }
-    let mut input = acl(&fake, "present");
-    input["config"] = json!({"user.note": ""});
-    assert_eq!(codes(acl_ensure(&input)), Err("incus.input_invalid"));
-    assert!(fake.seen().is_empty());
-}
-
-#[test]
-fn an_answer_in_fragments_cannot_stretch_the_deadline() {
-    let fake = Fake::new(vec![Reply::Drip(Duration::from_millis(50), json!({"type": "sync", "metadata": stored_acl(json!([]))}))]);
-    let mut input = acl(&fake, "present");
-    input["timeout_ms"] = json!(1000);
-    let started = std::time::Instant::now();
-    assert_eq!(codes(acl_ensure(&input)), Err("incus.timeout"));
-    assert!(started.elapsed() < Duration::from_millis(1500), "one wall-clock deadline: {:?}", started.elapsed());
+fn a_slow_fragmented_absence_read_fails_at_the_deadline() {
+    let fake = Fake::new();
+    fake.state.lock().expect("state").slow = Some("GET /1.0/instances/copy-1".to_owned());
+    let started = Instant::now();
+    let failed = instance_ensure(&fake.order(&json!({"state": "absent", "timeout_seconds": 1}))).expect_err("past the deadline");
+    assert_eq!(failed.code, "incus.operation_timeout");
+    assert!(started.elapsed().as_millis() < 1400, "the whole order ends at its deadline: {:?}", started.elapsed());
 }

@@ -57,7 +57,7 @@ impl Run for Families {
         }
         self.0.target_exists(target.as_str())
     }
-    #[expect(clippy::too_many_lines, reason = "one arm per action, each a call into its family")]
+    #[expect(clippy::too_many_lines, reason = "one arm per action, so the dispatcher fails to build when an action is added")]
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
@@ -154,7 +154,7 @@ impl Run for Families {
             Action::FileEnsure | Action::DotenvEnsure | Action::PosixAclEnsure | Action::CaTrustEnsure | Action::SystemdUnitEnsure
             | Action::ConfigApply | Action::HttpProbe => host(order),
             Action::FileRead | Action::AccountRead => host_read(order),
-            Action::IncusAclEnsure | Action::IncusDeviceEnsure | Action::IncusVolumeEnsure => incus(order),
+            Action::IncusInstanceEnsure | Action::IncusAclEnsure | Action::IncusDeviceEnsure | Action::IncusVolumeEnsure => incus(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -386,6 +386,24 @@ fn host(order: &VerifiedOrder) -> Outcome {
     )
 }
 
+/// The incus family (ADR 0271 N3): one Incus resource per order through the Incus API, every name from the input. A
+/// failure's code goes to the Gateway, its detail only to the log.
+fn incus(order: &VerifiedOrder) -> Outcome {
+    let primitive: fn(&serde_json::Value) -> Result<u32, orbit_executor_incus::Failure> = match order.action() {
+        Action::IncusAclEnsure => orbit_executor_incus::acl_ensure,
+        Action::IncusDeviceEnsure => orbit_executor_incus::device_ensure,
+        Action::IncusVolumeEnsure => orbit_executor_incus::volume_ensure,
+        _ => orbit_executor_incus::instance_ensure,
+    };
+    primitive(order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |changes| Outcome::Applied { changes },
+    )
+}
+
 /// `posix.acl.ensure` of the host family: the paths it changed and the paths a tree walk left out, as JSON in the receipt's
 /// output (`{changes, skipped_mounts, skipped_hard_links}`).
 fn acl_ensure(order: &VerifiedOrder) -> Outcome {
@@ -413,23 +431,6 @@ fn host_read(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |read| Outcome::Output { stdout: read.to_string() },
-    )
-}
-
-/// The incus family (ADR 0271 N3): one Incus resource per order through the Incus API on its socket. A failure's code goes
-/// to the Gateway, its detail only to the log.
-fn incus(order: &VerifiedOrder) -> Outcome {
-    let primitive: fn(&serde_json::Value) -> Result<u32, orbit_executor_incus::Failure> = match order.action() {
-        Action::IncusAclEnsure => orbit_executor_incus::acl_ensure,
-        Action::IncusDeviceEnsure => orbit_executor_incus::device_ensure,
-        _ => orbit_executor_incus::volume_ensure,
-    };
-    primitive(order.input()).map_or_else(
-        |failure| {
-            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
-            Outcome::failed(failure.code)
-        },
-        |changes| Outcome::Applied { changes },
     )
 }
 

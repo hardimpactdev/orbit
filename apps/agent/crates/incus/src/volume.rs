@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::client::Client;
+use crate::NodeSystem as Client;
 use crate::{connect, input, not_converged, plain, Failure, State, NAME};
 
 /// The volume key that records what a volume was copied from: `<project>/<pool>/<volume>[/<snapshot>]`.
@@ -52,7 +52,7 @@ struct Source {
 /// # Errors
 ///
 /// `incus.input_invalid`, `incus.volume_source_missing`, `incus.volume_source_conflict`, `incus.volume_in_use`,
-/// `incus.unreachable`, `incus.timeout`, `incus.api_failed` or `incus.not_converged`.
+/// `incus.operation_timeout`, `incus.api_failed` or `incus.not_converged`.
 pub fn volume_ensure(raw: &Value) -> Result<u32, Failure> {
     let input: Input = input(raw)?;
     if input.config.contains_key(SOURCE_KEY)
@@ -149,7 +149,7 @@ fn present(input: &Input, source: &Source, path: &str) -> Result<u32, Failure> {
             // deadline. A copy that fails is removed by Incus, so a volume still there afterwards holds the whole copy.
             for operation in client.copies(&input.project)? {
                 client.wait(&operation).map_err(|failure| {
-                    if failure.code == "incus.timeout" {
+                    if failure.code == crate::api::TIMEOUT {
                         Failure::new("incus.copy_in_progress", format!("{} may still be being copied", input.name))
                     } else {
                         failure

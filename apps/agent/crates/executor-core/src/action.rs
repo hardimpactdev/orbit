@@ -110,6 +110,9 @@ pub enum Action {
     FileRead,
     /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
+    /// Converge one Incus instance: copied from a snapshot, running, stopped or absent, through the Incus API over its unix
+    /// socket (ADR 0271 N3). Its target is the Node, because the instance may not exist yet.
+    IncusInstanceEnsure,
     /// One network ACL in one Incus project, with its rules, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
     IncusAclEnsure,
     /// One device key of one Incus instance, or absent, through the Incus API (ADR 0271 N3). Its target is the Node.
@@ -131,7 +134,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 42] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -170,6 +173,7 @@ impl Action {
         Self::HttpProbe,
         Self::FileRead,
         Self::AccountRead,
+        Self::IncusInstanceEnsure,
         Self::IncusAclEnsure,
         Self::IncusDeviceEnsure,
         Self::IncusVolumeEnsure,
@@ -209,7 +213,7 @@ impl Action {
             | Self::HttpProbe
             | Self::FileRead
             | Self::AccountRead => Family::Host,
-            Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
+            Self::IncusInstanceEnsure | Self::IncusAclEnsure | Self::IncusDeviceEnsure | Self::IncusVolumeEnsure => Family::Incus,
         }
     }
 
@@ -246,6 +250,7 @@ impl Action {
             | Self::HttpProbe
             | Self::FileRead
             | Self::AccountRead
+            | Self::IncusInstanceEnsure
             | Self::IncusAclEnsure
             | Self::IncusDeviceEnsure
             | Self::IncusVolumeEnsure => TargetKind::Node,
@@ -291,6 +296,7 @@ impl Action {
                 | Self::CaTrustEnsure
                 | Self::SystemdUnitEnsure
                 | Self::ConfigApply
+                | Self::IncusInstanceEnsure
         )
     }
 
@@ -335,6 +341,7 @@ impl Action {
             Self::HttpProbe => "http.probe",
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
+            Self::IncusInstanceEnsure => "incus.instance.ensure",
             Self::IncusAclEnsure => "incus.acl.ensure",
             Self::IncusDeviceEnsure => "incus.device.ensure",
             Self::IncusVolumeEnsure => "incus.volume.ensure",
@@ -390,6 +397,7 @@ impl FromStr for Action {
             "http.probe" => Ok(Self::HttpProbe),
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
+            "incus.instance.ensure" => Ok(Self::IncusInstanceEnsure),
             "incus.acl.ensure" => Ok(Self::IncusAclEnsure),
             "incus.device.ensure" => Ok(Self::IncusDeviceEnsure),
             "incus.volume.ensure" => Ok(Self::IncusVolumeEnsure),
@@ -438,7 +446,8 @@ pub enum Family {
     Process,
     /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
     Host,
-    /// Incus primitives over the Incus API: network ACLs, instance devices and storage volumes (ADR 0271 N3).
+    /// Incus primitives through the Incus API over its unix socket: instances, network ACLs, instance devices and storage volumes
+    /// (ADR 0271 N3).
     Incus,
 }
 

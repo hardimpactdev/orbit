@@ -39,7 +39,7 @@ struct Input {
 ///
 /// # Errors
 ///
-/// `incus.input_invalid`, `incus.instance_missing`, `incus.unreachable`, `incus.timeout`, `incus.api_failed` or
+/// `incus.input_invalid`, `incus.instance_missing`, `incus.operation_timeout`, `incus.api_failed` or
 /// `incus.not_converged`.
 pub fn device_ensure(raw: &Value) -> Result<u32, Failure> {
     let input: Input = input(raw)?;
