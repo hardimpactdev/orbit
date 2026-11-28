@@ -17,6 +17,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSyncEngineFlow;
@@ -102,6 +103,7 @@ final readonly class StartSwampRun
                             $this->bind($operation, $runId, $lock);
                             // Only the hold: the update's Caddyfile recheck is its first step, outside this write transaction.
                             RouteUpdateEngineFlow::holdNodes($operation);
+                            RouteDestroyEngineFlow::holdNodes($operation);
                         });
                     } catch (UniqueConstraintViolationException $exception) {
                         throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);

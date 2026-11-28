@@ -20,3 +20,16 @@ it('keeps the plain digest of a canonical catalog and changes it for another ans
         ->and(RouteFileGuards::catalogDigest(str_replace('"swamp.orbit":"10.45.0.1"', '"swamp.orbit":"10.45.0.9"', $swamp)))
         ->not->toBe(RouteFileGuards::catalogDigest($swamp));
 });
+
+it('renders a catalog byte for byte as Swamp\'s withdrawal writes the same state', function (): void {
+    // Written by swamp/ansible/module_utils/orbit_route_withdraw.py merge_dns from the Gateway's render.
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/PrivateDns/swamp-withdrawn-catalog.json')), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($fixture['written'])->not->toBe($fixture['gateway_render'])
+        ->and(RouteFileGuards::swampCatalog($fixture['gateway_render']))->toBe($fixture['written']);
+});
+
+it('cannot name the bytes of a catalog whose key order came from an earlier writer', function () use ($swamp, $gateway): void {
+    // The ORB-6310 catalog: Swamp kept the top-level key order of the file it merged into, which the Gateway cannot read.
+    expect(RouteFileGuards::swampCatalog($gateway))->not->toBe($swamp);
+});

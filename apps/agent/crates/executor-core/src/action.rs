@@ -110,6 +110,9 @@ pub enum Action {
     FileRead,
     /// Read the uid, primary group and home of one account through the host's NSS (ADR 0271 N3). Read-only. Its target is the Node.
     AccountRead,
+    /// Converge one Incus instance: copied from a snapshot, running, stopped or absent, through the Incus API over its unix
+    /// socket (ADR 0271 N3). Its target is the Node, because the instance may not exist yet.
+    IncusInstanceEnsure,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -124,7 +127,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -163,6 +166,7 @@ impl Action {
         Self::HttpProbe,
         Self::FileRead,
         Self::AccountRead,
+        Self::IncusInstanceEnsure,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -199,6 +203,7 @@ impl Action {
             | Self::HttpProbe
             | Self::FileRead
             | Self::AccountRead => Family::Host,
+            Self::IncusInstanceEnsure => Family::Incus,
         }
     }
 
@@ -234,7 +239,8 @@ impl Action {
             | Self::ConfigApply
             | Self::HttpProbe
             | Self::FileRead
-            | Self::AccountRead => TargetKind::Node,
+            | Self::AccountRead
+            | Self::IncusInstanceEnsure => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -277,6 +283,7 @@ impl Action {
                 | Self::CaTrustEnsure
                 | Self::SystemdUnitEnsure
                 | Self::ConfigApply
+                | Self::IncusInstanceEnsure
         )
     }
 
@@ -321,6 +328,7 @@ impl Action {
             Self::HttpProbe => "http.probe",
             Self::FileRead => "file.read",
             Self::AccountRead => "account.read",
+            Self::IncusInstanceEnsure => "incus.instance.ensure",
         }
     }
 }
@@ -373,6 +381,7 @@ impl FromStr for Action {
             "http.probe" => Ok(Self::HttpProbe),
             "file.read" => Ok(Self::FileRead),
             "account.read" => Ok(Self::AccountRead),
+            "incus.instance.ensure" => Ok(Self::IncusInstanceEnsure),
             _ => Err(UnknownActionError),
         }
     }
@@ -418,6 +427,8 @@ pub enum Family {
     Process,
     /// Host-resource primitives: files, dotenv keys, access lists, trust, units, configuration sets, HTTP probes, file and account reads (ADR 0271 N3).
     Host,
+    /// Incus primitives through the Incus API over its unix socket: one instance (ADR 0271 N3).
+    Incus,
 }
 
 /// The family name is unknown to this executor.
@@ -439,6 +450,7 @@ impl Family {
             "instance" => Some(Self::Instance),
             "process" => Some(Self::Process),
             "host" => Some(Self::Host),
+            "incus" => Some(Self::Incus),
             _ => None,
         }
     }

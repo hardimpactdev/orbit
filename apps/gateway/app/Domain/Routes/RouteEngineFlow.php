@@ -146,9 +146,9 @@ final readonly class RouteEngineFlow implements EngineAdmission, EngineDefinitio
     }
 
     /** An unlink step runs only when its file's read found a link (RouteHostSteps::linked). */
-    public function skips(Operation $operation, string $step, EngineRun $run): bool
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
     {
-        return str_contains($step, '-unlink-') && ! RouteHostSteps::linked($run->output(str_replace('-unlink-', '-read-', $step)));
+        return ! str_contains($step, '-unlink-') || RouteHostSteps::linked($run->output(str_replace('-unlink-', '-read-', $step)));
     }
 
     /**

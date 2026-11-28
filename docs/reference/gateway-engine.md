@@ -34,7 +34,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>-<part>`, `dns-<i>-read-<file>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr` (with `tls.csr_input`), `file.read`, `dotenv.ensure`, `file.ensure`, `config.apply`, `systemd.unit.ensure`, `ca.trust.ensure` |
-| `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
+| `route.destroy` | `dnsread-<i>-<file>`, `dnsunlink-<i>-<file>`, `dns-<i>`, `grace`, `caddyread-<node>`, `account-<node>`, `poolread-<node>-<k>`, `guard-<node>`, `caddyunlink-<node>`, `withdraw-<node>`, `poll-<node>`, `pools-<node>`, `leaf-<node>-<k>`, `leafhome-<node>-<k>`, `sibling-<node>` | `file.read`, `account.read`, `file.ensure`, `config.apply`, `http.probe` |
 | `route.update` | `current`, `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `final-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr` (with `tls.csr_input`), `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
@@ -100,16 +100,35 @@ Any other `route.create` runs on Swamp as a whole. Routes that need an Ingress e
 
 ### route.destroy
 
-The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) with the Route Nodes held from admission to the terminal state. Its steps run in this order:
+The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) from host primitives that the Gateway composes. Every path, lock, owner, validator and unit arrives in the order. Its steps run in this order:
 
-1. `dns-<i>`: `dns.publish_records` writes each VPN Node's records and catalog without the Route. Each file carries the digest of the bytes the Gateway rendered from at admission. Admission requires `dns.guarded_records` in the VPN Node's `features`.
-2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt, as Swamp's `route-dns-grace` does. It is a [timed Gateway step](#waits).
-3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. It writes only over the Caddyfile the Gateway rendered from. A repeat reports `applied: 0`.
-4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
+1. `account-<node>`, `identity-<node>`: `account.read` reads the account on each Route Node with a leaf or a pool to change. An absent account refuses before any step changes a file.
+2. `dnsread-<i>-<file>`, `dnsunlink-<i>-<file>`: `file.read` reads the dnsmasq records and the private DNS catalog on each VPN Node. `file.ensure` removes a link that a read found in a file's place.
+   `dns-<i>`: `config.apply` writes both files under the DNS lock `/run/lock/orbit-dnsmasq.lock`. dnsmasq tests the files. Then `dnsmasq` and `orbit-private-dns` restart.
+3. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt, as Swamp's `route-dns-grace` does. It is a [timed Gateway step](#waits).
+4. The reads and the guard: `caddyread-<node>` and `poolread-<node>-<k>` read the Caddyfile and each PHP-FPM pool with `file.read`. The Gateway's `guard-<node>` checks them. `caddyunlink-<node>` removes a link in the Caddyfile's place.
+5. `withdraw-<node>`: `config.apply` writes the Caddyfile without the Route under the publication lock `/etc/caddy/.orbit-publish.lock`. Caddy validates it and reloads on every run.
+6. `poll-<node>`: `http.probe` reads Caddy's admin API for up to 5 seconds. It succeeds once the API names none of the Route's domains.
+7. `pools-<node>`, `leaf-<node>-<k>`, `leafhome-<node>-<k>`: `config.apply` converges each pool under the same lock. Then `file.ensure` removes each leaf folder and its copy in the account's home.
+8. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
+
+Each read is its step's output, so a retry sends the same guard. A DNS file must still hold the bytes the Gateway rendered from at admission, unless its read already found the desired bytes. A file that another publisher changed after admission refuses with `owned_revision_conflict`, as on main. The Caddyfile guard accepts the render captured at admission and the desired render. Any other digest, a missing Caddyfile or another kind refuses the same way.
+
+The Gateway renders each pool whole, with the gid and home that `account.read` answered, in place of withdraw.rs `merge_pool`. A shared pool must still hold its render at admission or the desired one, in a form a pool writer produces. Each scope's group may be the gid or the group's name, and a merge may leave a blank line after the last scope. The engine renders these forms for at most 8 scopes, and a pool with more runs on Swamp.
+
+Any other content, such as a scope that another writer added, refuses with `owned_revision_conflict`. A shared pool that is absent stays absent. When a pool fails its write, test or reload, `config.apply` puts the pools back. The failure step `caddyback-<node>` then puts back the Caddyfile captured at admission. Its guard is the withdrawal just written. The Route keeps serving, and the Operation fails at `Converge PHP-FPM pools` with main's code.
+
+A link in a file's place is removed without following it, and the file is then written without a guard. When the read found no link, the removal step is done without an order. Any other kind of file refuses.
+
+Each `config.apply` keeps its recovery record in its own folder, `/var/lib/orbit/executor/recovery/operation-<id>/<step>`. The start refuses with `route.publication_held` while another open Route write writes or holds one of its Nodes, the VPN Nodes included (`RouteWriteNodes`).
 
 The grace survives a restart of the consumer, the Gateway or Horizon: the run waits only what is left, never from zero and never less. A redelivered DNS receipt does not move that time. A cancel during the grace ends the Operation `cancelled` without withdrawing. The DNS answers stay withdrawn and the Route is kept, so the same command removes it.
 
-A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. It first moves the Route to `retiring`, as the Swamp `DestroyRouteAction` does, so a secondary web-root Route of an active Instance leaves its target while the Instance keeps its one authoritative Route. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
+A failed step records the Swamp chart's step name that it is part of. A read, guard, write or poll of Node 3's Caddyfile records `Withdraw site, remove cert-3`. The Route keeps the same `failed_step` and that step's error code. A guard conflict persists `route.withdraw_failed` or `private_dns.publication_failed`, as on main. The existing removal projection deletes the Route only after every step succeeds. It first moves the Route to `retiring`, as the Swamp `DestroyRouteAction` does, so a secondary web-root Route of an active Instance leaves its target while the Instance keeps its one authoritative Route.
+
+Before `route.destroy` goes into `ORBIT_ENGINE_KINDS`, the operator checks the private DNS catalog on each development VPN Node. A catalog in a legacy key order, such as one that an older Swamp withdrawal merged, refuses at `Remove private DNS` on the engine. A Gateway-rendered DNS publish, such as `route.create`'s `dns.publish_records`, normalizes it first. Once a catalog is in the Gateway's form, Swamp's later withdrawals keep a form the guard accepts.
+
+These removals stay on Swamp: `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, and a PHP version whose last pool leaves. A Route Node with a leaf or a pool to change must report `account.read` (agent 0.37.0). A production removal stays on Swamp too: a serving Node without the `app-dev` role, a DNS Node without the `vpn` role, `production_control`, or a production Instance on a serving Node.
 
 
 ### route.update
@@ -334,6 +353,10 @@ Every minute, the reconciler sends an immediate deadline nudge to any unfinished
 A kind that implements `EngineWait` names the time before which a Gateway step must not run, from the steps as recorded. When such a step is ready before that time, the engine marks it sent, keeps the time as its `resend_at_ms`, and schedules its deadline for it. No process sleeps through the wait. The deadline, or the reconciler's nudge if the deadline was lost, runs the step once the time has passed; an earlier event runs nothing. A cancel during the wait sends nothing more, because the step published no order.
 
 `route.destroy` and `route.update` wait their DNS grace this way. A forward retry of `route.update` times it from the receipts of the attempt that committed the cutover.
+
+### Unneeded steps
+
+A kind that implements `EngineSkip` decides, from the results of the steps a Node step waits for, whether that step must run. When the step is ready and not needed, the engine records it done with the output `not needed` and sends no order, so the steps after it go on. `route.destroy` removes a link in a file's place this way only when its read found one.
 
 ### Cancel
 

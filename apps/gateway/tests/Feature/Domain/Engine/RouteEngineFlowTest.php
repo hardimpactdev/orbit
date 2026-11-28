@@ -325,11 +325,11 @@ it('removes a link found in place of each file it writes, without following it, 
     $linked = routeRun([$read => $link]);
     $files = $flow->input(routeOperation($plan), $write, $linked)['files'];
 
-    expect($flow->skips(routeOperation($plan), $unlink, $linked))->toBeFalse()
+    expect($flow->needed(routeOperation($plan), $unlink, $linked))->toBeTrue()
         ->and($flow->input(routeOperation($plan), $unlink, $linked))->toBe(['state' => 'absent', 'path' => $path])
         ->and(array_values(array_filter($files, static fn (array $file): bool => $file['path'] === $path))[0])->not->toHaveKey('from_sha256')
         // A plain file is never removed: its unlink step is done without an order, and its write keeps the read digest.
-        ->and($flow->skips(routeOperation($plan), $unlink, routeRun()))->toBeTrue();
+        ->and($flow->needed(routeOperation($plan), $unlink, routeRun()))->toBeFalse();
 })->with([
     'the Caddyfile' => ['site-3-read-caddy', 'site-3-unlink-caddy', 'site-3-caddy', '/etc/caddy/Caddyfile'],
     'a pool' => ['site-3-read-pool-0', 'site-3-unlink-pool-0', 'site-3-pools', '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf'],

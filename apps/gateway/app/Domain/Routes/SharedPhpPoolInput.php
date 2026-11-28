@@ -16,6 +16,11 @@ use Closure;
 /** Pure stored-state render. An empty map still withdraws stale pools on the Node. */
 final readonly class SharedPhpPoolInput
 {
+    /** Where a pool render holds the account's primary group and home, which the Node resolves (`account.read`). */
+    public const string Group = '__ORBIT_NODE_GROUP__';
+
+    public const string Home = '/__ORBIT_NODE_HOME__';
+
     public function __construct(private DevelopmentSiteRepository $sites, private DevelopmentPhpFpmConfigRenderer $renderer) {}
 
     /** @return array{configurations: object,account_user:string} */
@@ -23,7 +28,7 @@ final readonly class SharedPhpPoolInput
     {
         $user = app(RouteRenderContext::class)->user($node);
 
-        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__')), 'account_user' => $user];
+        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($user, self::Group, self::Home)), 'account_user' => $user];
     }
 
     /** Pure render with an already admitted account; no Node lookup.

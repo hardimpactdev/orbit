@@ -74,9 +74,9 @@ final class RouteCreateReceiptDefinition implements EngineDefinition, EngineSkip
     public static ?string $finished = null;
 
     /** The site step is skipped when the request's recorded output says so, as an unlink step is when its read found no link. */
-    public function skips(Operation $operation, string $step, EngineRun $run): bool
+    public function needed(Operation $operation, string $step, EngineRun $run): bool
     {
-        return str_starts_with($step, 'site-') && $run->output('csr-0') === 'SKIP-SITE';
+        return ! str_starts_with($step, 'site-') || $run->output('csr-0') !== 'SKIP-SITE';
     }
 
     public function __construct(private int $node) {}
