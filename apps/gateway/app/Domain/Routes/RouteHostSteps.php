@@ -184,37 +184,22 @@ final readonly class RouteHostSteps
         return ['unit' => $unit, 'enabled' => true, 'state' => 'running', 'budget_ms' => 30_000];
     }
 
-    /** The executor input that takes one ACL entry over a whole tree (A4, `scope: tree`). A Node without it runs the Route on Swamp. */
-    public const string AclTreeFeature = 'posix.acl.tree';
-
     /**
-     * Caddy's access to one Route's files, as `posix.acl.ensure` orders in the admitted rows' order, one per row and path. A
-     * recursive row (`deny`, `grant`, and the default entries of every folder below: `deny_defaults`, `grant_defaults`) takes
-     * `scope: tree`; the passage through the folders above a served root is one path's access entry. Each runs as the row's
-     * account, so a path it cannot reach is never changed with root's rights, and a missing optional path changes nothing.
+     * Caddy's access to one Route's files. PENDING A4 (`posix.acl.ensure` with `scope: tree`, whose `subject` is a user or a group
+     * and which runs no `setfacl` as another account): every admitted row is recursive over a checkout or its served roots, or
+     * passes through the folders above them (RouteWebRootCommands::access). Once A4 lands, this answers one order per row and
+     * path. Until then a Route with access rows runs on Swamp.
      *
-     * @param  list<array{kind: string, user: ?string, paths: list<string>, optional_paths: list<string>}>  $rows  RouteEngineFlow::access
+     * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
      */
     public static function access(array $rows): array
     {
-        $orders = [];
-        foreach ($rows as $row) {
-            [$perms, $default, $tree] = match ($row['kind']) {
-                'deny_defaults' => ['---', true, true],
-                'deny' => ['---', false, true],
-                'passage' => ['--x', false, false],
-                'grant_defaults' => ['r-x', true, true],
-                'grant' => ['r-X', false, true],
-                default => throw new EngineUnsupported('An access kind outside the known shapes runs on Swamp.'),
-            };
-            foreach ($row['paths'] as $path) {
-                $orders[] = ['path' => $path, 'user' => 'caddy', 'perms' => $perms, 'default' => $default, ...($tree ? ['scope' => 'tree'] : []),
-                    ...($row['user'] === null ? [] : ['run_as' => $row['user']]), 'optional' => in_array($path, $row['optional_paths'], true)];
-            }
+        if ($rows !== []) {
+            throw new EngineUnsupported('Caddy access waits on posix.acl.ensure with scope tree (A4); the Route runs on Swamp.');
         }
 
-        return $orders;
+        return [];
     }
 
     /** @return array{path: string} */

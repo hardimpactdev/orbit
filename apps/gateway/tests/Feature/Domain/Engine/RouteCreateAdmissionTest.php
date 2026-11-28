@@ -95,7 +95,7 @@ it('keeps a Route on Swamp when one condition fails', function (Closure $operati
     }],
 ]);
 
-it('runs a Route with Caddy access rows on the engine only when its Node takes posix.acl.ensure with scope tree', function (array $features, bool $engine): void {
+it('keeps a Route with Caddy access rows on Swamp until A4 lands, whatever its Node reports', function (array $features, bool $engine): void {
     $bus = Mockery::mock(MachineBus::class);
     $bus->shouldReceive('nodeActions')->andReturn(['tls.ensure_csr', 'account.read', 'file.read', 'file.ensure', 'dotenv.ensure', 'config.apply', 'systemd.unit.ensure',
         'ca.trust.ensure', 'posix.acl.ensure']);
@@ -106,7 +106,7 @@ it('runs a Route with Caddy access rows on the engine only when its Node takes p
 
     expect(($this->routes)(admissionOperation(admissionPlan(['acl' => $acl]))))->toBe($engine);
 })->with([
-    'with posix.acl.tree' => [['tls.csr_input', 'posix.acl.tree'], true],
+    'with posix.acl.tree' => [['tls.csr_input', 'posix.acl.tree'], false],
     'without it' => [['tls.csr_input'], false],
 ]);
 
@@ -128,7 +128,7 @@ it('holds every Node of the plan, the VPN Node with DNS work alone included', fu
     expect(RoutePublicationHolds::nodes(admissionOperation(admissionPlan())))->toBe([1, 3]);
 });
 
-it('persists main\'s public code for a failed step and the guard conflict as owned_revision_conflict', function (string $step, string $code, string $persisted): void {
+it('persists main\'s chart step code for a failed step, a guard conflict included', function (string $step, string $code, string $persisted): void {
     $operation = Operation::query()->forceCreate(['kind' => 'route.create', 'status' => OperationStatus::Running, 'target_type' => 'route', 'target_id' => 9,
         'node_id' => null, 'input' => ['route_create' => admissionPlan(), 'route_lifecycle' => ['effectful' => false], 'execution_secrets' => []]]);
     $operation->forceFill(['state' => ['swamp_run_id' => 'engine-'.$operation->id]])->save();
@@ -140,9 +140,9 @@ it('persists main\'s public code for a failed step and the guard conflict as own
 })->with([
     'a site write' => ['site-3-cert-0', 'file.ensure_failed', 'route.publish_failed'],
     'a pool test' => ['site-3-pools', 'config.validate_failed', 'route.publish_failed'],
-    'a guarded Caddyfile' => ['site-3-caddy', 'owned_revision_conflict', 'owned_revision_conflict'],
+    'a guarded Caddyfile' => ['site-3-caddy', 'owned_revision_conflict', 'route.publish_failed'],
     'a dnsmasq check' => ['dns-0', 'config.validate_failed', 'private_dns.publication_failed'],
-    'a guarded catalog' => ['dns-0', 'owned_revision_conflict', 'owned_revision_conflict'],
+    'a guarded catalog' => ['dns-0', 'owned_revision_conflict', 'private_dns.publication_failed'],
     'a request' => ['csr-0', 'app-dev.certificate_request_failed', 'app-dev.certificate_request_failed'],
     'an account lookup error' => ['site-3-account-0', 'account.read_failed', 'route.publish_failed'],
     'an absent account' => ['site-3-key-0', 'engine.order_invalid', 'route.publish_failed'],

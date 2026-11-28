@@ -60,7 +60,6 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | --- | --- | --- |
 | `url-<k>` | `dotenv.ensure` | Sets `APP_URL` in the account's `.env` |
 | `link-<k>` | `file.ensure` | Places a release link |
-| `acl-<k>` | `posix.acl.ensure` | Sets Caddy's entry for one admitted row and path; a recursive row takes `scope: tree` |
 | `account-<k>` | `account.read` | Reads the home, primary group and gid of an account the Node's steps write for |
 | `read-pool-<k>`, `read-caddy` | `file.read` | Reads the digest of a file a write replaces |
 | `pools` | `config.apply` | Writes and tests the PHP-FPM pools |
@@ -71,17 +70,17 @@ The engine runs the admitted `route_create` plan as host catalogue primitives th
 | `trust` | `ca.trust.ensure` | Trusts the Orbit root |
 | `caddy` | `config.apply` | Applies the Caddyfile and reloads Caddy |
 
-The Gateway renders every file whole and sends each Caddyfile, pool, records and catalog file with the digest a `file.read` step recorded just before its write. The write replaces what the Node held at the read, as `route.publish_site` did. It refuses `owned_revision_conflict` only when the file changed between the read and the write. A read that finds a link in the file's place runs that file's unlink step, `file.ensure` absent, which never follows the link; the write then sends no guard. For any other read, the engine marks the unlink step done without an order.
+The Gateway renders every file whole and sends each Caddyfile, pool, records and catalog file with the digest a `file.read` step recorded just before its write. The write replaces what the Node held at the read, as `route.publish_site` did. Its guard refuses only when the file changed between the read and the write. A read that finds a link in the file's place runs that file's unlink step, `file.ensure` absent, which never follows the link; the write then sends no guard. For any other read, the engine marks the unlink step done without an order.
 
 The pool reload rewrites nothing: each file's guard is the digest of the bytes the install left. The Caddyfile and the pools use `/etc/caddy/.orbit-publish.lock`, and the records and the catalog `/run/lock/orbit-dnsmasq.lock`. Each `config.apply` step has its own `recovery_dir` under `/var/lib/orbit/executor/config-recovery`: `pool-install`, `pool-reload`, `caddy` and `dns`. Each input comes from the plan and the recorded reads, so a resend carries the same bytes. The trust source is named after the root's fingerprint, so a new root gets its own name and subject-hash link.
 
 Each account the Node's steps write for is read first with `account.read`: the Node's account for the leaf copies and the pools, and each other link owner. Its recorded answer gives the home and primary group, so a retry sends the same bytes. An absent account fails the step that needs it with `route.publish_failed`, as `route.publish_site` did.
 
-The publication hold covers every Node of the plan: site and leaf Nodes, and each VPN Node with DNS work. A failed step records main's code for its chart step: `route.publish_failed` for `Install cert, publish site-<node>` and `private_dns.publication_failed` for `Publish private DNS-<i>`. A guard refusal keeps `owned_revision_conflict`.
+The publication hold covers every Node of the plan: site and leaf Nodes, and each VPN Node with DNS work. A failed step records main's code for its chart step: `route.publish_failed` for `Install cert, publish site-<node>` and `private_dns.publication_failed` for `Publish private DNS-<i>`. A guard refusal records its chart step's code too, as main maps it.
 
 Admission runs `route.create` on the engine only when all of these hold:
 
-- A Route with Caddy access rows needs `posix.acl.tree` on its Node: the `scope: tree` input of `posix.acl.ensure`.
+- The Route has no Caddy access rows. Their recursive work stays on Swamp until `posix.acl.ensure` takes `scope: tree` (A4).
 - Each site or leaf Node is an app-dev Node, and each Node with DNS work alone has the vpn role.
 - No target Instance lies outside development, and the intent has no production placement and no `production_control`.
 - Every Node with work reports the `host` family with `account.read` (agent 0.37.0), which also brings `file.read` and the `source_path` input of `file.ensure`.
